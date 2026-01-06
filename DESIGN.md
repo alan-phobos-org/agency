@@ -95,14 +95,14 @@ Each phase in a focused Claude session:
 ### Component Types
 
 **Agents** (single implementation):
-- `claude-agent` - Executes prompts via Claude CLI in a given directory
+- `ag-agent-claude` - Executes prompts via Claude CLI in a given directory
 
 **Directors** (multiple implementations):
-- `cli-director` - Interactive CLI for ad-hoc tasking
-- `github-director` - Watches issues/PRs, creates branches, opens PRs
-- `gitlab-director` - Same pattern for GitLab
-- `scheduler-director` - Cron-based task scheduling
-- `web-director` - Status dashboard aggregating agent APIs
+- `ag-director-cli` - Interactive CLI for ad-hoc tasking
+- `ag-director-github` - Watches issues/PRs, creates branches, opens PRs
+- `ag-director-gitlab` - Same pattern for GitLab
+- `ag-director-scheduler` - Cron-based task scheduling
+- `ag-director-web` - Status dashboard with task submission form (HTTPS, auth)
 - `claude-director` - AI-driven PM for autonomous coordination (future)
 
 **Hybrid components** - Some components may act as both agent and director (e.g., a coordinator that receives tasks and delegates subtasks). The discovery protocol handles this by having `/status` return a `roles` array.
@@ -122,7 +122,7 @@ Alternative considered: **gRPC** offers better typing and streaming, but adds co
 ### API Design
 
 ```
-# Universal endpoints (all components)
+# Universal endpoints (server-based components only)
 GET  /status          # {roles: ["agent"|"director"], version, config, state}
 POST /shutdown        # Graceful shutdown with drain period
 
@@ -132,10 +132,12 @@ GET  /task/:id        # {state, output, exit_code}
 POST /task/:id/cancel # Cancel running task
 GET  /history         # Past task executions for this agent
 
-# Director endpoints
+# Director endpoints (server-based directors: web, github, scheduler)
 GET  /history         # Recent task executions (director's view)
 GET  /agents          # Connected agents and their states
 ```
+
+Note: The CLI director (`ag-director-cli`) is a one-shot command-line tool, not a server. It does not expose any HTTP endpoints.
 
 ### Discovery Protocol
 
@@ -366,8 +368,9 @@ case "${1:-help}" in
     build)
         echo "Building agency $VERSION..."
         go build -ldflags "$LDFLAGS" -o bin/agency ./cmd/agency
-        go build -ldflags "$LDFLAGS" -o bin/claude-agent ./cmd/claude-agent
-        go build -ldflags "$LDFLAGS" -o bin/cli-director ./cmd/cli-director
+        go build -ldflags "$LDFLAGS" -o bin/ag-agent-claude ./cmd/ag-agent-claude
+        go build -ldflags "$LDFLAGS" -o bin/ag-director-cli ./cmd/ag-director-cli
+        go build -ldflags "$LDFLAGS" -o bin/ag-director-web ./cmd/ag-director-web
         ;;
     test)
         echo "Running unit tests..."
@@ -475,11 +478,13 @@ agency/
 ├── go.mod                # Single module
 ├── go.sum
 ├── cmd/
-│   ├── agency/           # CLI tool (fleet management, stub)
+│   ├── agency/              # CLI tool (fleet management, stub)
 │   │   └── main.go
-│   ├── claude-agent/     # Agent binary
+│   ├── ag-agent-claude/     # Agent binary
 │   │   └── main.go
-│   └── cli-director/     # CLI director binary
+│   ├── ag-director-cli/     # CLI director binary
+│   │   └── main.go
+│   └── ag-director-web/     # Web director binary
 │       └── main.go
 ├── internal/
 │   ├── agent/            # Agent logic + HTTP handlers
@@ -498,6 +503,7 @@ agency/
 - `internal/discovery/` - Port scanning, mDNS
 - `internal/director/github/` - GitHub director
 - `internal/director/scheduler/` - Cron-based director
+- `internal/director/web/` - Web dashboard director
 
 ### Versioning Strategy
 
@@ -610,6 +616,30 @@ schedule:
 
 **Cron format:** Standard 5-field cron (`minute hour day month weekday`). Uses [robfig/cron](https://github.com/robfig/cron) syntax.
 
+### Director Configuration (Web example)
+
+```yaml
+# /home/claude/agency/directors/web-main/config.yaml
+type: web
+name: web-main
+port: 8443
+bind: 0.0.0.0                    # Listen on all interfaces
+discovery:
+  method: port_scan
+  port_range: [9000, 9199]
+  refresh_interval: 1s           # How often to poll /status endpoints
+tls:
+  cert: ~/.agency/web-director/cert.pem
+  key: ~/.agency/web-director/key.pem
+  auto_generate: true            # Generate self-signed cert if missing
+```
+
+**Environment file (`~/.agency/.env`):**
+```bash
+# Token for web director authentication
+AG_WEB_TOKEN=a1b2c3d4e5f6...  # Generate with: openssl rand -hex 32
+```
+
 ### Credential Management
 
 Credentials are stored in a global config store, separate from per-instance configuration:
@@ -680,6 +710,7 @@ email: "claude@users.noreply.github.com"
 | Assertions | [`testify`](https://github.com/stretchr/testify) | Concise `require.Equal`, good diffs |
 | HTTP testing | [`httpexpect`](https://github.com/gavv/httpexpect) | Chainable API assertions, clean integration tests |
 | Cron | [`robfig/cron`](https://github.com/robfig/cron) | Battle-tested, used in h2ai v1 |
+| Browser testing | [`go-rod/rod`](https://github.com/go-rod/rod) | Headless Chrome automation for UI tests |
 
 **Why these choices:**
 
@@ -696,6 +727,8 @@ email: "claude@users.noreply.github.com"
 | [Testcontainers](https://golang.testcontainers.org/) | Overkill—we don't need Docker containers. Our integration tests use real binaries on localhost. |
 | [GoConvey](https://github.com/smartystreets/goconvey) | Web UI is nice but unnecessary. Adds complexity. |
 | [GoMock](https://github.com/golang/mock) | Manual mocks are simpler for our use case. Consider if mock complexity grows. |
+| [Playwright](https://playwright.dev/) | Requires Node.js, MCP complexity. Rod is pure Go and simpler to integrate. |
+| [chromedp](https://github.com/chromedp/chromedp) | More verbose API than Rod, less automatic waiting, worse zombie cleanup. |
 
 **go.mod will contain:**
 
@@ -705,6 +738,7 @@ require (
     github.com/stretchr/testify v1.9.0
     github.com/gavv/httpexpect/v2 v2.16.0
     github.com/robfig/cron/v3 v3.0.0
+    github.com/go-rod/rod v0.116.0  // Browser testing (Phase 5+)
     gopkg.in/yaml.v3 v3.0.1
 )
 ```
@@ -830,6 +864,164 @@ Token cost is minimal (~100-200 tokens for a git clone). Optimize later only if 
 - Test coverage: agent (unit + integration + system), config (unit), director (needs tests)
 - Session continuation fields exist but not yet wired up
 - Single-task model: agent rejects concurrent tasks with 409
+- CLI director is a one-shot client (not a server), so it does not expose `/status`. Only server-based directors (web, github, scheduler) implement the universal `/status` endpoint.
+
+### Phase 1.1: Web Director
+
+**Goal:** Status dashboard and task submission UI with security.
+
+**Binary:** `ag-director-web`
+
+**UI Template:** [Tabler](https://preview.tabler.io/) - A premium-looking open-source template with clean, modern design. Built on Bootstrap 5 with 200+ responsive UI components. Minimal aesthetic suited for developer-facing tools.
+
+*Alternatives considered:*
+- [CoreUI](https://coreui.io/demos/bootstrap/5.0/free/) - Clean Bootstrap 5 template, actively maintained, MIT license
+- [AdminLTE](https://adminlte.io/themes/v3/) - Most popular free admin template (45k GitHub stars), comprehensive components
+
+**Role:** Dashboard only - pure UI that proxies task submissions directly to agents. No work queue or orchestration logic. This is intentionally simpler than a full director.
+
+**Deliverables:**
+- HTTPS web server binding on all interfaces (0.0.0.0)
+- Self-signed TLS certificate generation on first run
+- Token-based authentication (from `.env` file)
+- Dashboard showing all agents/directors (via port scan + `/status` polling)
+- Real-time status updates (1-second polling via JavaScript fetch)
+- Task submission form to dispatch work to idle agents
+- Responsive, minimal CSS embedded via `go:embed` (single binary)
+
+**Authentication:**
+- Token via URL query parameter: `?token=<secret>`
+- Token via Authorization header: `Authorization: Bearer <secret>`
+- Token loaded from `.env` file: `AG_WEB_TOKEN=<secret>`
+- All requests without valid token get 401
+- Tokens should be generated securely (e.g., `openssl rand -hex 32`)
+
+**Why token-based auth:**
+- Easier to test programmatically (curl, httptest, browser automation)
+- No session management complexity
+- Works well with bookmarks for quick access
+- Sufficient security for localhost/LAN use with HTTPS
+
+**TLS Configuration:**
+- Self-signed cert generated to `~/.agency/web-director/cert.pem` and `key.pem`
+- Cert valid for localhost, 127.0.0.1, and local hostname
+- 1-year validity, RSA 2048-bit
+- Regenerate with `ag-director-web --regen-cert`
+
+**UI Components:**
+1. **Agent/Director Grid** - Cards showing each component's status, current task, uptime
+2. **Task Form** - Select agent, enter prompt, workdir, timeout, submit
+3. ~~Task History~~ - Deferred to Phase 2 (requires `/history` endpoint)
+
+**Testing Strategy (Three-Tier):**
+
+| Level | Tool | Tests |
+|-------|------|-------|
+| Unit | `testing` + `testify` | Discovery logic, state management, helpers |
+| Integration | `httptest` + mock agent/director | Auth, API endpoints, discovery with mocks |
+| System | Real binaries | End-to-end with actual agent + CLI director |
+
+**Note:** Browser testing with Rod deferred - unit and integration tests provide sufficient coverage for Phase 1.1. Browser tests add complexity (Chrome dependency, flaky waits) without proportional benefit for a simple dashboard.
+
+**Success Criteria:**
+
+1. **Discovery & Status Display**
+   - Web director starts and scans configured port range for running agents/directors
+   - Discovers agents and directors by calling `/status` on each port
+   - Displays discovered components in a dashboard grid
+   - Shows for each component: role, state, version, uptime, current task (if any)
+   - Auto-refreshes status every 1 second via JavaScript fetch
+   - Correctly identifies components by their `roles` field (agent vs director)
+
+2. **Task Submission**
+   - Task form allows selecting an idle agent from discovered agents
+   - Form fields: prompt (required), workdir (required), timeout (optional), model (optional)
+   - Submit POSTs to selected agent's `/task` endpoint
+   - Form disabled/hidden for busy agents
+   - Shows success message with task ID on successful submission
+   - Shows error message if agent rejects task (busy, validation error)
+
+3. **Task Monitoring**
+   - After submitting a task, dashboard shows task state (queued → working → completed/failed)
+   - Polls agent's `/task/:id` endpoint to track progress
+   - Updates agent card to show "working" state with task preview
+   - Displays task result (output or error) when complete
+   - Task completion transitions agent back to "idle" in UI
+
+4. **Unit Tests** (`internal/director/web/`)
+   - Discovery logic: port scanning, status parsing, component classification
+   - State management: tracking discovered components, handling disappearing components
+   - Template rendering: verify HTML generation doesn't panic
+   - Auth middleware: token validation, header vs query param
+
+5. **Integration Tests** (with mock agent/director)
+   - Start web director with mock agent responding to `/status` and `/task`
+   - Verify discovery finds the mock agent
+   - Verify `/api/agents` returns discovered agents
+   - Verify task submission proxies to mock agent correctly
+   - Verify task status polling works
+   - Test auth: valid token succeeds, invalid token returns 401
+   - Test discovery with multiple mock components (2 agents, 1 director)
+
+6. **System Tests** (update existing `internal/agent/system_test.go`)
+   - Add web director to existing system test infrastructure
+   - Start: agent, CLI director, web director (all real binaries)
+   - Web director discovers both agent and CLI director
+   - Verify web director's `/api/agents` shows correct state
+   - Run CLI director task, verify web director shows agent as "working"
+   - After CLI task completes, verify web director shows agent as "idle"
+   - Submit a new task via web director's API
+   - Poll until task completes
+   - Verify task output matches expected result
+
+**API Endpoints (Web Director):**
+
+```
+GET  /status              # Universal status endpoint (roles: ["director"])
+GET  /                    # Dashboard HTML page
+GET  /api/status          # Web director's own status (alias for /status)
+GET  /api/agents          # List discovered agents with their status
+GET  /api/directors       # List discovered directors with their status
+POST /api/task            # Submit task (proxies to selected agent)
+     Body: {"agent_url": "http://localhost:9000", "prompt": "...", "workdir": "...", ...}
+     Response: {"task_id": "...", "agent_url": "http://localhost:9000"}
+GET  /api/task/:id        # Get task status (requires agent_url query param)
+     Example: /api/task/task-abc123?agent_url=http://localhost:9000
+```
+
+**Task-to-Agent Mapping:**
+
+The web director is stateless and does not maintain a mapping of task IDs to agents. Instead:
+- `POST /api/task` returns both `task_id` and `agent_url` in the response
+- `GET /api/task/:id` requires `agent_url` as a query parameter
+- The client (dashboard JS) is responsible for storing this association
+
+*Trade-off*: An alternative is to maintain an in-memory map of `task_id → agent_url` in the web director. This simplifies the client API (just use task_id) but adds server-side state that would be lost on restart. Since the web director is a dashboard (not a task queue), statelessness is preferred—the dashboard already tracks submitted tasks in the browser session.
+
+**Discovery Behavior:**
+
+- Components are discovered by scanning the configured port range and calling `/status`
+- Status is polled every `refresh_interval` (default: 1s)
+- A component is removed from the discovered list after 3 consecutive failed polls
+- When a component reappears, it is re-added immediately on the next successful poll
+
+**Test File Structure:**
+
+```
+internal/director/web/
+├── director.go           # Main web director implementation
+├── director_test.go      # Unit tests
+├── discovery.go          # Port scanning + status polling
+├── discovery_test.go     # Unit tests for discovery
+├── handlers.go           # HTTP handlers
+├── handlers_test.go      # Handler unit tests
+├── integration_test.go   # Integration tests with mock components
+└── templates/            # HTML templates (embedded)
+    └── dashboard.html
+
+internal/agent/
+└── system_test.go        # Updated to include web director tests
+```
 
 ### Phase 2: Observability
 
@@ -884,11 +1076,10 @@ Token cost is minimal (~100-200 tokens for a git clone). Optimize later only if 
 
 ### Phase 5+: Extensions
 
+- Claude-driven director (autonomous PM)
 - GitLab director
-- Web dashboard aggregating status
 - mDNS discovery
 - Multi-VM coordination
-- Claude-driven director (autonomous PM)
 
 ---
 

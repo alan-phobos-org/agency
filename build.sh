@@ -8,8 +8,8 @@ case "${1:-help}" in
     build)
         echo "Building agency $VERSION..."
         go build -ldflags "$LDFLAGS" -o bin/agency ./cmd/agency
-        go build -ldflags "$LDFLAGS" -o bin/claude-agent ./cmd/claude-agent
-        go build -ldflags "$LDFLAGS" -o bin/cli-director ./cmd/cli-director
+        go build -ldflags "$LDFLAGS" -o bin/ag-agent-claude ./cmd/ag-agent-claude
+        go build -ldflags "$LDFLAGS" -o bin/ag-director-cli ./cmd/ag-director-cli
         ;;
     test)
         echo "Running unit tests..."

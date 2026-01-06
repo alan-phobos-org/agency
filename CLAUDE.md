@@ -34,9 +34,9 @@ All three must pass before committing.
 ```
 agency/
 ├── cmd/
-│   ├── agency/        # CLI tool (fleet management, stub)
-│   ├── claude-agent/  # Agent binary
-│   └── cli-director/  # Director binary
+│   ├── agency/           # CLI tool (fleet management, stub)
+│   ├── ag-agent-claude/  # Agent binary
+│   └── ag-director-cli/  # Director binary
 ├── internal/
 │   ├── agent/      # Agent logic + REST API handlers
 │   ├── config/     # YAML parsing, validation

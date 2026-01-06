@@ -36,6 +36,6 @@ Commands:
   help       Show this help
 
 Binaries:
-  claude-agent   Run the agent server
-  cli-director   Run the CLI director`)
+  ag-agent-claude   Run the agent server
+  ag-director-cli   Run the CLI director`)
 }

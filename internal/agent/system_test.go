@@ -37,7 +37,7 @@ func buildBinaries(t *testing.T) string {
 	require.NoError(t, err, "Failed to build binaries: %s", output)
 
 	// Verify binaries exist
-	for _, bin := range []string{"claude-agent", "cli-director"} {
+	for _, bin := range []string{"ag-agent-claude", "ag-director-cli"} {
 		binPath := filepath.Join(binDir, bin)
 		_, err := os.Stat(binPath)
 		require.NoError(t, err, "Binary not found: %s", binPath)
@@ -46,11 +46,11 @@ func buildBinaries(t *testing.T) string {
 	return binDir
 }
 
-// startAgent starts the claude-agent binary as a subprocess
+// startAgent starts the ag-agent-claude binary as a subprocess
 func startAgent(t *testing.T, binDir string, port int, mockClaudePath string) *exec.Cmd {
 	t.Helper()
 
-	agentBin := filepath.Join(binDir, "claude-agent")
+	agentBin := filepath.Join(binDir, "ag-agent-claude")
 	cmd := exec.Command(agentBin, "-port", fmt.Sprintf("%d", port))
 	cmd.Env = append(os.Environ(), "CLAUDE_BIN="+mockClaudePath)
 	cmd.Stdout = os.Stderr // Forward to test output
@@ -62,11 +62,11 @@ func startAgent(t *testing.T, binDir string, port int, mockClaudePath string) *e
 	return cmd
 }
 
-// runDirector runs the cli-director binary and returns its output
+// runDirector runs the ag-director-cli binary and returns its output
 func runDirector(t *testing.T, binDir string, agentURL, prompt, workdir string, timeout time.Duration) (string, error) {
 	t.Helper()
 
-	directorBin := filepath.Join(binDir, "cli-director")
+	directorBin := filepath.Join(binDir, "ag-director-cli")
 	ctx, cancel := context.WithTimeout(context.Background(), timeout+5*time.Second)
 	defer cancel()
 
@@ -85,11 +85,11 @@ func runDirector(t *testing.T, binDir string, agentURL, prompt, workdir string, 
 	return stdout.String() + stderr.String(), err
 }
 
-// runDirectorStatus runs the cli-director binary with -status flag
+// runDirectorStatus runs the ag-director-cli binary with -status flag
 func runDirectorStatus(t *testing.T, binDir, agentURL string) (string, error) {
 	t.Helper()
 
-	directorBin := filepath.Join(binDir, "cli-director")
+	directorBin := filepath.Join(binDir, "ag-director-cli")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -249,7 +249,7 @@ claude:
 	require.NoError(t, err)
 
 	// Start agent with config file
-	agentBin := filepath.Join(binDir, "claude-agent")
+	agentBin := filepath.Join(binDir, "ag-agent-claude")
 	cmd := exec.Command(agentBin, "-config", configFile)
 	cmd.Env = append(os.Environ(), "CLAUDE_BIN="+mockClaude)
 	cmd.Stdout = os.Stderr
