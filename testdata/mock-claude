@@ -1,0 +1,5 @@
+#!/bin/bash
+# Mock Claude CLI for testing
+# Returns a successful JSON response
+
+echo '{"session_id":"test-session-001","result":"Task completed successfully. I made the requested changes.","exit_code":0,"usage":{"input_tokens":1000,"output_tokens":500}}'

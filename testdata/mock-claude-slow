@@ -1,0 +1,4 @@
+#!/bin/bash
+# Mock Claude CLI that sleeps for 10 seconds (for cancellation testing)
+sleep 10
+echo '{"session_id":"test-session-slow","result":"Slow task completed.","exit_code":0,"usage":{"input_tokens":100,"output_tokens":50}}'
