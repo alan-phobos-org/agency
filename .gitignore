@@ -3,7 +3,7 @@
 .env.*
 
 # Build artifacts
-bin/
+bin
 
 # Go
 *.exe
