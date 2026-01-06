@@ -153,3 +153,7 @@ Logs written to `deployment/*.log`, PIDs tracked in `deployment/agency.pids`.
 - No task history persistence
 - No structured logging (stderr only)
 - Web director is stateless (task-to-agent mapping in browser)
+
+## Additional Notes
+
+This repository was successfully cloned and modified using Claude Code.
