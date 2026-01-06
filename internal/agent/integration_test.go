@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -162,4 +163,79 @@ func TestIntegrationTaskCancellation(t *testing.T) {
 		state := statusResp.Value("state").String().Raw()
 		return state == "idle"
 	})
+}
+
+func TestIntegrationPromptWithDashes(t *testing.T) {
+	// Test that prompts starting with dashes are handled correctly
+	// and not interpreted as CLI flags
+	projectRoot, err := filepath.Abs("../../")
+	require.NoError(t, err)
+	mockClaude := filepath.Join(projectRoot, "testdata", "mock-claude-args")
+
+	_, err = os.Stat(mockClaude)
+	require.NoError(t, err, "mock-claude-args not found at %s", mockClaude)
+
+	t.Setenv("CLAUDE_BIN", mockClaude)
+
+	port := testutil.AllocateTestPort(t)
+	cfg := &config.Config{
+		Port:     port,
+		LogLevel: "debug",
+		Claude: config.ClaudeConfig{
+			Model:   "sonnet",
+			Timeout: 30 * time.Second,
+		},
+	}
+
+	agent := New(cfg, "test")
+	agentURL := fmt.Sprintf("http://localhost:%d", port)
+
+	go agent.Start()
+	testutil.WaitForHealthy(t, agentURL+"/status", 5*time.Second)
+
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		agent.Shutdown(ctx)
+	}()
+
+	workdir := t.TempDir()
+
+	// Create a file to capture the prompt
+	promptFile := filepath.Join(workdir, "captured_prompt.txt")
+	t.Setenv("MOCK_CLAUDE_OUTPUT", promptFile)
+
+	// Test prompts that could be misinterpreted as flags
+	tests := []struct {
+		name   string
+		prompt string
+	}{
+		{
+			name:   "prompt with leading dash",
+			prompt: "- clone https://github.com/example/repo",
+		},
+		{
+			name:   "prompt with bullet points",
+			prompt: "- clone repo\n- remove file\n- commit and push",
+		},
+		{
+			name:   "prompt starting with double dash",
+			prompt: "--help me understand this code",
+		},
+	}
+
+	director := cli.New(agentURL)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := director.Run(tt.prompt, workdir, 30*time.Second)
+			require.NoError(t, err)
+			require.Equal(t, "completed", result.State)
+
+			// Verify the prompt was received correctly by the mock
+			captured, err := os.ReadFile(promptFile)
+			require.NoError(t, err)
+			require.Equal(t, tt.prompt, strings.TrimSpace(string(captured)))
+		})
+	}
 }

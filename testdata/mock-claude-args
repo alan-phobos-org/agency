@@ -1,0 +1,38 @@
+#!/bin/bash
+# Mock Claude CLI that captures args for testing
+# Writes the received prompt to a file for verification
+
+PROMPT=""
+CAPTURE_NEXT=false
+
+for arg in "$@"; do
+    if [ "$CAPTURE_NEXT" = true ]; then
+        PROMPT="$arg"
+        break
+    fi
+    if [ "$arg" = "--" ]; then
+        CAPTURE_NEXT=true
+    fi
+done
+
+# If no -- separator was used, try to get prompt after -p
+if [ -z "$PROMPT" ]; then
+    CAPTURE_NEXT=false
+    for arg in "$@"; do
+        if [ "$CAPTURE_NEXT" = true ]; then
+            PROMPT="$arg"
+            break
+        fi
+        if [ "$arg" = "-p" ]; then
+            CAPTURE_NEXT=true
+        fi
+    done
+fi
+
+# Write prompt to file specified by MOCK_CLAUDE_OUTPUT env var
+if [ -n "$MOCK_CLAUDE_OUTPUT" ]; then
+    echo "$PROMPT" > "$MOCK_CLAUDE_OUTPUT"
+fi
+
+# Return success with the captured prompt in the result
+echo "{\"session_id\":\"test-session-args\",\"result\":\"Prompt received: $PROMPT\",\"exit_code\":0,\"usage\":{\"input_tokens\":100,\"output_tokens\":50}}"

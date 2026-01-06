@@ -10,6 +10,7 @@ case "${1:-help}" in
         go build -ldflags "$LDFLAGS" -o bin/agency ./cmd/agency
         go build -ldflags "$LDFLAGS" -o bin/ag-agent-claude ./cmd/ag-agent-claude
         go build -ldflags "$LDFLAGS" -o bin/ag-director-cli ./cmd/ag-director-cli
+        go build -ldflags "$LDFLAGS" -o bin/ag-director-web ./cmd/ag-director-web
         ;;
     test)
         echo "Running unit tests..."

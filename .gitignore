@@ -24,3 +24,7 @@ bin
 # OS
 .DS_Store
 Thumbs.db
+
+# Deployment runtime files
+deployment/*.pids
+deployment/*.log

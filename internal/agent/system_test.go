@@ -5,6 +5,7 @@ package agent
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -37,7 +38,7 @@ func buildBinaries(t *testing.T) string {
 	require.NoError(t, err, "Failed to build binaries: %s", output)
 
 	// Verify binaries exist
-	for _, bin := range []string{"ag-agent-claude", "ag-director-cli"} {
+	for _, bin := range []string{"ag-agent-claude", "ag-director-cli", "ag-director-web"} {
 		binPath := filepath.Join(binDir, bin)
 		_, err := os.Stat(binPath)
 		require.NoError(t, err, "Binary not found: %s", binPath)
@@ -405,4 +406,258 @@ func TestSystemConcurrentTaskRejection(t *testing.T) {
 	body, _ := io.ReadAll(resp2.Body)
 	resp2.Body.Close()
 	require.True(t, strings.Contains(string(body), "busy") || strings.Contains(string(body), "already processing"))
+}
+
+// startWebDirector starts the ag-director-web binary as a subprocess
+func startWebDirector(t *testing.T, binDir string, port, agentPort int, token string) *exec.Cmd {
+	t.Helper()
+
+	tmpDir := t.TempDir()
+
+	webBin := filepath.Join(binDir, "ag-director-web")
+	cmd := exec.Command(webBin,
+		"-port", fmt.Sprintf("%d", port),
+		"-bind", "127.0.0.1",
+		"-port-start", fmt.Sprintf("%d", agentPort),
+		"-port-end", fmt.Sprintf("%d", agentPort),
+	)
+	cmd.Env = append(os.Environ(),
+		"AG_WEB_TOKEN="+token,
+		"AGENCY_ROOT="+tmpDir,
+	)
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+
+	err := cmd.Start()
+	require.NoError(t, err, "Failed to start web director")
+
+	return cmd
+}
+
+// waitForHTTPS waits for an HTTPS endpoint to become healthy
+func waitForHTTPS(t *testing.T, url string, timeout time.Duration) {
+	t.Helper()
+
+	// Create client that skips TLS verification (for self-signed certs)
+	client := &http.Client{
+		Timeout: 500 * time.Millisecond,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		resp, err := client.Get(url)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			resp.Body.Close()
+			return
+		}
+		if resp != nil {
+			resp.Body.Close()
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	t.Fatalf("Service at %s did not become healthy within %v", url, timeout)
+}
+
+func TestSystemWebDirectorDiscovery(t *testing.T) {
+	binDir := buildBinaries(t)
+
+	projectRoot, err := filepath.Abs("../../")
+	require.NoError(t, err)
+	mockClaude := filepath.Join(projectRoot, "testdata", "mock-claude")
+
+	// Start agent
+	agentPort := testutil.AllocateTestPort(t)
+	agentURL := fmt.Sprintf("http://localhost:%d", agentPort)
+	agentCmd := startAgent(t, binDir, agentPort, mockClaude)
+
+	defer func() {
+		if agentCmd.Process != nil {
+			agentCmd.Process.Signal(syscall.SIGTERM)
+			agentCmd.Wait()
+		}
+	}()
+
+	testutil.WaitForHealthy(t, agentURL+"/status", 10*time.Second)
+	t.Log("Agent is healthy")
+
+	// Start web director
+	webPort := testutil.AllocateTestPort(t) + 1000 // Offset to avoid collision
+	token := "test-system-token"
+	webURL := fmt.Sprintf("https://localhost:%d", webPort)
+	webCmd := startWebDirector(t, binDir, webPort, agentPort, token)
+
+	defer func() {
+		if webCmd.Process != nil {
+			webCmd.Process.Signal(syscall.SIGTERM)
+			webCmd.Wait()
+		}
+	}()
+
+	// Wait for web director to be ready
+	waitForHTTPS(t, webURL+"/status", 15*time.Second)
+	t.Log("Web director is healthy")
+
+	// Create HTTPS client
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	// Test 1: Status endpoint (no auth required)
+	t.Log("Testing status endpoint...")
+	resp, err := client.Get(webURL + "/status")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var status map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&status)
+	require.Equal(t, []interface{}{"director"}, status["roles"])
+
+	// Test 2: API requires auth
+	t.Log("Testing auth required...")
+	resp2, err := client.Get(webURL + "/api/agents")
+	require.NoError(t, err)
+	resp2.Body.Close()
+	require.Equal(t, http.StatusUnauthorized, resp2.StatusCode)
+
+	// Test 3: Auth with token works
+	t.Log("Testing auth with token...")
+	resp3, err := client.Get(webURL + "/api/agents?token=" + token)
+	require.NoError(t, err)
+	defer resp3.Body.Close()
+	require.Equal(t, http.StatusOK, resp3.StatusCode)
+
+	// Wait for discovery to find the agent
+	t.Log("Waiting for discovery to find agent...")
+	time.Sleep(2 * time.Second)
+
+	// Test 4: Discovery finds the agent
+	resp4, err := client.Get(webURL + "/api/agents?token=" + token)
+	require.NoError(t, err)
+	defer resp4.Body.Close()
+
+	var agents []map[string]interface{}
+	json.NewDecoder(resp4.Body).Decode(&agents)
+	require.GreaterOrEqual(t, len(agents), 1, "Should discover agent")
+
+	// Find our agent
+	found := false
+	for _, agent := range agents {
+		if agent["url"] == agentURL {
+			found = true
+			require.Equal(t, "idle", agent["state"])
+			break
+		}
+	}
+	require.True(t, found, "Should find our specific agent")
+	t.Log("Agent discovered successfully")
+
+	// Test 5: Dashboard serves HTML
+	t.Log("Testing dashboard...")
+	resp5, err := client.Get(webURL + "/?token=" + token)
+	require.NoError(t, err)
+	defer resp5.Body.Close()
+	require.Equal(t, http.StatusOK, resp5.StatusCode)
+	require.Contains(t, resp5.Header.Get("Content-Type"), "text/html")
+}
+
+func TestSystemWebDirectorTaskSubmission(t *testing.T) {
+	binDir := buildBinaries(t)
+
+	projectRoot, err := filepath.Abs("../../")
+	require.NoError(t, err)
+	mockClaude := filepath.Join(projectRoot, "testdata", "mock-claude")
+
+	// Start agent
+	agentPort := testutil.AllocateTestPort(t)
+	agentURL := fmt.Sprintf("http://localhost:%d", agentPort)
+	agentCmd := startAgent(t, binDir, agentPort, mockClaude)
+
+	defer func() {
+		if agentCmd.Process != nil {
+			agentCmd.Process.Signal(syscall.SIGTERM)
+			agentCmd.Wait()
+		}
+	}()
+
+	testutil.WaitForHealthy(t, agentURL+"/status", 10*time.Second)
+
+	// Start web director
+	webPort := testutil.AllocateTestPort(t) + 2000 // Offset to avoid collision
+	token := "test-task-token"
+	webURL := fmt.Sprintf("https://localhost:%d", webPort)
+	webCmd := startWebDirector(t, binDir, webPort, agentPort, token)
+
+	defer func() {
+		if webCmd.Process != nil {
+			webCmd.Process.Signal(syscall.SIGTERM)
+			webCmd.Wait()
+		}
+	}()
+
+	waitForHTTPS(t, webURL+"/status", 15*time.Second)
+
+	// Wait for discovery
+	time.Sleep(2 * time.Second)
+
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	// Submit task via web director
+	workdir := t.TempDir()
+	taskReq := map[string]interface{}{
+		"agent_url": agentURL,
+		"prompt":    "System test task via web director",
+		"workdir":   workdir,
+	}
+	taskBody, _ := json.Marshal(taskReq)
+
+	req, _ := http.NewRequest("POST", webURL+"/api/task?token="+token, bytes.NewReader(taskBody))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+
+	var taskResp map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&taskResp)
+	taskID := taskResp["task_id"].(string)
+	require.NotEmpty(t, taskID)
+	t.Logf("Task submitted: %s", taskID)
+
+	// Poll for completion via web director
+	deadline := time.Now().Add(30 * time.Second)
+	var finalState string
+	for time.Now().Before(deadline) {
+		statusURL := fmt.Sprintf("%s/api/task/%s?token=%s&agent_url=%s",
+			webURL, taskID, token, agentURL)
+		resp, err := client.Get(statusURL)
+		require.NoError(t, err)
+
+		var status map[string]interface{}
+		json.NewDecoder(resp.Body).Decode(&status)
+		resp.Body.Close()
+
+		state := status["state"].(string)
+		if state == "completed" || state == "failed" {
+			finalState = state
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	require.Equal(t, "completed", finalState, "Task should complete successfully")
+	t.Log("Task completed successfully via web director")
 }

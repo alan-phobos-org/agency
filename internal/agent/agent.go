@@ -226,10 +226,12 @@ func (a *Agent) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check workdir exists
+	// Create workdir if it doesn't exist
 	if _, err := os.Stat(req.Workdir); os.IsNotExist(err) {
-		writeError(w, http.StatusBadRequest, "validation_error", "workdir does not exist: "+req.Workdir)
-		return
+		if err := os.MkdirAll(req.Workdir, 0755); err != nil {
+			writeError(w, http.StatusBadRequest, "validation_error", "failed to create workdir: "+err.Error())
+			return
+		}
 	}
 
 	a.mu.Lock()
@@ -425,14 +427,7 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 		claudeBin = "claude"
 	}
 
-	args := []string{
-		"--print",
-		"--dangerously-skip-permissions",
-		"--model", task.Model,
-		"--output-format", "json",
-		"--max-turns", "50",
-		"-p", task.Prompt,
-	}
+	args := buildClaudeArgs(task)
 
 	cmd := exec.CommandContext(ctx, claudeBin, args...)
 	cmd.Dir = task.Workdir
@@ -523,6 +518,22 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 
 	a.state = StateIdle
 	a.currentTask = nil
+}
+
+// buildClaudeArgs constructs the command-line arguments for the Claude CLI.
+// It uses "--" to separate options from the prompt, preventing prompts that
+// start with dashes from being interpreted as flags.
+func buildClaudeArgs(task *Task) []string {
+	return []string{
+		"--print",
+		"--dangerously-skip-permissions",
+		"--model", task.Model,
+		"--output-format", "json",
+		"--max-turns", "50",
+		"-p",
+		"--", // End of options - prompt follows
+		task.Prompt,
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
