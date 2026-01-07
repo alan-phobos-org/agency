@@ -21,15 +21,18 @@ type Config struct {
 	PortEnd         int    // Discovery port range end
 	RefreshInterval time.Duration
 	TLS             TLSConfig
+	AccessLogPath   string // Path for access log file (empty = no logging)
 }
 
 // Director is the web director server
 type Director struct {
-	config    *Config
-	version   string
-	discovery *Discovery
-	handlers  *Handlers
-	server    *http.Server
+	config       *Config
+	version      string
+	discovery    *Discovery
+	handlers     *Handlers
+	server       *http.Server
+	rateLimiter  *RateLimiter
+	accessLogger *AccessLogger
 }
 
 // New creates a new web director
@@ -61,11 +64,27 @@ func New(cfg *Config, version string) (*Director, error) {
 		return nil, err
 	}
 
+	// Create rate limiter for auth protection
+	rateLimiter := NewRateLimiter()
+
+	// Create access logger if path configured
+	var accessLogger *AccessLogger
+	if cfg.AccessLogPath != "" {
+		var err error
+		accessLogger, err = NewAccessLogger(cfg.AccessLogPath)
+		if err != nil {
+			return nil, fmt.Errorf("creating access logger: %w", err)
+		}
+		fmt.Fprintf(os.Stderr, "Access logging enabled: %s\n", cfg.AccessLogPath)
+	}
+
 	return &Director{
-		config:    cfg,
-		version:   version,
-		discovery: discovery,
-		handlers:  handlers,
+		config:       cfg,
+		version:      version,
+		discovery:    discovery,
+		handlers:     handlers,
+		rateLimiter:  rateLimiter,
+		accessLogger: accessLogger,
 	}, nil
 }
 
@@ -78,10 +97,13 @@ func (d *Director) Router() chi.Router {
 	// Universal endpoint (no auth needed for /status - used by discovery)
 	r.Get("/status", d.handlers.HandleStatus)
 
-	// Protected routes
+	// Protected routes with rate limiting and access logging
 	protected := r.Group(nil)
 	if d.config.Token != "" {
-		protected.Use(AuthMiddleware(d.config.Token))
+		protected.Use(AuthMiddlewareWithLogging(d.config.Token, d.rateLimiter, d.accessLogger))
+	} else if d.accessLogger != nil {
+		// Log access even without auth
+		protected.Use(AuthMiddlewareWithLogging("", nil, d.accessLogger))
 	}
 
 	// Dashboard
@@ -96,6 +118,14 @@ func (d *Director) Router() chi.Router {
 		r.Get("/task/{id}", func(w http.ResponseWriter, r *http.Request) {
 			taskID := chi.URLParam(r, "id")
 			d.handlers.HandleTaskStatus(w, r, taskID)
+		})
+		// Session endpoints for global session tracking
+		r.Get("/sessions", d.handlers.HandleSessions)
+		r.Post("/sessions", d.handlers.HandleAddSessionTask)
+		r.Put("/sessions/{sessionId}/tasks/{taskId}", func(w http.ResponseWriter, r *http.Request) {
+			sessionID := chi.URLParam(r, "sessionId")
+			taskID := chi.URLParam(r, "taskId")
+			d.handlers.HandleUpdateSessionTask(w, r, sessionID, taskID)
 		})
 	})
 
@@ -134,6 +164,9 @@ func (d *Director) Start() error {
 // Shutdown gracefully shuts down the director
 func (d *Director) Shutdown(ctx context.Context) error {
 	d.discovery.Stop()
+	if d.accessLogger != nil {
+		d.accessLogger.Close()
+	}
 	if d.server != nil {
 		return d.server.Shutdown(ctx)
 	}

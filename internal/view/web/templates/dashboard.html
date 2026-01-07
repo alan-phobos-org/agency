@@ -151,14 +151,58 @@
     // Tracked task for monitoring
     let activeTask = null;
 
-    // Clear stale sessions on page load (refresh clears cache)
-    localStorage.removeItem('agency_sessions');
+    // Sessions storage - fetched from server for global access
+    let sessions = {};
 
-    // Sessions storage: { sessionId: { agentUrl, tasks: [{taskId, state, prompt}], createdAt } }
-    const sessions = {};
+    // Load sessions from server
+    async function loadSessions() {
+      try {
+        const serverSessions = await api('/api/sessions');
+        sessions = {};
+        for (const s of serverSessions) {
+          sessions[s.id] = {
+            agentUrl: s.agent_url,
+            tasks: s.tasks ? s.tasks.map(t => ({
+              taskId: t.task_id,
+              state: t.state,
+              prompt: t.prompt
+            })) : [],
+            createdAt: s.created_at
+          };
+        }
+      } catch (err) {
+        console.error('Failed to load sessions:', err);
+      }
+    }
 
-    function saveSessions() {
-      localStorage.setItem('agency_sessions', JSON.stringify(sessions));
+    // Save task to server session
+    async function saveSessionTask(sessionId, agentUrl, taskId, state, prompt) {
+      try {
+        await api('/api/sessions', {
+          method: 'POST',
+          body: JSON.stringify({
+            session_id: sessionId,
+            agent_url: agentUrl,
+            task_id: taskId,
+            state: state,
+            prompt: prompt
+          })
+        });
+      } catch (err) {
+        console.error('Failed to save session task:', err);
+      }
+    }
+
+    // Update task state on server
+    async function updateSessionTaskState(sessionId, taskId, state) {
+      try {
+        await api(`/api/sessions/${sessionId}/tasks/${taskId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ state: state })
+        });
+      } catch (err) {
+        console.error('Failed to update session task state:', err);
+      }
     }
 
     // API helper
@@ -319,7 +363,8 @@
       try {
         const [agents, directors] = await Promise.all([
           api('/api/agents'),
-          api('/api/directors')
+          api('/api/directors'),
+          loadSessions()
         ]);
 
         // Update agent grid
@@ -399,12 +444,16 @@
 
         // Update session state if completed
         if (['completed', 'failed', 'cancelled'].includes(status.state)) {
-          if (activeTask.sessionId && sessions[activeTask.sessionId]) {
-            const session = sessions[activeTask.sessionId];
-            const taskEntry = session.tasks.find(t => t.taskId === activeTask.taskId);
-            if (taskEntry) {
-              taskEntry.state = status.state;
-              saveSessions();
+          if (activeTask.sessionId) {
+            // Update on server
+            await updateSessionTaskState(activeTask.sessionId, activeTask.taskId, status.state);
+            // Update local cache
+            if (sessions[activeTask.sessionId]) {
+              const session = sessions[activeTask.sessionId];
+              const taskEntry = session.tasks.find(t => t.taskId === activeTask.taskId);
+              if (taskEntry) {
+                taskEntry.state = status.state;
+              }
             }
           }
           activeTask = null;
@@ -455,14 +504,15 @@
         result.className = 'mt-3 alert alert-success show';
         result.textContent = `Task submitted: ${resp.task_id} (session: ${resp.session_id ? resp.session_id.slice(0, 8) + '...' : 'new'})`;
 
-        // Track session
+        // Track session on server
         const sid = resp.session_id;
         if (sid) {
+          await saveSessionTask(sid, agentUrl, resp.task_id, resp.status || 'working', prompt);
+          // Update local cache
           if (!sessions[sid]) {
             sessions[sid] = { agentUrl: agentUrl, tasks: [], createdAt: new Date().toISOString() };
           }
-          sessions[sid].tasks.push({ taskId: resp.task_id, state: 'queued', prompt: prompt });
-          saveSessions();
+          sessions[sid].tasks.push({ taskId: resp.task_id, state: resp.status || 'working', prompt: prompt });
         }
 
         // Start monitoring
@@ -473,6 +523,12 @@
 
         // Refresh to show agent as busy
         await refresh();
+
+        // IMPORTANT: After refresh, select the session we just used/created
+        // This ensures subsequent tasks go to the same session
+        if (sid) {
+          document.getElementById('sessionSelect').value = sid;
+        }
       } catch (err) {
         result.className = 'mt-3 alert alert-danger show';
         result.textContent = `Error: ${err.message}`;

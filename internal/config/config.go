@@ -10,11 +10,12 @@ import (
 
 // Config represents the agent configuration
 type Config struct {
-	Port       int             `yaml:"port"`
-	LogLevel   string          `yaml:"log_level"`
-	SessionDir string          `yaml:"session_dir"` // Base directory for session workspaces
-	Claude     ClaudeConfig    `yaml:"claude"`
-	Projects   []ProjectConfig `yaml:"projects,omitempty"`
+	Port          int             `yaml:"port"`
+	LogLevel      string          `yaml:"log_level"`
+	SessionDir    string          `yaml:"session_dir"`    // Base directory for session workspaces
+	PrepromptFile string          `yaml:"preprompt_file"` // Optional path to custom preprompt file
+	Claude        ClaudeConfig    `yaml:"claude"`
+	Projects      []ProjectConfig `yaml:"projects,omitempty"`
 }
 
 // ProjectConfig defines a project context that can be prepended to task prompts

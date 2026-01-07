@@ -105,10 +105,13 @@ Web View: Status dashboard and task submission UI.
 ### Web View Features
 - HTTPS with auto-generated self-signed certificates
 - Token-based authentication (header or query param)
+- IP rate limiting (10 failed attempts = 1 hour block)
+- Access logging (optional, via `-access-log` flag)
 - Port scanning discovery of agents and directors
 - Real-time status updates (1-second polling)
 - Task submission form with model/timeout selection
 - Task monitoring with output display
+- Global sessions (server-side storage, shared across all UI views)
 
 ### Web View Endpoints
 - `GET /status` - Universal status endpoint (no auth)
@@ -117,6 +120,9 @@ Web View: Status dashboard and task submission UI.
 - `GET /api/directors` - List discovered directors
 - `POST /api/task` - Submit task to selected agent (supports session_id)
 - `GET /api/task/:id` - Get task status (requires agent_url param)
+- `GET /api/sessions` - List all sessions (global across views)
+- `POST /api/sessions` - Add task to session
+- `PUT /api/sessions/:id/tasks/:taskId` - Update task state
 
 ### Running the Web View
 ```bash
@@ -128,6 +134,9 @@ Web View: Status dashboard and task submission UI.
 
 # Token from environment or .env file
 AG_WEB_TOKEN=your-secret-token ./bin/ag-view-web
+
+# With access logging enabled
+./bin/ag-view-web -access-log /var/log/agency/access.log
 ```
 
 Access dashboard at `https://localhost:8443/?token=your-token`
@@ -159,6 +168,8 @@ Components have embedded CLAUDE.md files that are prepended to all prompts:
 - `internal/agent/claude.md` - Agent instructions (git commit rules, etc.)
 - `internal/director/claude.md` - Director instructions
 These ensure consistent behavior across all Claude invocations.
+
+Custom preprompt can be loaded from file via `preprompt_file` in agent config (falls back to embedded default).
 
 ### Project Context
 Tasks can include project context prepended to prompt:
@@ -193,4 +204,4 @@ Logs written to `deployment/*.log`, PIDs tracked in `deployment/agency.pids`.
 - Single-task agent (returns 409 if busy)
 - No task history persistence
 - No structured logging (stderr only)
-- Web view is stateless (session/task mapping in browser localStorage)
+- Session data stored in memory (not persisted across web view restarts)

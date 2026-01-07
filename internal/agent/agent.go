@@ -118,6 +118,7 @@ type Agent struct {
 	config    *config.Config
 	version   string
 	startTime time.Time
+	preprompt string // Preprompt instructions loaded at startup
 
 	mu          sync.RWMutex
 	state       State
@@ -130,10 +131,22 @@ type Agent struct {
 
 // New creates a new Agent
 func New(cfg *config.Config, version string) *Agent {
+	// Load preprompt: try custom file first, fallback to embedded default
+	preprompt := agentClaudeMD
+	if cfg.PrepromptFile != "" {
+		if data, err := os.ReadFile(cfg.PrepromptFile); err == nil {
+			preprompt = string(data)
+			fmt.Fprintf(os.Stderr, "Loaded preprompt from %s\n", cfg.PrepromptFile)
+		} else {
+			fmt.Fprintf(os.Stderr, "Warning: failed to load preprompt file %s: %v (using default)\n", cfg.PrepromptFile, err)
+		}
+	}
+
 	return &Agent{
 		config:    cfg,
 		version:   version,
 		startTime: time.Now(),
+		preprompt: preprompt,
 		state:     StateIdle,
 		tasks:     make(map[string]*Task),
 		shutdown:  make(chan struct{}),
@@ -289,7 +302,7 @@ func (a *Agent) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"task_id":    task.ID,
 		"session_id": task.SessionID,
-		"status":     "queued",
+		"status":     "working",
 	})
 }
 
@@ -457,7 +470,7 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 		claudeBin = "claude"
 	}
 
-	args := buildClaudeArgs(task)
+	args := a.buildClaudeArgs(task)
 
 	cmd := exec.CommandContext(ctx, claudeBin, args...)
 	cmd.Dir = workDir
@@ -556,7 +569,7 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 // buildClaudeArgs constructs the command-line arguments for the Claude CLI.
 // It uses "--" to separate options from the prompt, preventing prompts that
 // start with dashes from being interpreted as flags.
-func buildClaudeArgs(task *Task) []string {
+func (a *Agent) buildClaudeArgs(task *Task) []string {
 	args := []string{
 		"--print",
 		"--dangerously-skip-permissions",
@@ -577,9 +590,9 @@ func buildClaudeArgs(task *Task) []string {
 	}
 
 	// Build prompt with agent instructions and optional project context prepended
-	prompt := agentClaudeMD + "\n\n" + task.Prompt
+	prompt := a.preprompt + "\n\n" + task.Prompt
 	if task.Project != nil && task.Project.Prompt != "" {
-		prompt = agentClaudeMD + "\n\n" + task.Project.Prompt + "\n\n" + task.Prompt
+		prompt = a.preprompt + "\n\n" + task.Project.Prompt + "\n\n" + task.Prompt
 	}
 
 	args = append(args, "-p", "--", prompt)

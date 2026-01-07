@@ -505,30 +505,31 @@ agency/
 ├── go.mod                # Single module
 ├── go.sum
 ├── cmd/
-│   ├── agency/              # CLI tool (fleet management, stub)
-│   │   └── main.go
 │   ├── ag-agent-claude/     # Agent binary
 │   │   └── main.go
-│   ├── ag-director-cli/     # CLI director binary
+│   ├── ag-cli/              # CLI tool (task, status, discover)
 │   │   └── main.go
-│   └── ag-director-web/     # Web director binary
+│   └── ag-view-web/         # Web view binary
 │       └── main.go
+├── deployment/              # Local and remote deployment scripts
 ├── internal/
-│   ├── agent/            # Agent logic + HTTP handlers
+│   ├── agent/            # Agent logic + REST API handlers
+│   ├── api/              # Shared types and constants
 │   ├── config/           # YAML parsing, validation
-│   ├── director/         # Director implementations
-│   │   ├── cli/          # CLI director (Phase 1)
-│   │   └── web/          # Web director (Phase 1.1)
+│   ├── director/
+│   │   └── cli/          # CLI director client logic
+│   ├── view/
+│   │   └── web/          # Web view (dashboard + discovery)
 │   └── testutil/         # Shared test helpers
 └── testdata/             # Test fixtures and mock scripts
     ├── configs/          # Test config files
-    ├── mock-claude       # Fast mock for tests
-    └── mock-claude-slow  # Slow mock for timeout tests
+    └── mock-claude*      # Mock Claude scripts for tests
 ```
 
 **Future packages (Phase 2+):**
 - `internal/director/github/` - GitHub director
 - `internal/director/scheduler/` - Cron-based director
+- `internal/sandbox/` - Agent sandbox isolation
 
 ### Versioning Strategy
 

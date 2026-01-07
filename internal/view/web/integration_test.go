@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -352,4 +353,880 @@ func TestIntegrationDiscoveryPolling(t *testing.T) {
 	// Agent should still be discovered (hasn't failed 3 times)
 	agents = d.Agents()
 	require.Len(t, agents, 1)
+}
+
+// TestIntegrationRateLimiting tests that rate limiting blocks IPs after too many failed attempts
+func TestIntegrationRateLimiting(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	tmpDir := t.TempDir()
+	certPath := filepath.Join(tmpDir, "cert.pem")
+	keyPath := filepath.Join(tmpDir, "key.pem")
+
+	cfg := &Config{
+		Port:            0,
+		Bind:            "127.0.0.1",
+		Token:           "secret-token",
+		PortStart:       59000, // Use high ports to avoid conflicts
+		PortEnd:         59000,
+		RefreshInterval: time.Hour, // Disable polling
+		TLS: TLSConfig{
+			CertFile:     certPath,
+			KeyFile:      keyPath,
+			AutoGenerate: true,
+		},
+	}
+
+	d, err := New(cfg, "test-rate-limit")
+	require.NoError(t, err)
+
+	ts := httptest.NewServer(d.Router())
+	defer ts.Close()
+
+	client := ts.Client()
+
+	// Make requests with wrong token to trigger rate limiting
+	// Set X-Real-IP to simulate consistent client IP
+	testIP := "192.168.100.100"
+	for i := 0; i < maxFailedAttempts; i++ {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/agents", nil)
+		req.Header.Set("Authorization", "Bearer wrong-token")
+		req.Header.Set("X-Real-IP", testIP)
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		resp.Body.Close()
+
+		if i < maxFailedAttempts-1 {
+			require.Equal(t, http.StatusUnauthorized, resp.StatusCode,
+				"Request %d should be unauthorized", i+1)
+		}
+	}
+
+	// Next request should be rate limited (even with correct token)
+	req, _ := http.NewRequest("GET", ts.URL+"/api/agents", nil)
+	req.Header.Set("Authorization", "Bearer secret-token")
+	req.Header.Set("X-Real-IP", testIP)
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusTooManyRequests, resp.StatusCode,
+		"Should be rate limited after %d failed attempts", maxFailedAttempts)
+
+	var errResp map[string]string
+	json.NewDecoder(resp.Body).Decode(&errResp)
+	require.Equal(t, "rate_limited", errResp["error"])
+}
+
+// TestIntegrationAccessLogging tests that access logging writes entries
+func TestIntegrationAccessLogging(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	tmpDir := t.TempDir()
+	certPath := filepath.Join(tmpDir, "cert.pem")
+	keyPath := filepath.Join(tmpDir, "key.pem")
+	accessLogPath := filepath.Join(tmpDir, "access.log")
+
+	cfg := &Config{
+		Port:            0,
+		Bind:            "127.0.0.1",
+		Token:           "secret-token",
+		PortStart:       59001,
+		PortEnd:         59001,
+		RefreshInterval: time.Hour,
+		AccessLogPath:   accessLogPath,
+		TLS: TLSConfig{
+			CertFile:     certPath,
+			KeyFile:      keyPath,
+			AutoGenerate: true,
+		},
+	}
+
+	d, err := New(cfg, "test-access-log")
+	require.NoError(t, err)
+
+	ts := httptest.NewServer(d.Router())
+	defer ts.Close()
+	defer d.Shutdown(context.Background())
+
+	client := ts.Client()
+
+	// Make successful authenticated request
+	req, _ := http.NewRequest("GET", ts.URL+"/api/agents", nil)
+	req.Header.Set("Authorization", "Bearer secret-token")
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// Make failed auth request
+	req2, _ := http.NewRequest("POST", ts.URL+"/api/task", strings.NewReader("{}"))
+	req2.Header.Set("Authorization", "Bearer wrong-token")
+	resp2, err := client.Do(req2)
+	require.NoError(t, err)
+	resp2.Body.Close()
+	require.Equal(t, http.StatusUnauthorized, resp2.StatusCode)
+
+	// Shutdown to flush logs
+	d.Shutdown(context.Background())
+
+	// Read log file
+	data, err := os.ReadFile(accessLogPath)
+	require.NoError(t, err)
+
+	content := string(data)
+	require.Contains(t, content, "auth_ok", "Should log successful auth")
+	require.Contains(t, content, "auth_fail", "Should log failed auth")
+	require.Contains(t, content, "/api/agents", "Should log request path")
+	require.Contains(t, content, "/api/task", "Should log request path")
+}
+
+// TestIntegrationMultiBrowserSession tests that two browsers can add tasks to the same session
+func TestIntegrationMultiBrowserSession(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	// Track session IDs returned by mock agent
+	var agentSessionMu sync.Mutex
+	agentSessionID := ""
+	taskCount := 0
+
+	// Create mock agent that simulates real session behavior
+	mockAgent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/status":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"type":       "agent",
+				"interfaces": []string{"statusable", "taskable"},
+				"version":    "mock-agent-v1",
+				"state":      "idle",
+			})
+		case "/task":
+			if r.Method == "POST" {
+				var req map[string]interface{}
+				json.NewDecoder(r.Body).Decode(&req)
+
+				agentSessionMu.Lock()
+				taskCount++
+				taskID := fmt.Sprintf("task-%d", taskCount)
+
+				// If client provides session_id, use it; otherwise generate new
+				if sid, ok := req["session_id"].(string); ok && sid != "" {
+					agentSessionID = sid
+				} else if agentSessionID == "" {
+					agentSessionID = "agent-generated-session-123"
+				}
+				returnSessionID := agentSessionID
+				agentSessionMu.Unlock()
+
+				w.WriteHeader(http.StatusCreated)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"task_id":    taskID,
+					"session_id": returnSessionID,
+					"status":     "queued",
+				})
+			}
+		default:
+			if strings.HasPrefix(r.URL.Path, "/task/") {
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"task_id": strings.TrimPrefix(r.URL.Path, "/task/"),
+					"state":   "completed",
+				})
+			}
+		}
+	}))
+	defer mockAgent.Close()
+
+	tmpDir := t.TempDir()
+	certPath := filepath.Join(tmpDir, "cert.pem")
+	keyPath := filepath.Join(tmpDir, "key.pem")
+
+	cfg := &Config{
+		Port:            0,
+		Bind:            "127.0.0.1",
+		Token:           "secret-token",
+		PortStart:       59010,
+		PortEnd:         59010,
+		RefreshInterval: time.Hour,
+		TLS: TLSConfig{
+			CertFile:     certPath,
+			KeyFile:      keyPath,
+			AutoGenerate: true,
+		},
+	}
+
+	d, err := New(cfg, "test-multi-browser")
+	require.NoError(t, err)
+
+	// Manually register the mock agent
+	d.discovery.mu.Lock()
+	d.discovery.components[mockAgent.URL] = &ComponentStatus{
+		URL:   mockAgent.URL,
+		Type:  "agent",
+		State: "idle",
+	}
+	d.discovery.mu.Unlock()
+
+	ts := httptest.NewServer(d.Router())
+	defer ts.Close()
+
+	// Create two independent clients (simulating two browsers)
+	browserA := ts.Client()
+	browserB := ts.Client()
+
+	authRequest := func(client *http.Client, method, path string, body string) (*http.Response, error) {
+		var req *http.Request
+		if body != "" {
+			req, _ = http.NewRequest(method, ts.URL+path, strings.NewReader(body))
+		} else {
+			req, _ = http.NewRequest(method, ts.URL+path, nil)
+		}
+		req.Header.Set("Authorization", "Bearer secret-token")
+		req.Header.Set("Content-Type", "application/json")
+		return client.Do(req)
+	}
+
+	t.Run("browser A creates new session, browser B joins same session", func(t *testing.T) {
+		// Browser A: Submit task to agent (creates new session)
+		taskBody := fmt.Sprintf(`{
+			"agent_url": %q,
+			"prompt": "Browser A first task"
+		}`, mockAgent.URL)
+		resp, err := authRequest(browserA, "POST", "/api/task", taskBody)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusCreated, resp.StatusCode)
+
+		var taskResp TaskSubmitResponse
+		json.NewDecoder(resp.Body).Decode(&taskResp)
+		sessionID := taskResp.SessionID
+		require.NotEmpty(t, sessionID, "Agent should return a session ID")
+
+		// Browser A: Save task to web server's session store (simulating dashboard JS)
+		sessionBody := fmt.Sprintf(`{
+			"session_id": %q,
+			"agent_url": %q,
+			"task_id": %q,
+			"state": "working",
+			"prompt": "Browser A first task"
+		}`, sessionID, mockAgent.URL, taskResp.TaskID)
+		resp2, err := authRequest(browserA, "POST", "/api/sessions", sessionBody)
+		require.NoError(t, err)
+		resp2.Body.Close()
+		require.Equal(t, http.StatusCreated, resp2.StatusCode)
+
+		// Browser B: Fetch sessions and see Browser A's session
+		resp3, err := authRequest(browserB, "GET", "/api/sessions", "")
+		require.NoError(t, err)
+		defer resp3.Body.Close()
+
+		var sessions []*Session
+		json.NewDecoder(resp3.Body).Decode(&sessions)
+		require.Len(t, sessions, 1, "Browser B should see 1 session")
+		require.Equal(t, sessionID, sessions[0].ID)
+		require.Len(t, sessions[0].Tasks, 1)
+
+		// Browser B: Submit task to same session
+		taskBody2 := fmt.Sprintf(`{
+			"agent_url": %q,
+			"prompt": "Browser B task",
+			"session_id": %q
+		}`, mockAgent.URL, sessionID)
+		resp4, err := authRequest(browserB, "POST", "/api/task", taskBody2)
+		require.NoError(t, err)
+		defer resp4.Body.Close()
+		require.Equal(t, http.StatusCreated, resp4.StatusCode)
+
+		var taskResp2 TaskSubmitResponse
+		json.NewDecoder(resp4.Body).Decode(&taskResp2)
+		require.Equal(t, sessionID, taskResp2.SessionID, "Agent should return same session ID")
+
+		// Browser B: Save task to session store
+		sessionBody2 := fmt.Sprintf(`{
+			"session_id": %q,
+			"agent_url": %q,
+			"task_id": %q,
+			"state": "working",
+			"prompt": "Browser B task"
+		}`, sessionID, mockAgent.URL, taskResp2.TaskID)
+		resp5, err := authRequest(browserB, "POST", "/api/sessions", sessionBody2)
+		require.NoError(t, err)
+		resp5.Body.Close()
+
+		// Both browsers fetch sessions - should see same session with 2 tasks
+		resp6, err := authRequest(browserA, "GET", "/api/sessions", "")
+		require.NoError(t, err)
+		defer resp6.Body.Close()
+
+		var finalSessions []*Session
+		json.NewDecoder(resp6.Body).Decode(&finalSessions)
+		require.Len(t, finalSessions, 1, "Should still be 1 session")
+		require.Len(t, finalSessions[0].Tasks, 2, "Session should have 2 tasks from both browsers")
+	})
+}
+
+// TestIntegrationMultiBrowserSessionRace tests concurrent browser submissions without session_id
+// This documents expected API behavior: when two browsers submit simultaneously
+// with "New session" selected (no session_id), each gets a separate session.
+// This is a fundamental race condition that can occur even with the frontend fix
+// if both browsers submit before either receives a response.
+func TestIntegrationMultiBrowserSessionRace(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	var agentMu sync.Mutex
+	sessionCounter := 0
+
+	// Mock agent that generates a new session ID for each request without session_id
+	mockAgent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/status":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"type":       "agent",
+				"interfaces": []string{"statusable", "taskable"},
+				"version":    "mock-agent-v1",
+				"state":      "idle",
+			})
+		case "/task":
+			if r.Method == "POST" {
+				var req map[string]interface{}
+				json.NewDecoder(r.Body).Decode(&req)
+
+				agentMu.Lock()
+				sessionCounter++
+				taskID := fmt.Sprintf("task-%d", sessionCounter)
+
+				// Generate new session ID only if not provided
+				var returnSessionID string
+				if sid, ok := req["session_id"].(string); ok && sid != "" {
+					returnSessionID = sid
+				} else {
+					returnSessionID = fmt.Sprintf("new-session-%d", sessionCounter)
+				}
+				agentMu.Unlock()
+
+				w.WriteHeader(http.StatusCreated)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"task_id":    taskID,
+					"session_id": returnSessionID,
+					"status":     "queued",
+				})
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer mockAgent.Close()
+
+	tmpDir := t.TempDir()
+	certPath := filepath.Join(tmpDir, "cert.pem")
+	keyPath := filepath.Join(tmpDir, "key.pem")
+
+	cfg := &Config{
+		Port:            0,
+		Bind:            "127.0.0.1",
+		Token:           "secret-token",
+		PortStart:       59011,
+		PortEnd:         59011,
+		RefreshInterval: time.Hour,
+		TLS: TLSConfig{
+			CertFile:     certPath,
+			KeyFile:      keyPath,
+			AutoGenerate: true,
+		},
+	}
+
+	d, err := New(cfg, "test-race")
+	require.NoError(t, err)
+
+	d.discovery.mu.Lock()
+	d.discovery.components[mockAgent.URL] = &ComponentStatus{
+		URL:   mockAgent.URL,
+		Type:  "agent",
+		State: "idle",
+	}
+	d.discovery.mu.Unlock()
+
+	ts := httptest.NewServer(d.Router())
+	defer ts.Close()
+
+	client := ts.Client()
+
+	authRequest := func(method, path string, body string) (*http.Response, error) {
+		var req *http.Request
+		if body != "" {
+			req, _ = http.NewRequest(method, ts.URL+path, strings.NewReader(body))
+		} else {
+			req, _ = http.NewRequest(method, ts.URL+path, nil)
+		}
+		req.Header.Set("Authorization", "Bearer secret-token")
+		req.Header.Set("Content-Type", "application/json")
+		return client.Do(req)
+	}
+
+	t.Run("concurrent new session creation causes multiple sessions", func(t *testing.T) {
+		// Reset counter for this test
+		agentMu.Lock()
+		sessionCounter = 0
+		agentMu.Unlock()
+
+		// Simulate both browsers submitting "new session" tasks concurrently
+		var wg sync.WaitGroup
+		var sessionIDs sync.Map
+
+		for i := 0; i < 2; i++ {
+			wg.Add(1)
+			go func(browserNum int) {
+				defer wg.Done()
+
+				// Submit task without session_id (new session)
+				taskBody := fmt.Sprintf(`{
+					"agent_url": %q,
+					"prompt": "Browser %d new session task"
+				}`, mockAgent.URL, browserNum)
+
+				resp, err := authRequest("POST", "/api/task", taskBody)
+				if err != nil {
+					t.Logf("Browser %d error: %v", browserNum, err)
+					return
+				}
+				defer resp.Body.Close()
+
+				var taskResp TaskSubmitResponse
+				json.NewDecoder(resp.Body).Decode(&taskResp)
+
+				// Save to session store
+				sessionBody := fmt.Sprintf(`{
+					"session_id": %q,
+					"agent_url": %q,
+					"task_id": %q,
+					"state": "working",
+					"prompt": "Browser %d task"
+				}`, taskResp.SessionID, mockAgent.URL, taskResp.TaskID, browserNum)
+
+				resp2, _ := authRequest("POST", "/api/sessions", sessionBody)
+				resp2.Body.Close()
+
+				sessionIDs.Store(browserNum, taskResp.SessionID)
+			}(i)
+		}
+
+		wg.Wait()
+
+		// Check if different session IDs were generated
+		var ids []string
+		sessionIDs.Range(func(key, value interface{}) bool {
+			ids = append(ids, value.(string))
+			return true
+		})
+
+		// Expected behavior: Two different sessions were created because
+		// both browsers submitted without session_id simultaneously
+		resp, _ := authRequest("GET", "/api/sessions", "")
+		defer resp.Body.Close()
+
+		var sessions []*Session
+		json.NewDecoder(resp.Body).Decode(&sessions)
+
+		t.Logf("Session IDs generated: %v", ids)
+		t.Logf("Sessions in store: %d", len(sessions))
+		for _, s := range sessions {
+			t.Logf("  Session %s: %d tasks", s.ID, len(s.Tasks))
+		}
+
+		// When both browsers submit without session_id, each gets a separate session
+		// This is expected API behavior for concurrent "new session" requests
+		require.Len(t, sessions, 2, "Concurrent submissions without session_id create separate sessions")
+	})
+}
+
+// TestIntegrationSessionBouncing tests multi-browser session sharing
+// Verifies that when browsers properly track session IDs, all tasks
+// end up in the same session regardless of timing
+func TestIntegrationSessionBouncing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	// Scenario: Both browsers have an existing session selected, but due to
+	// a dropdown refresh during polling, the selection may be lost or changed
+
+	var agentMu sync.Mutex
+	taskCounter := 0
+	sessionStore := make(map[string][]string) // sessionID -> taskIDs
+
+	mockAgent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/status":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"type":       "agent",
+				"interfaces": []string{"statusable", "taskable"},
+				"version":    "mock-agent-v1",
+				"state":      "idle",
+			})
+		case "/task":
+			if r.Method == "POST" {
+				var req map[string]interface{}
+				json.NewDecoder(r.Body).Decode(&req)
+
+				agentMu.Lock()
+				taskCounter++
+				taskID := fmt.Sprintf("task-%d", taskCounter)
+
+				var returnSessionID string
+				if sid, ok := req["session_id"].(string); ok && sid != "" {
+					returnSessionID = sid
+				} else {
+					returnSessionID = fmt.Sprintf("auto-session-%d", taskCounter)
+				}
+				sessionStore[returnSessionID] = append(sessionStore[returnSessionID], taskID)
+				agentMu.Unlock()
+
+				w.WriteHeader(http.StatusCreated)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"task_id":    taskID,
+					"session_id": returnSessionID,
+					"status":     "queued",
+				})
+			}
+		default:
+			if strings.HasPrefix(r.URL.Path, "/task/") {
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"task_id": strings.TrimPrefix(r.URL.Path, "/task/"),
+					"state":   "completed",
+				})
+			}
+		}
+	}))
+	defer mockAgent.Close()
+
+	tmpDir := t.TempDir()
+	cfg := &Config{
+		Port:            0,
+		Bind:            "127.0.0.1",
+		Token:           "secret-token",
+		PortStart:       59012,
+		PortEnd:         59012,
+		RefreshInterval: time.Hour,
+		TLS: TLSConfig{
+			CertFile:     filepath.Join(tmpDir, "cert.pem"),
+			KeyFile:      filepath.Join(tmpDir, "key.pem"),
+			AutoGenerate: true,
+		},
+	}
+
+	d, err := New(cfg, "test-bouncing")
+	require.NoError(t, err)
+
+	d.discovery.mu.Lock()
+	d.discovery.components[mockAgent.URL] = &ComponentStatus{
+		URL:   mockAgent.URL,
+		Type:  "agent",
+		State: "idle",
+	}
+	d.discovery.mu.Unlock()
+
+	ts := httptest.NewServer(d.Router())
+	defer ts.Close()
+
+	client := ts.Client()
+
+	authRequest := func(method, path string, body string) (*http.Response, error) {
+		var req *http.Request
+		if body != "" {
+			req, _ = http.NewRequest(method, ts.URL+path, strings.NewReader(body))
+		} else {
+			req, _ = http.NewRequest(method, ts.URL+path, nil)
+		}
+		req.Header.Set("Authorization", "Bearer secret-token")
+		req.Header.Set("Content-Type", "application/json")
+		return client.Do(req)
+	}
+
+	// Helper to simulate the full browser flow
+	submitTaskAndSave := func(browserName, sessionID string) (string, string, error) {
+		var taskBody string
+		if sessionID != "" {
+			taskBody = fmt.Sprintf(`{
+				"agent_url": %q,
+				"prompt": "%s task",
+				"session_id": %q
+			}`, mockAgent.URL, browserName, sessionID)
+		} else {
+			taskBody = fmt.Sprintf(`{
+				"agent_url": %q,
+				"prompt": "%s task"
+			}`, mockAgent.URL, browserName)
+		}
+
+		resp, err := authRequest("POST", "/api/task", taskBody)
+		if err != nil {
+			return "", "", err
+		}
+		defer resp.Body.Close()
+
+		var taskResp TaskSubmitResponse
+		json.NewDecoder(resp.Body).Decode(&taskResp)
+
+		// Save to web server's session store (simulating dashboard JS)
+		sessionBody := fmt.Sprintf(`{
+			"session_id": %q,
+			"agent_url": %q,
+			"task_id": %q,
+			"state": "working",
+			"prompt": "%s task"
+		}`, taskResp.SessionID, mockAgent.URL, taskResp.TaskID, browserName)
+
+		resp2, _ := authRequest("POST", "/api/sessions", sessionBody)
+		resp2.Body.Close()
+
+		return taskResp.TaskID, taskResp.SessionID, nil
+	}
+
+	t.Run("sequential tasks to same session work correctly", func(t *testing.T) {
+		// Browser A creates initial session
+		taskID1, sessionID, err := submitTaskAndSave("BrowserA", "")
+		require.NoError(t, err)
+		require.NotEmpty(t, sessionID)
+		t.Logf("Browser A created session %s with task %s", sessionID, taskID1)
+
+		// Browser B adds to existing session (simulating selecting from dropdown)
+		taskID2, returnedSessionID, err := submitTaskAndSave("BrowserB", sessionID)
+		require.NoError(t, err)
+		require.Equal(t, sessionID, returnedSessionID, "Browser B should get same session ID")
+		t.Logf("Browser B added task %s to session %s", taskID2, returnedSessionID)
+
+		// Browser A adds another task to same session
+		taskID3, returnedSessionID2, err := submitTaskAndSave("BrowserA", sessionID)
+		require.NoError(t, err)
+		require.Equal(t, sessionID, returnedSessionID2, "Browser A should still use same session")
+		t.Logf("Browser A added task %s to session %s", taskID3, returnedSessionID2)
+
+		// Verify all tasks are in the same session
+		resp, _ := authRequest("GET", "/api/sessions", "")
+		defer resp.Body.Close()
+
+		var sessions []*Session
+		json.NewDecoder(resp.Body).Decode(&sessions)
+
+		require.Len(t, sessions, 1, "Should have exactly 1 session")
+		require.Len(t, sessions[0].Tasks, 3, "Session should have all 3 tasks")
+		t.Logf("Final session %s has %d tasks", sessions[0].ID, len(sessions[0].Tasks))
+	})
+
+	t.Run("browser B joins after seeing session in dropdown", func(t *testing.T) {
+		// Clear previous state
+		d.handlers.sessionStore = NewSessionStore()
+		agentMu.Lock()
+		taskCounter = 0
+		agentMu.Unlock()
+
+		// This tests the FIXED behavior:
+		// 1. Browser A creates a session
+		// 2. Browser B sees it in dropdown via polling
+		// 3. Browser B selects the session and submits
+		// 4. Both tasks end up in the same session
+
+		// Browser A creates session
+		_, sessionA, _ := submitTaskAndSave("BrowserA", "")
+		t.Logf("Browser A created session: %s", sessionA)
+
+		// Browser B loads sessions, sees sessionA
+		resp, _ := authRequest("GET", "/api/sessions", "")
+		var sessionsBeforeB []*Session
+		json.NewDecoder(resp.Body).Decode(&sessionsBeforeB)
+		resp.Body.Close()
+		require.Len(t, sessionsBeforeB, 1)
+		require.Equal(t, sessionA, sessionsBeforeB[0].ID)
+
+		// Browser B selects sessionA from dropdown and submits WITH session_id
+		// (This is the correct behavior after the frontend fix)
+		_, sessionB, _ := submitTaskAndSave("BrowserB", sessionA) // <-- Uses session from dropdown
+		t.Logf("Browser B added to session: %s", sessionB)
+
+		// Both tasks should be in the same session
+		resp2, _ := authRequest("GET", "/api/sessions", "")
+		defer resp2.Body.Close()
+		var finalSessions []*Session
+		json.NewDecoder(resp2.Body).Decode(&finalSessions)
+
+		t.Logf("Sessions after both browsers submitted:")
+		for _, s := range finalSessions {
+			t.Logf("  Session %s: %d tasks", s.ID, len(s.Tasks))
+		}
+
+		require.Len(t, finalSessions, 1, "Both browsers should use the same session")
+		require.Len(t, finalSessions[0].Tasks, 2, "Session should have tasks from both browsers")
+	})
+}
+
+// TestIntegrationSessionAPI tests the full session API flow
+func TestIntegrationSessionAPI(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	tmpDir := t.TempDir()
+	certPath := filepath.Join(tmpDir, "cert.pem")
+	keyPath := filepath.Join(tmpDir, "key.pem")
+
+	cfg := &Config{
+		Port:            0,
+		Bind:            "127.0.0.1",
+		Token:           "secret-token",
+		PortStart:       59002,
+		PortEnd:         59002,
+		RefreshInterval: time.Hour,
+		TLS: TLSConfig{
+			CertFile:     certPath,
+			KeyFile:      keyPath,
+			AutoGenerate: true,
+		},
+	}
+
+	d, err := New(cfg, "test-sessions")
+	require.NoError(t, err)
+
+	ts := httptest.NewServer(d.Router())
+	defer ts.Close()
+
+	client := ts.Client()
+
+	// Helper to make authenticated requests
+	authRequest := func(method, path string, body string) (*http.Response, error) {
+		var req *http.Request
+		if body != "" {
+			req, _ = http.NewRequest(method, ts.URL+path, strings.NewReader(body))
+		} else {
+			req, _ = http.NewRequest(method, ts.URL+path, nil)
+		}
+		req.Header.Set("Authorization", "Bearer secret-token")
+		req.Header.Set("Content-Type", "application/json")
+		return client.Do(req)
+	}
+
+	// Test 1: Empty sessions list
+	t.Run("empty sessions", func(t *testing.T) {
+		resp, err := authRequest("GET", "/api/sessions", "")
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var sessions []*Session
+		json.NewDecoder(resp.Body).Decode(&sessions)
+		require.Empty(t, sessions)
+	})
+
+	// Test 2: Add task to session
+	t.Run("add session task", func(t *testing.T) {
+		body := `{
+			"session_id": "sess-integration-1",
+			"agent_url": "http://agent:9000",
+			"task_id": "task-1",
+			"state": "working",
+			"prompt": "Integration test prompt"
+		}`
+		resp, err := authRequest("POST", "/api/sessions", body)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusCreated, resp.StatusCode)
+	})
+
+	// Test 3: Sessions list now contains the session
+	t.Run("sessions list populated", func(t *testing.T) {
+		resp, err := authRequest("GET", "/api/sessions", "")
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var sessions []*Session
+		json.NewDecoder(resp.Body).Decode(&sessions)
+		require.Len(t, sessions, 1)
+		require.Equal(t, "sess-integration-1", sessions[0].ID)
+		require.Equal(t, "http://agent:9000", sessions[0].AgentURL)
+		require.Len(t, sessions[0].Tasks, 1)
+		require.Equal(t, "task-1", sessions[0].Tasks[0].TaskID)
+		require.Equal(t, "working", sessions[0].Tasks[0].State)
+	})
+
+	// Test 4: Add another task to the same session
+	t.Run("add second task", func(t *testing.T) {
+		body := `{
+			"session_id": "sess-integration-1",
+			"agent_url": "http://agent:9000",
+			"task_id": "task-2",
+			"state": "working",
+			"prompt": "Second prompt"
+		}`
+		resp, err := authRequest("POST", "/api/sessions", body)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusCreated, resp.StatusCode)
+
+		// Verify session now has 2 tasks
+		resp2, _ := authRequest("GET", "/api/sessions", "")
+		defer resp2.Body.Close()
+
+		var sessions []*Session
+		json.NewDecoder(resp2.Body).Decode(&sessions)
+		require.Len(t, sessions, 1)
+		require.Len(t, sessions[0].Tasks, 2)
+	})
+
+	// Test 5: Update task state
+	t.Run("update task state", func(t *testing.T) {
+		body := `{"state": "completed"}`
+		resp, err := authRequest("PUT", "/api/sessions/sess-integration-1/tasks/task-1", body)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		// Verify state was updated
+		resp2, _ := authRequest("GET", "/api/sessions", "")
+		defer resp2.Body.Close()
+
+		var sessions []*Session
+		json.NewDecoder(resp2.Body).Decode(&sessions)
+		require.Len(t, sessions, 1)
+		require.Equal(t, "completed", sessions[0].Tasks[0].State)
+		require.Equal(t, "working", sessions[0].Tasks[1].State)
+	})
+
+	// Test 6: Update non-existent task returns 404
+	t.Run("update non-existent task", func(t *testing.T) {
+		body := `{"state": "completed"}`
+		resp, err := authRequest("PUT", "/api/sessions/nonexistent/tasks/task-1", body)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	})
+
+	// Test 7: Add task to new session
+	t.Run("add task to new session", func(t *testing.T) {
+		body := `{
+			"session_id": "sess-integration-2",
+			"agent_url": "http://agent:9001",
+			"task_id": "task-3",
+			"state": "working",
+			"prompt": "New session prompt"
+		}`
+		resp, err := authRequest("POST", "/api/sessions", body)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusCreated, resp.StatusCode)
+
+		// Verify we now have 2 sessions
+		resp2, _ := authRequest("GET", "/api/sessions", "")
+		defer resp2.Body.Close()
+
+		var sessions []*Session
+		json.NewDecoder(resp2.Body).Decode(&sessions)
+		require.Len(t, sessions, 2)
+	})
 }

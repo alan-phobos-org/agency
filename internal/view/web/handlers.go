@@ -18,10 +18,11 @@ var templatesFS embed.FS
 
 // Handlers holds HTTP handler dependencies
 type Handlers struct {
-	discovery *Discovery
-	version   string
-	startTime time.Time
-	tmpl      *template.Template
+	discovery    *Discovery
+	version      string
+	startTime    time.Time
+	tmpl         *template.Template
+	sessionStore *SessionStore
 }
 
 // NewHandlers creates handlers with dependencies
@@ -32,10 +33,11 @@ func NewHandlers(discovery *Discovery, version string) (*Handlers, error) {
 	}
 
 	return &Handlers{
-		discovery: discovery,
-		version:   version,
-		startTime: time.Now(),
-		tmpl:      tmpl,
+		discovery:    discovery,
+		version:      version,
+		startTime:    time.Now(),
+		tmpl:         tmpl,
+		sessionStore: NewSessionStore(),
 	}, nil
 }
 
@@ -213,4 +215,60 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 		"error":   code,
 		"message": message,
 	})
+}
+
+// HandleSessions returns all sessions
+func (h *Handlers) HandleSessions(w http.ResponseWriter, r *http.Request) {
+	sessions := h.sessionStore.GetAll()
+	if sessions == nil {
+		sessions = []*Session{}
+	}
+	writeJSON(w, http.StatusOK, sessions)
+}
+
+// SessionTaskRequest represents a request to add a task to a session
+type SessionTaskRequest struct {
+	SessionID string `json:"session_id"`
+	AgentURL  string `json:"agent_url"`
+	TaskID    string `json:"task_id"`
+	State     string `json:"state"`
+	Prompt    string `json:"prompt"`
+}
+
+// HandleAddSessionTask adds a task to a session
+func (h *Handlers) HandleAddSessionTask(w http.ResponseWriter, r *http.Request) {
+	var req SessionTaskRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "validation_error", "Invalid JSON: "+err.Error())
+		return
+	}
+
+	if req.SessionID == "" || req.TaskID == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "session_id and task_id are required")
+		return
+	}
+
+	h.sessionStore.AddTask(req.SessionID, req.AgentURL, req.TaskID, req.State, req.Prompt)
+	writeJSON(w, http.StatusCreated, map[string]string{"status": "ok"})
+}
+
+// SessionTaskUpdateRequest represents a request to update a task state
+type SessionTaskUpdateRequest struct {
+	State string `json:"state"`
+}
+
+// HandleUpdateSessionTask updates a task's state within a session
+func (h *Handlers) HandleUpdateSessionTask(w http.ResponseWriter, r *http.Request, sessionID, taskID string) {
+	var req SessionTaskUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "validation_error", "Invalid JSON: "+err.Error())
+		return
+	}
+
+	if !h.sessionStore.UpdateTaskState(sessionID, taskID, req.State) {
+		writeError(w, http.StatusNotFound, "not_found", "Session or task not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

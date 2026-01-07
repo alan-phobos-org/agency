@@ -3,6 +3,7 @@ package agent
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -88,7 +89,7 @@ func TestCreateTaskSuccess(t *testing.T) {
 	require.Equal(t, http.StatusCreated, w.Code)
 	require.Contains(t, w.Body.String(), "task_id")
 	require.Contains(t, w.Body.String(), "session_id")
-	require.Contains(t, w.Body.String(), "queued")
+	require.Contains(t, w.Body.String(), "working")
 }
 
 func TestCreateTaskCreatesSessionDir(t *testing.T) {
@@ -274,7 +275,9 @@ func TestBuildClaudeArgs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			args := buildClaudeArgs(tt.task)
+			cfg := config.Default()
+			a := New(cfg, "test")
+			args := a.buildClaudeArgs(tt.task)
 			tt.verify(t, args)
 		})
 	}
@@ -287,4 +290,55 @@ func indexOf(slice []string, item string) int {
 		}
 	}
 	return -1
+}
+
+func TestPrepromptFileLoading(t *testing.T) {
+	t.Parallel()
+
+	// Create a custom preprompt file
+	tmpDir := t.TempDir()
+	prepromptPath := filepath.Join(tmpDir, "custom-preprompt.md")
+	customContent := "# Custom Instructions\n\nDo custom things."
+	err := os.WriteFile(prepromptPath, []byte(customContent), 0644)
+	require.NoError(t, err)
+
+	cfg := config.Default()
+	cfg.PrepromptFile = prepromptPath
+
+	a := New(cfg, "test")
+
+	// Verify custom preprompt is used
+	require.Equal(t, customContent, a.preprompt)
+
+	// Verify it appears in built args
+	task := &Task{Model: "sonnet", Prompt: "test prompt"}
+	args := a.buildClaudeArgs(task)
+	prompt := args[len(args)-1] // Last arg is the prompt
+	require.Contains(t, prompt, "# Custom Instructions")
+	require.Contains(t, prompt, "test prompt")
+}
+
+func TestPrepromptFileFallbackToDefault(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.Default()
+	cfg.PrepromptFile = "/nonexistent/path/preprompt.md"
+
+	a := New(cfg, "test")
+
+	// Should fall back to embedded default
+	require.Contains(t, a.preprompt, "# Agent Instructions")
+}
+
+func TestPrepromptDefaultEmbedded(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.Default()
+	// No PrepromptFile set
+
+	a := New(cfg, "test")
+
+	// Should use embedded default
+	require.Contains(t, a.preprompt, "# Agent Instructions")
+	require.Contains(t, a.preprompt, "Git Commits")
 }
