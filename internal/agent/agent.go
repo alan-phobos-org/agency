@@ -91,20 +91,13 @@ type TaskRequest struct {
 
 // StatusResponse represents the /status response
 type StatusResponse struct {
-	Type          string       `json:"type"`
-	Interfaces    []string     `json:"interfaces"`
-	Version       string       `json:"version"`
-	State         State        `json:"state"`
-	UptimeSeconds float64      `json:"uptime_seconds"`
-	CurrentTask   *CurrentTask `json:"current_task"`
-	Config        StatusConfig `json:"config"`
-}
-
-// CurrentTask shows info about the running task
-type CurrentTask struct {
-	ID            string `json:"id"`
-	StartedAt     string `json:"started_at"`
-	PromptPreview string `json:"prompt_preview"`
+	Type          string           `json:"type"`
+	Interfaces    []string         `json:"interfaces"`
+	Version       string           `json:"version"`
+	State         State            `json:"state"`
+	UptimeSeconds float64          `json:"uptime_seconds"`
+	CurrentTask   *api.CurrentTask `json:"current_task"`
+	Config        StatusConfig     `json:"config"`
 }
 
 // StatusConfig shows agent config in status
@@ -220,14 +213,14 @@ func (a *Agent) handleStatus(w http.ResponseWriter, r *http.Request) {
 		if len(preview) > 50 {
 			preview = preview[:50] + "..."
 		}
-		resp.CurrentTask = &CurrentTask{
+		resp.CurrentTask = &api.CurrentTask{
 			ID:            a.currentTask.ID,
 			StartedAt:     a.currentTask.StartedAt.Format(time.RFC3339),
 			PromptPreview: preview,
 		}
 	}
 
-	writeJSON(w, http.StatusOK, resp)
+	api.WriteJSON(w, http.StatusOK, resp)
 }
 
 // handleCreateTask validates and queues a new task for execution.
@@ -236,12 +229,12 @@ func (a *Agent) handleStatus(w http.ResponseWriter, r *http.Request) {
 func (a *Agent) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	var req TaskRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "validation_error", "Invalid JSON: "+err.Error())
+		api.WriteError(w, http.StatusBadRequest, "validation_error", "Invalid JSON: "+err.Error())
 		return
 	}
 
 	if req.Prompt == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "prompt is required")
+		api.WriteError(w, http.StatusBadRequest, "validation_error", "prompt is required")
 		return
 	}
 
@@ -252,7 +245,7 @@ func (a *Agent) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 			currentTaskID = a.currentTask.ID
 		}
 		a.mu.Unlock()
-		writeJSON(w, http.StatusConflict, map[string]interface{}{
+		api.WriteJSON(w, http.StatusConflict, map[string]interface{}{
 			"error":        "agent_busy",
 			"message":      fmt.Sprintf("Agent is currently processing %s", currentTaskID),
 			"current_task": currentTaskID,
@@ -299,7 +292,7 @@ func (a *Agent) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	// Start task execution in background
 	go a.executeTask(task, req.Env)
 
-	writeJSON(w, http.StatusCreated, map[string]interface{}{
+	api.WriteJSON(w, http.StatusCreated, map[string]interface{}{
 		"task_id":    task.ID,
 		"session_id": task.SessionID,
 		"status":     "working",
@@ -316,7 +309,7 @@ func (a *Agent) handleGetTask(w http.ResponseWriter, r *http.Request) {
 	a.mu.RUnlock()
 
 	if !ok {
-		writeError(w, http.StatusNotFound, "not_found", fmt.Sprintf("Task %s not found", taskID))
+		api.WriteError(w, http.StatusNotFound, "not_found", fmt.Sprintf("Task %s not found", taskID))
 		return
 	}
 
@@ -340,7 +333,7 @@ func (a *Agent) handleGetTask(w http.ResponseWriter, r *http.Request) {
 		resp["error"] = task.Error
 	}
 
-	writeJSON(w, http.StatusOK, resp)
+	api.WriteJSON(w, http.StatusOK, resp)
 }
 
 // handleCancelTask cancels a running task by ID.
@@ -353,13 +346,13 @@ func (a *Agent) handleCancelTask(w http.ResponseWriter, r *http.Request) {
 	task, ok := a.tasks[taskID]
 	if !ok {
 		a.mu.Unlock()
-		writeError(w, http.StatusNotFound, "not_found", fmt.Sprintf("Task %s not found", taskID))
+		api.WriteError(w, http.StatusNotFound, "not_found", fmt.Sprintf("Task %s not found", taskID))
 		return
 	}
 
 	if task.State == TaskStateCompleted || task.State == TaskStateFailed || task.State == TaskStateCancelled {
 		a.mu.Unlock()
-		writeJSON(w, http.StatusConflict, map[string]interface{}{
+		api.WriteJSON(w, http.StatusConflict, map[string]interface{}{
 			"error":       "already_completed",
 			"message":     fmt.Sprintf("Task %s has already completed", taskID),
 			"final_state": task.State,
@@ -373,7 +366,7 @@ func (a *Agent) handleCancelTask(w http.ResponseWriter, r *http.Request) {
 	}
 	a.mu.Unlock()
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	api.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"task_id": taskID,
 		"state":   TaskStateCancelled,
 		"message": "Task cancellation initiated",
@@ -401,7 +394,7 @@ func (a *Agent) handleShutdown(w http.ResponseWriter, r *http.Request) {
 	a.mu.RUnlock()
 
 	if hasTask && !req.Force {
-		writeJSON(w, http.StatusConflict, map[string]interface{}{
+		api.WriteJSON(w, http.StatusConflict, map[string]interface{}{
 			"error":   "task_in_progress",
 			"message": fmt.Sprintf("Task %s is running. Use force=true to terminate.", taskID),
 			"task_id": taskID,
@@ -409,7 +402,7 @@ func (a *Agent) handleShutdown(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]interface{}{
+	api.WriteJSON(w, http.StatusAccepted, map[string]interface{}{
 		"message":       "Shutdown initiated",
 		"drain_timeout": req.TimeoutSeconds,
 	})
@@ -597,17 +590,4 @@ func (a *Agent) buildClaudeArgs(task *Task) []string {
 
 	args = append(args, "-p", "--", prompt)
 	return args
-}
-
-func writeJSON(w http.ResponseWriter, status int, v interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]string{
-		"error":   code,
-		"message": message,
-	})
 }

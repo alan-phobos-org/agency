@@ -97,7 +97,10 @@ func taskCmd(args []string) {
 	var taskResp struct {
 		TaskID string `json:"task_id"`
 	}
-	json.NewDecoder(resp.Body).Decode(&taskResp)
+	if err := json.NewDecoder(resp.Body).Decode(&taskResp); err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing response: %v\n", err)
+		os.Exit(1)
+	}
 	fmt.Fprintf(os.Stderr, "Task submitted: %s\n", taskResp.TaskID)
 
 	// Poll for completion
@@ -153,7 +156,11 @@ func pollForCompletion(client *http.Client, agentURL, taskID string, timeout tim
 			}
 
 			var status taskStatus
-			json.NewDecoder(resp.Body).Decode(&status)
+			if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+				resp.Body.Close()
+				fmt.Fprintf(os.Stderr, "\nError parsing status: %v\n", err)
+				os.Exit(1)
+			}
 			resp.Body.Close()
 
 			switch status.State {
@@ -190,7 +197,10 @@ func statusCmd(args []string) {
 	defer resp.Body.Close()
 
 	var status map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&status)
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing status: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Pretty print
 	output, _ := json.MarshalIndent(status, "", "  ")
@@ -217,7 +227,10 @@ func discoverCmd(args []string) {
 		}
 
 		var status map[string]interface{}
-		json.NewDecoder(resp.Body).Decode(&status)
+		if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+			resp.Body.Close()
+			continue
+		}
 		resp.Body.Close()
 
 		found++

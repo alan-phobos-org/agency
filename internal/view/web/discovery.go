@@ -7,27 +7,22 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/anthropics/agency/internal/api"
 )
 
 // ComponentStatus represents the status of a discovered component
 type ComponentStatus struct {
-	URL           string       `json:"url"`
-	Type          string       `json:"type"`                 // agent, director, helper, view
-	Interfaces    []string     `json:"interfaces,omitempty"` // statusable, taskable, observable, configurable
-	Version       string       `json:"version"`
-	State         string       `json:"state"`
-	UptimeSeconds float64      `json:"uptime_seconds"`
-	CurrentTask   *CurrentTask `json:"current_task,omitempty"`
-	Config        interface{}  `json:"config,omitempty"`
-	LastSeen      time.Time    `json:"last_seen"`
-	FailCount     int          `json:"-"` // Internal: consecutive failures
-}
-
-// CurrentTask mirrors the agent's current task info
-type CurrentTask struct {
-	ID            string `json:"id"`
-	StartedAt     string `json:"started_at"`
-	PromptPreview string `json:"prompt_preview"`
+	URL           string           `json:"url"`
+	Type          string           `json:"type"`                 // agent, director, helper, view
+	Interfaces    []string         `json:"interfaces,omitempty"` // statusable, taskable, observable, configurable
+	Version       string           `json:"version"`
+	State         string           `json:"state"`
+	UptimeSeconds float64          `json:"uptime_seconds"`
+	CurrentTask   *api.CurrentTask `json:"current_task,omitempty"`
+	Config        interface{}      `json:"config,omitempty"`
+	LastSeen      time.Time        `json:"last_seen"`
+	FailCount     int              `json:"-"` // Internal: consecutive failures
 }
 
 // Discovery handles service discovery via port scanning
