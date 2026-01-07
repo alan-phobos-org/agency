@@ -38,7 +38,7 @@ func buildBinaries(t *testing.T) string {
 	require.NoError(t, err, "Failed to build binaries: %s", output)
 
 	// Verify binaries exist
-	for _, bin := range []string{"ag-agent-claude", "ag-director-cli", "ag-director-web"} {
+	for _, bin := range []string{"ag-agent-claude", "ag-cli", "ag-view-web"} {
 		binPath := filepath.Join(binDir, bin)
 		_, err := os.Stat(binPath)
 		require.NoError(t, err, "Binary not found: %s", binPath)
@@ -48,12 +48,11 @@ func buildBinaries(t *testing.T) string {
 }
 
 // startAgent starts the ag-agent-claude binary as a subprocess
-func startAgent(t *testing.T, binDir string, port int, mockClaudePath string) *exec.Cmd {
+func startAgent(t *testing.T, binDir string, port int) *exec.Cmd {
 	t.Helper()
 
 	agentBin := filepath.Join(binDir, "ag-agent-claude")
 	cmd := exec.Command(agentBin, "-port", fmt.Sprintf("%d", port))
-	cmd.Env = append(os.Environ(), "CLAUDE_BIN="+mockClaudePath)
 	cmd.Stdout = os.Stderr // Forward to test output
 	cmd.Stderr = os.Stderr
 
@@ -63,17 +62,16 @@ func startAgent(t *testing.T, binDir string, port int, mockClaudePath string) *e
 	return cmd
 }
 
-// runDirector runs the ag-director-cli binary and returns its output
-func runDirector(t *testing.T, binDir string, agentURL, prompt, workdir string, timeout time.Duration) (string, error) {
+// runCLI runs the ag-cli binary with task command and returns its output
+func runCLI(t *testing.T, binDir string, agentURL, prompt string, timeout time.Duration) (string, error) {
 	t.Helper()
 
-	directorBin := filepath.Join(binDir, "ag-director-cli")
+	cliBin := filepath.Join(binDir, "ag-cli")
 	ctx, cancel := context.WithTimeout(context.Background(), timeout+5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, directorBin,
+	cmd := exec.CommandContext(ctx, cliBin, "task",
 		"-agent", agentURL,
-		"-workdir", workdir,
 		"-timeout", timeout.String(),
 		prompt,
 	)
@@ -86,15 +84,15 @@ func runDirector(t *testing.T, binDir string, agentURL, prompt, workdir string, 
 	return stdout.String() + stderr.String(), err
 }
 
-// runDirectorStatus runs the ag-director-cli binary with -status flag
-func runDirectorStatus(t *testing.T, binDir, agentURL string) (string, error) {
+// runCLIStatus runs the ag-cli binary with status command
+func runCLIStatus(t *testing.T, binDir, agentURL string) (string, error) {
 	t.Helper()
 
-	directorBin := filepath.Join(binDir, "ag-director-cli")
+	cliBin := filepath.Join(binDir, "ag-cli")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, directorBin, "-agent", agentURL, "-status")
+	cmd := exec.CommandContext(ctx, cliBin, "status", agentURL)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -108,18 +106,10 @@ func TestSystemAgentDirectorBinaries(t *testing.T) {
 	// Build real binaries
 	binDir := buildBinaries(t)
 
-	// Get mock claude path
-	projectRoot, err := filepath.Abs("../../")
-	require.NoError(t, err)
-	mockClaude := filepath.Join(projectRoot, "testdata", "mock-claude")
-
-	_, err = os.Stat(mockClaude)
-	require.NoError(t, err, "mock-claude not found")
-
-	// Start agent process
+	// Start agent process (uses real Claude CLI)
 	port := testutil.AllocateTestPort(t)
 	agentURL := fmt.Sprintf("http://localhost:%d", port)
-	agentCmd := startAgent(t, binDir, port, mockClaude)
+	agentCmd := startAgent(t, binDir, port)
 
 	// Cleanup: kill agent on test completion
 	defer func() {
@@ -133,35 +123,29 @@ func TestSystemAgentDirectorBinaries(t *testing.T) {
 	testutil.WaitForHealthy(t, agentURL+"/status", 10*time.Second)
 	t.Log("Agent is healthy")
 
-	// Run director to get status
-	statusOutput, err := runDirectorStatus(t, binDir, agentURL)
+	// Run CLI to get status
+	statusOutput, err := runCLIStatus(t, binDir, agentURL)
 	require.NoError(t, err)
 	require.Contains(t, statusOutput, "idle")
 	t.Logf("Status output: %s", statusOutput)
 
-	// Run director with a task
-	workdir := t.TempDir()
-	output, err := runDirector(t, binDir, agentURL, "Hello, test task", workdir, 30*time.Second)
-	require.NoError(t, err, "Director failed: %s", output)
+	// Run CLI with a task using haiku model and short prompt
+	output, err := runCLI(t, binDir, agentURL, "Reply with exactly: OK", 60*time.Second)
+	require.NoError(t, err, "Task failed: %s", output)
 
-	t.Logf("Director output: %s", output)
+	t.Logf("Task output: %s", output)
 
 	// Verify task completed
 	require.Contains(t, output, "State: completed")
 	require.Contains(t, output, "Exit code: 0")
-	require.Contains(t, output, "Task completed successfully")
 }
 
 func TestSystemMultipleTasks(t *testing.T) {
 	binDir := buildBinaries(t)
 
-	projectRoot, err := filepath.Abs("../../")
-	require.NoError(t, err)
-	mockClaude := filepath.Join(projectRoot, "testdata", "mock-claude")
-
 	port := testutil.AllocateTestPort(t)
 	agentURL := fmt.Sprintf("http://localhost:%d", port)
-	agentCmd := startAgent(t, binDir, port, mockClaude)
+	agentCmd := startAgent(t, binDir, port)
 
 	defer func() {
 		if agentCmd.Process != nil {
@@ -172,17 +156,17 @@ func TestSystemMultipleTasks(t *testing.T) {
 
 	testutil.WaitForHealthy(t, agentURL+"/status", 10*time.Second)
 
-	// Run multiple sequential tasks
-	for i := 0; i < 3; i++ {
-		workdir := t.TempDir()
-		output, err := runDirector(t, binDir, agentURL, fmt.Sprintf("Task %d", i+1), workdir, 30*time.Second)
+	// Run multiple sequential tasks with short prompts
+	prompts := []string{"Say: one", "Say: two", "Say: three"}
+	for i, prompt := range prompts {
+		output, err := runCLI(t, binDir, agentURL, prompt, 60*time.Second)
 		require.NoError(t, err, "Task %d failed: %s", i+1, output)
 		require.Contains(t, output, "State: completed")
 		t.Logf("Task %d completed successfully", i+1)
 	}
 
 	// Verify agent is still healthy
-	statusOutput, err := runDirectorStatus(t, binDir, agentURL)
+	statusOutput, err := runCLIStatus(t, binDir, agentURL)
 	require.NoError(t, err)
 	require.Contains(t, statusOutput, "idle")
 }
@@ -190,18 +174,14 @@ func TestSystemMultipleTasks(t *testing.T) {
 func TestSystemGracefulShutdown(t *testing.T) {
 	binDir := buildBinaries(t)
 
-	projectRoot, err := filepath.Abs("../../")
-	require.NoError(t, err)
-	mockClaude := filepath.Join(projectRoot, "testdata", "mock-claude")
-
 	port := testutil.AllocateTestPort(t)
 	agentURL := fmt.Sprintf("http://localhost:%d", port)
-	agentCmd := startAgent(t, binDir, port, mockClaude)
+	agentCmd := startAgent(t, binDir, port)
 
 	testutil.WaitForHealthy(t, agentURL+"/status", 10*time.Second)
 
 	// Send SIGTERM for graceful shutdown
-	err = agentCmd.Process.Signal(syscall.SIGTERM)
+	err := agentCmd.Process.Signal(syscall.SIGTERM)
 	require.NoError(t, err)
 
 	// Wait for process to exit (should be graceful)
@@ -231,28 +211,23 @@ func TestSystemGracefulShutdown(t *testing.T) {
 func TestSystemConfigFile(t *testing.T) {
 	binDir := buildBinaries(t)
 
-	projectRoot, err := filepath.Abs("../../")
-	require.NoError(t, err)
-	mockClaude := filepath.Join(projectRoot, "testdata", "mock-claude")
-
-	// Create a temp config file
+	// Create a temp config file with haiku model
 	port := testutil.AllocateTestPort(t)
 	configContent := fmt.Sprintf(`
 port: %d
 log_level: debug
 claude:
-  model: sonnet
-  timeout: 30s
+  model: haiku
+  timeout: 60s
 `, port)
 
 	configFile := filepath.Join(t.TempDir(), "agent.yaml")
-	err = os.WriteFile(configFile, []byte(configContent), 0644)
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
 	require.NoError(t, err)
 
 	// Start agent with config file
 	agentBin := filepath.Join(binDir, "ag-agent-claude")
 	cmd := exec.Command(agentBin, "-config", configFile)
-	cmd.Env = append(os.Environ(), "CLAUDE_BIN="+mockClaude)
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 
@@ -287,13 +262,9 @@ claude:
 func TestSystemHTTPAPIDirectly(t *testing.T) {
 	binDir := buildBinaries(t)
 
-	projectRoot, err := filepath.Abs("../../")
-	require.NoError(t, err)
-	mockClaude := filepath.Join(projectRoot, "testdata", "mock-claude")
-
 	port := testutil.AllocateTestPort(t)
 	agentURL := fmt.Sprintf("http://localhost:%d", port)
-	agentCmd := startAgent(t, binDir, port, mockClaude)
+	agentCmd := startAgent(t, binDir, port)
 
 	defer func() {
 		if agentCmd.Process != nil {
@@ -304,11 +275,10 @@ func TestSystemHTTPAPIDirectly(t *testing.T) {
 
 	testutil.WaitForHealthy(t, agentURL+"/status", 10*time.Second)
 
-	// Test submitting task via HTTP directly (not through director binary)
-	workdir := t.TempDir()
+	// Test submitting task via HTTP directly with haiku and short prompt
 	taskReq := map[string]interface{}{
-		"prompt":  "Direct HTTP task",
-		"workdir": workdir,
+		"prompt": "Reply: hi",
+		"model":  "haiku",
 	}
 	taskBody, _ := json.Marshal(taskReq)
 
@@ -349,13 +319,9 @@ func TestSystemHTTPAPIDirectly(t *testing.T) {
 func TestSystemConcurrentTaskRejection(t *testing.T) {
 	binDir := buildBinaries(t)
 
-	projectRoot, err := filepath.Abs("../../")
-	require.NoError(t, err)
-	mockClaudeSlow := filepath.Join(projectRoot, "testdata", "mock-claude-slow")
-
 	port := testutil.AllocateTestPort(t)
 	agentURL := fmt.Sprintf("http://localhost:%d", port)
-	agentCmd := startAgent(t, binDir, port, mockClaudeSlow)
+	agentCmd := startAgent(t, binDir, port)
 
 	defer func() {
 		if agentCmd.Process != nil {
@@ -366,11 +332,10 @@ func TestSystemConcurrentTaskRejection(t *testing.T) {
 
 	testutil.WaitForHealthy(t, agentURL+"/status", 10*time.Second)
 
-	// Submit first task (slow)
-	workdir := t.TempDir()
+	// Submit first task - even with haiku this takes a few seconds
 	taskReq := map[string]interface{}{
-		"prompt":  "Slow task",
-		"workdir": workdir,
+		"prompt": "Count from 1 to 20 slowly",
+		"model":  "haiku",
 	}
 	taskBody, _ := json.Marshal(taskReq)
 
@@ -380,7 +345,7 @@ func TestSystemConcurrentTaskRejection(t *testing.T) {
 	resp.Body.Close()
 
 	// Wait for agent to be in working state
-	testutil.Eventually(t, 5*time.Second, func() bool {
+	testutil.Eventually(t, 10*time.Second, func() bool {
 		resp, err := http.Get(agentURL + "/status")
 		if err != nil {
 			return false
@@ -392,10 +357,9 @@ func TestSystemConcurrentTaskRejection(t *testing.T) {
 	})
 
 	// Try to submit second task - should be rejected
-	workdir2 := t.TempDir()
 	taskReq2 := map[string]interface{}{
-		"prompt":  "Second task",
-		"workdir": workdir2,
+		"prompt": "Say hello",
+		"model":  "haiku",
 	}
 	taskBody2, _ := json.Marshal(taskReq2)
 
@@ -408,13 +372,13 @@ func TestSystemConcurrentTaskRejection(t *testing.T) {
 	require.True(t, strings.Contains(string(body), "busy") || strings.Contains(string(body), "already processing"))
 }
 
-// startWebDirector starts the ag-director-web binary as a subprocess
-func startWebDirector(t *testing.T, binDir string, port, agentPort int, token string) *exec.Cmd {
+// startWebView starts the ag-view-web binary as a subprocess
+func startWebView(t *testing.T, binDir string, port, agentPort int, token string) *exec.Cmd {
 	t.Helper()
 
 	tmpDir := t.TempDir()
 
-	webBin := filepath.Join(binDir, "ag-director-web")
+	webBin := filepath.Join(binDir, "ag-view-web")
 	cmd := exec.Command(webBin,
 		"-port", fmt.Sprintf("%d", port),
 		"-bind", "127.0.0.1",
@@ -429,7 +393,7 @@ func startWebDirector(t *testing.T, binDir string, port, agentPort int, token st
 	cmd.Stderr = os.Stderr
 
 	err := cmd.Start()
-	require.NoError(t, err, "Failed to start web director")
+	require.NoError(t, err, "Failed to start web view")
 
 	return cmd
 }
@@ -465,14 +429,10 @@ func waitForHTTPS(t *testing.T, url string, timeout time.Duration) {
 func TestSystemWebDirectorDiscovery(t *testing.T) {
 	binDir := buildBinaries(t)
 
-	projectRoot, err := filepath.Abs("../../")
-	require.NoError(t, err)
-	mockClaude := filepath.Join(projectRoot, "testdata", "mock-claude")
-
 	// Start agent
 	agentPort := testutil.AllocateTestPort(t)
 	agentURL := fmt.Sprintf("http://localhost:%d", agentPort)
-	agentCmd := startAgent(t, binDir, agentPort, mockClaude)
+	agentCmd := startAgent(t, binDir, agentPort)
 
 	defer func() {
 		if agentCmd.Process != nil {
@@ -488,7 +448,7 @@ func TestSystemWebDirectorDiscovery(t *testing.T) {
 	webPort := testutil.AllocateTestPort(t) + 1000 // Offset to avoid collision
 	token := "test-system-token"
 	webURL := fmt.Sprintf("https://localhost:%d", webPort)
-	webCmd := startWebDirector(t, binDir, webPort, agentPort, token)
+	webCmd := startWebView(t, binDir, webPort, agentPort, token)
 
 	defer func() {
 		if webCmd.Process != nil {
@@ -518,7 +478,7 @@ func TestSystemWebDirectorDiscovery(t *testing.T) {
 
 	var status map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&status)
-	require.Equal(t, []interface{}{"director"}, status["roles"])
+	require.Equal(t, "view", status["type"])
 
 	// Test 2: API requires auth
 	t.Log("Testing auth required...")
@@ -571,14 +531,10 @@ func TestSystemWebDirectorDiscovery(t *testing.T) {
 func TestSystemWebDirectorTaskSubmission(t *testing.T) {
 	binDir := buildBinaries(t)
 
-	projectRoot, err := filepath.Abs("../../")
-	require.NoError(t, err)
-	mockClaude := filepath.Join(projectRoot, "testdata", "mock-claude")
-
 	// Start agent
 	agentPort := testutil.AllocateTestPort(t)
 	agentURL := fmt.Sprintf("http://localhost:%d", agentPort)
-	agentCmd := startAgent(t, binDir, agentPort, mockClaude)
+	agentCmd := startAgent(t, binDir, agentPort)
 
 	defer func() {
 		if agentCmd.Process != nil {
@@ -593,7 +549,7 @@ func TestSystemWebDirectorTaskSubmission(t *testing.T) {
 	webPort := testutil.AllocateTestPort(t) + 2000 // Offset to avoid collision
 	token := "test-task-token"
 	webURL := fmt.Sprintf("https://localhost:%d", webPort)
-	webCmd := startWebDirector(t, binDir, webPort, agentPort, token)
+	webCmd := startWebView(t, binDir, webPort, agentPort, token)
 
 	defer func() {
 		if webCmd.Process != nil {
@@ -608,18 +564,17 @@ func TestSystemWebDirectorTaskSubmission(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	client := &http.Client{
-		Timeout: 30 * time.Second,
+		Timeout: 60 * time.Second,
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		},
 	}
 
-	// Submit task via web director
-	workdir := t.TempDir()
+	// Submit task via web director with haiku and short prompt
 	taskReq := map[string]interface{}{
 		"agent_url": agentURL,
-		"prompt":    "System test task via web director",
-		"workdir":   workdir,
+		"prompt":    "Reply: test",
+		"model":     "haiku",
 	}
 	taskBody, _ := json.Marshal(taskReq)
 
@@ -660,4 +615,169 @@ func TestSystemWebDirectorTaskSubmission(t *testing.T) {
 
 	require.Equal(t, "completed", finalState, "Task should complete successfully")
 	t.Log("Task completed successfully via web director")
+}
+
+func TestSystemSessionContinuation(t *testing.T) {
+	binDir := buildBinaries(t)
+
+	port := testutil.AllocateTestPort(t)
+	agentURL := fmt.Sprintf("http://localhost:%d", port)
+	agentCmd := startAgent(t, binDir, port)
+
+	defer func() {
+		if agentCmd.Process != nil {
+			agentCmd.Process.Signal(syscall.SIGTERM)
+			agentCmd.Wait()
+		}
+	}()
+
+	testutil.WaitForHealthy(t, agentURL+"/status", 10*time.Second)
+
+	// Task 1: New session (no session_id provided)
+	// Claude should generate and return a session_id
+	t.Log("Task 1: Starting new session")
+	taskReq1 := map[string]interface{}{
+		"prompt": "Reply: first",
+		"model":  "haiku",
+	}
+	taskBody1, _ := json.Marshal(taskReq1)
+
+	resp1, err := http.Post(agentURL+"/task", "application/json", bytes.NewReader(taskBody1))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusCreated, resp1.StatusCode)
+
+	var taskResp1 map[string]interface{}
+	json.NewDecoder(resp1.Body).Decode(&taskResp1)
+	resp1.Body.Close()
+
+	taskID1 := taskResp1["task_id"].(string)
+	require.NotEmpty(t, taskID1)
+
+	// Wait for task 1 to complete
+	waitForTaskCompletion(t, agentURL, taskID1, 60*time.Second)
+
+	// Get the session_id from the completed task (Claude generates it)
+	resp1Status, err := http.Get(agentURL + "/task/" + taskID1)
+	require.NoError(t, err)
+	var task1Status map[string]interface{}
+	json.NewDecoder(resp1Status.Body).Decode(&task1Status)
+	resp1Status.Body.Close()
+
+	require.Equal(t, "completed", task1Status["state"], "Task 1 should complete")
+	sessionID := task1Status["session_id"].(string)
+	require.NotEmpty(t, sessionID, "Claude should have generated a session_id")
+	t.Logf("Session created by Claude: %s", sessionID)
+
+	// Task 2: Continue session (same session_id provided)
+	t.Log("Task 2: Continuing existing session")
+	taskReq2 := map[string]interface{}{
+		"prompt":     "Reply: second",
+		"model":      "haiku",
+		"session_id": sessionID,
+	}
+	taskBody2, _ := json.Marshal(taskReq2)
+
+	resp2, err := http.Post(agentURL+"/task", "application/json", bytes.NewReader(taskBody2))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusCreated, resp2.StatusCode)
+
+	var taskResp2 map[string]interface{}
+	json.NewDecoder(resp2.Body).Decode(&taskResp2)
+	resp2.Body.Close()
+
+	taskID2 := taskResp2["task_id"].(string)
+	returnedSessionID := taskResp2["session_id"].(string)
+	require.Equal(t, sessionID, returnedSessionID, "Session ID should be preserved")
+
+	// Wait for task 2 to complete
+	waitForTaskCompletion(t, agentURL, taskID2, 60*time.Second)
+
+	// Verify task 2 completed successfully
+	resp2Status, err := http.Get(agentURL + "/task/" + taskID2)
+	require.NoError(t, err)
+	var task2Status map[string]interface{}
+	json.NewDecoder(resp2Status.Body).Decode(&task2Status)
+	resp2Status.Body.Close()
+
+	// Log full status for debugging
+	task2StatusJSON, _ := json.MarshalIndent(task2Status, "", "  ")
+	t.Logf("Task 2 status: %s", task2StatusJSON)
+
+	require.Equal(t, "completed", task2Status["state"], "Task 2 should complete - session continuation failed if this errors")
+	t.Log("Session continuation succeeded")
+}
+
+func TestSystemNewSessionWithoutSessionID(t *testing.T) {
+	// Test that when no session_id is provided, Claude generates one
+	binDir := buildBinaries(t)
+
+	port := testutil.AllocateTestPort(t)
+	agentURL := fmt.Sprintf("http://localhost:%d", port)
+	agentCmd := startAgent(t, binDir, port)
+
+	defer func() {
+		if agentCmd.Process != nil {
+			agentCmd.Process.Signal(syscall.SIGTERM)
+			agentCmd.Wait()
+		}
+	}()
+
+	testutil.WaitForHealthy(t, agentURL+"/status", 10*time.Second)
+
+	// Submit task without session_id - Claude should generate one
+	taskReq := map[string]interface{}{
+		"prompt": "Reply: test",
+		"model":  "haiku",
+	}
+	taskBody, _ := json.Marshal(taskReq)
+
+	resp, err := http.Post(agentURL+"/task", "application/json", bytes.NewReader(taskBody))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+
+	var taskResp map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&taskResp)
+	resp.Body.Close()
+
+	taskID := taskResp["task_id"].(string)
+	require.NotEmpty(t, taskID)
+
+	// Wait for task to complete
+	waitForTaskCompletion(t, agentURL, taskID, 60*time.Second)
+
+	// Get task status - session_id should be set by Claude
+	resp2, err := http.Get(agentURL + "/task/" + taskID)
+	require.NoError(t, err)
+
+	var taskStatus map[string]interface{}
+	json.NewDecoder(resp2.Body).Decode(&taskStatus)
+	resp2.Body.Close()
+
+	require.Equal(t, "completed", taskStatus["state"], "Task should complete")
+	sessionID := taskStatus["session_id"].(string)
+	require.NotEmpty(t, sessionID, "Claude should have generated a session_id")
+	t.Logf("Session ID from Claude: %s", sessionID)
+}
+
+// waitForTaskCompletion polls until a task is completed or failed
+func waitForTaskCompletion(t *testing.T, agentURL, taskID string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		resp, err := http.Get(agentURL + "/task/" + taskID)
+		if err != nil {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		var status map[string]interface{}
+		json.NewDecoder(resp.Body).Decode(&status)
+		resp.Body.Close()
+
+		state := status["state"].(string)
+		if state == "completed" || state == "failed" {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("Task %s did not complete within %v", taskID, timeout)
 }

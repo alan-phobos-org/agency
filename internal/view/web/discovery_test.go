@@ -19,7 +19,8 @@ func TestDiscoveryAgentClassification(t *testing.T) {
 	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/status" {
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"roles":          []string{"agent"},
+				"type":           "agent",
+				"interfaces":     []string{"statusable", "taskable"},
 				"version":        "test-1.0",
 				"state":          "idle",
 				"uptime_seconds": 100,
@@ -43,7 +44,7 @@ func TestDiscoveryAgentClassification(t *testing.T) {
 
 	agents := d.Agents()
 	require.Len(t, agents, 1)
-	require.Contains(t, agents[0].Roles, "agent")
+	require.Equal(t, "agent", agents[0].Type)
 	require.Equal(t, "idle", agents[0].State)
 	require.Equal(t, "test-1.0", agents[0].Version)
 
@@ -58,7 +59,8 @@ func TestDiscoveryDirectorClassification(t *testing.T) {
 	director := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/status" {
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"roles":          []string{"director"},
+				"type":           "director",
+				"interfaces":     []string{"statusable", "observable", "taskable"},
 				"version":        "test-1.0",
 				"state":          "running",
 				"uptime_seconds": 50,
@@ -78,7 +80,7 @@ func TestDiscoveryDirectorClassification(t *testing.T) {
 
 	directors := d.Directors()
 	require.Len(t, directors, 1)
-	require.Contains(t, directors[0].Roles, "director")
+	require.Equal(t, "director", directors[0].Type)
 
 	agents := d.Agents()
 	require.Len(t, agents, 0)
@@ -93,7 +95,7 @@ func TestDiscoveryFailureRemoval(t *testing.T) {
 		callCount++
 		if callCount <= 1 {
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"roles":   []string{"agent"},
+				"type":    "agent",
 				"version": "test",
 				"state":   "idle",
 			})
@@ -157,7 +159,7 @@ func TestDiscoveryExcludesSelf(t *testing.T) {
 	// Create mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"roles":   []string{"agent"},
+			"type":    "agent",
 			"version": "test",
 			"state":   "idle",
 		})
@@ -192,21 +194,21 @@ func TestDiscoveryMultipleComponents(t *testing.T) {
 	// Create multiple servers
 	agent1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"roles": []string{"agent"}, "state": "idle",
+			"type": "agent", "state": "idle",
 		})
 	}))
 	defer agent1.Close()
 
 	agent2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"roles": []string{"agent"}, "state": "working",
+			"type": "agent", "state": "working",
 		})
 	}))
 	defer agent2.Close()
 
 	director := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"roles": []string{"director"}, "state": "running",
+			"type": "director", "state": "running",
 		})
 	}))
 	defer director.Close()
@@ -235,25 +237,6 @@ func TestDiscoveryMultipleComponents(t *testing.T) {
 
 	directors := d.Directors()
 	require.Len(t, directors, 1)
-}
-
-func TestHasRole(t *testing.T) {
-	tests := []struct {
-		roles  []string
-		target string
-		want   bool
-	}{
-		{[]string{"agent"}, "agent", true},
-		{[]string{"director"}, "agent", false},
-		{[]string{"agent", "director"}, "director", true},
-		{nil, "agent", false},
-		{[]string{}, "agent", false},
-	}
-
-	for _, tt := range tests {
-		got := hasRole(tt.roles, tt.target)
-		require.Equal(t, tt.want, got, "hasRole(%v, %s)", tt.roles, tt.target)
-	}
 }
 
 func extractPort(t *testing.T, url string) int {

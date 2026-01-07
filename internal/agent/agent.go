@@ -3,20 +3,26 @@ package agent
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/anthropics/agency/internal/api"
 	"github.com/anthropics/agency/internal/config"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 )
+
+//go:embed claude.md
+var agentClaudeMD string
 
 // State represents the agent's current state
 type State string
@@ -40,20 +46,22 @@ const (
 
 // Task represents a task execution
 type Task struct {
-	ID              string        `json:"task_id"`
-	State           TaskState     `json:"state"`
-	Prompt          string        `json:"-"`
-	Workdir         string        `json:"-"`
-	Model           string        `json:"-"`
-	Timeout         time.Duration `json:"-"`
-	StartedAt       *time.Time    `json:"started_at,omitempty"`
-	CompletedAt     *time.Time    `json:"completed_at,omitempty"`
-	ExitCode        *int          `json:"exit_code,omitempty"`
-	Output          string        `json:"output,omitempty"`
-	Error           *TaskError    `json:"error,omitempty"`
-	SessionID       string        `json:"session_id,omitempty"`
-	TokenUsage      *TokenUsage   `json:"token_usage,omitempty"`
-	DurationSeconds float64       `json:"duration_seconds,omitempty"`
+	ID              string              `json:"task_id"`
+	State           TaskState           `json:"state"`
+	Prompt          string              `json:"-"`
+	Model           string              `json:"-"`
+	Timeout         time.Duration       `json:"-"`
+	StartedAt       *time.Time          `json:"started_at,omitempty"`
+	CompletedAt     *time.Time          `json:"completed_at,omitempty"`
+	ExitCode        *int                `json:"exit_code,omitempty"`
+	Output          string              `json:"output,omitempty"`
+	Error           *TaskError          `json:"error,omitempty"`
+	SessionID       string              `json:"session_id,omitempty"`
+	ResumeSession   bool                `json:"-"` // True if continuing an existing session
+	WorkDir         string              `json:"-"` // Working directory for task execution
+	Project         *api.ProjectContext `json:"-"` // Project context for prompt prepending
+	TokenUsage      *TokenUsage         `json:"token_usage,omitempty"`
+	DurationSeconds float64             `json:"duration_seconds,omitempty"`
 
 	cmd    *exec.Cmd
 	cancel context.CancelFunc
@@ -73,17 +81,18 @@ type TokenUsage struct {
 
 // TaskRequest represents a task submission request
 type TaskRequest struct {
-	Prompt         string            `json:"prompt"`
-	Workdir        string            `json:"workdir"`
-	Model          string            `json:"model,omitempty"`
-	TimeoutSeconds int               `json:"timeout_seconds,omitempty"`
-	SessionID      string            `json:"session_id,omitempty"`
-	Env            map[string]string `json:"env,omitempty"`
+	Prompt         string              `json:"prompt"`
+	Model          string              `json:"model,omitempty"`
+	TimeoutSeconds int                 `json:"timeout_seconds,omitempty"`
+	SessionID      string              `json:"session_id,omitempty"`
+	Project        *api.ProjectContext `json:"project,omitempty"`
+	Env            map[string]string   `json:"env,omitempty"`
 }
 
 // StatusResponse represents the /status response
 type StatusResponse struct {
-	Roles         []string     `json:"roles"`
+	Type          string       `json:"type"`
+	Interfaces    []string     `json:"interfaces"`
 	Version       string       `json:"version"`
 	State         State        `json:"state"`
 	UptimeSeconds float64      `json:"uptime_seconds"`
@@ -182,7 +191,8 @@ func (a *Agent) handleStatus(w http.ResponseWriter, r *http.Request) {
 	defer a.mu.RUnlock()
 
 	resp := StatusResponse{
-		Roles:         []string{"agent"},
+		Type:          api.TypeAgent,
+		Interfaces:    []string{api.InterfaceStatusable, api.InterfaceTaskable},
 		Version:       a.version,
 		State:         a.state,
 		UptimeSeconds: time.Since(a.startTime).Seconds(),
@@ -221,18 +231,6 @@ func (a *Agent) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "validation_error", "prompt is required")
 		return
 	}
-	if req.Workdir == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "workdir is required")
-		return
-	}
-
-	// Create workdir if it doesn't exist
-	if _, err := os.Stat(req.Workdir); os.IsNotExist(err) {
-		if err := os.MkdirAll(req.Workdir, 0755); err != nil {
-			writeError(w, http.StatusBadRequest, "validation_error", "failed to create workdir: "+err.Error())
-			return
-		}
-	}
 
 	a.mu.Lock()
 	if a.state != StateIdle {
@@ -249,13 +247,25 @@ func (a *Agent) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create task
+	// Create task with session-based working directory
+	// For new sessions, generate a valid UUID session_id upfront
+	// For resumed sessions, use the provided session ID
+	// WorkDir is derived from session_id for consistent directory mapping
+	resumeSession := req.SessionID != ""
+	sessionID := req.SessionID
+	if sessionID == "" {
+		sessionID = uuid.New().String()
+	}
+
 	task := &Task{
-		ID:      "task-" + uuid.New().String()[:8],
-		State:   TaskStateQueued,
-		Prompt:  req.Prompt,
-		Workdir: req.Workdir,
-		Model:   req.Model,
+		ID:            "task-" + uuid.New().String()[:8],
+		State:         TaskStateQueued,
+		Prompt:        req.Prompt,
+		Model:         req.Model,
+		SessionID:     sessionID,
+		ResumeSession: resumeSession,
+		WorkDir:       sessionID,
+		Project:       req.Project,
 	}
 
 	if task.Model == "" {
@@ -277,8 +287,9 @@ func (a *Agent) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	go a.executeTask(task, req.Env)
 
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"task_id": task.ID,
-		"status":  "queued",
+		"task_id":    task.ID,
+		"session_id": task.SessionID,
+		"status":     "queued",
 	})
 }
 
@@ -403,7 +414,7 @@ func (a *Agent) handleShutdown(w http.ResponseWriter, r *http.Request) {
 //
 // The function:
 //  1. Creates a timeout context based on task.Timeout
-//  2. Builds and executes the Claude CLI command in task.Workdir
+//  2. Creates/reuses session directory and executes Claude CLI
 //  3. Handles three termination cases: success, timeout, or cancellation
 //  4. Parses JSON output from Claude or falls back to raw stdout
 //  5. Updates task state and clears agent's current task when done
@@ -421,6 +432,25 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 	task.State = TaskStateWorking
 	a.mu.Unlock()
 
+	// Create working directory: <session_dir>/<work_dir>/
+	// For new sessions, clean any existing directory first
+	workDir := filepath.Join(a.config.SessionDir, task.WorkDir)
+	if !task.ResumeSession {
+		os.RemoveAll(workDir) // Clean for new sessions
+	}
+	if err := os.MkdirAll(workDir, 0755); err != nil {
+		a.mu.Lock()
+		task.State = TaskStateFailed
+		task.Error = &TaskError{
+			Type:    "session_error",
+			Message: fmt.Sprintf("Failed to create session directory: %v", err),
+		}
+		a.state = StateIdle
+		a.currentTask = nil
+		a.mu.Unlock()
+		return
+	}
+
 	// Resolve Claude binary: CLAUDE_BIN env var or "claude" from PATH
 	claudeBin := os.Getenv("CLAUDE_BIN")
 	if claudeBin == "" {
@@ -430,7 +460,7 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 	args := buildClaudeArgs(task)
 
 	cmd := exec.CommandContext(ctx, claudeBin, args...)
-	cmd.Dir = task.Workdir
+	cmd.Dir = workDir
 
 	// Inherit current environment and add task-specific vars
 	cmd.Env = os.Environ()
@@ -483,7 +513,10 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 	}
 
 	if jsonErr := json.Unmarshal(stdout.Bytes(), &claudeResp); jsonErr == nil {
-		task.SessionID = claudeResp.SessionID
+		// Only update session_id if Claude returns a non-empty value
+		if claudeResp.SessionID != "" {
+			task.SessionID = claudeResp.SessionID
+		}
 		task.Output = claudeResp.Result
 		task.TokenUsage = &TokenUsage{
 			Input:  claudeResp.Usage.InputTokens,
@@ -524,16 +557,33 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 // It uses "--" to separate options from the prompt, preventing prompts that
 // start with dashes from being interpreted as flags.
 func buildClaudeArgs(task *Task) []string {
-	return []string{
+	args := []string{
 		"--print",
 		"--dangerously-skip-permissions",
 		"--model", task.Model,
 		"--output-format", "json",
 		"--max-turns", "50",
-		"-p",
-		"--", // End of options - prompt follows
-		task.Prompt,
 	}
+
+	// Add session handling for conversation continuity
+	// For new sessions: pass --session-id to create session with our UUID
+	// For resumed sessions: pass --resume to continue the existing session
+	if task.SessionID != "" {
+		if task.ResumeSession {
+			args = append(args, "--resume", task.SessionID)
+		} else {
+			args = append(args, "--session-id", task.SessionID)
+		}
+	}
+
+	// Build prompt with agent instructions and optional project context prepended
+	prompt := agentClaudeMD + "\n\n" + task.Prompt
+	if task.Project != nil && task.Project.Prompt != "" {
+		prompt = agentClaudeMD + "\n\n" + task.Project.Prompt + "\n\n" + task.Prompt
+	}
+
+	args = append(args, "-p", "--", prompt)
+	return args
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {

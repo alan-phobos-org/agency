@@ -1,0 +1,52 @@
+#!/bin/bash
+# Mock Claude CLI for testing session continuation
+# Tracks session ID and resume flag, writes to files for verification
+
+SESSION_ID=""
+RESUME=false
+FORK_SESSION=false
+PROMPT=""
+CAPTURE_NEXT=""
+
+for arg in "$@"; do
+    if [ "$CAPTURE_NEXT" = "session" ]; then
+        SESSION_ID="$arg"
+        CAPTURE_NEXT=""
+        continue
+    fi
+    if [ "$CAPTURE_NEXT" = "prompt" ]; then
+        PROMPT="$arg"
+        CAPTURE_NEXT=""
+        continue
+    fi
+    case "$arg" in
+        --session-id)
+            CAPTURE_NEXT="session"
+            ;;
+        --resume)
+            RESUME=true
+            ;;
+        --fork-session)
+            FORK_SESSION=true
+            ;;
+        --)
+            CAPTURE_NEXT="prompt"
+            ;;
+    esac
+done
+
+# For new sessions (no --session-id passed), generate one like real Claude does
+if [ -z "$SESSION_ID" ]; then
+    SESSION_ID="mock-generated-$(date +%s)-$$"
+fi
+
+# Write captured args to file specified by MOCK_CLAUDE_OUTPUT env var
+if [ -n "$MOCK_CLAUDE_OUTPUT" ]; then
+    echo "session_id=$SESSION_ID" > "$MOCK_CLAUDE_OUTPUT"
+    echo "resume=$RESUME" >> "$MOCK_CLAUDE_OUTPUT"
+    echo "fork_session=$FORK_SESSION" >> "$MOCK_CLAUDE_OUTPUT"
+    echo "prompt=$PROMPT" >> "$MOCK_CLAUDE_OUTPUT"
+fi
+
+# Return success with session info
+echo "{\"session_id\":\"$SESSION_ID\",\"result\":\"Session test: resume=$RESUME\",\"exit_code\":0,\"usage\":{\"input_tokens\":100,\"output_tokens\":50}}"

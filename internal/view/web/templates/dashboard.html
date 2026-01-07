@@ -13,6 +13,10 @@
     .refresh-indicator.active { opacity: 1; }
     #submitResult { display: none; }
     #submitResult.show { display: block; }
+    .session-card { border-left: 3px solid var(--tblr-purple); }
+    .session-tasks { max-height: 200px; overflow-y: auto; }
+    .session-task { padding: 0.5rem; border-bottom: 1px solid var(--tblr-border-color); }
+    .session-task:last-child { border-bottom: none; }
   </style>
 </head>
 <body class="theme-light">
@@ -62,6 +66,21 @@
             </div>
           </div>
 
+          <!-- Sessions Section -->
+          <div class="card mb-3">
+            <div class="card-header">
+              <h3 class="card-title">Sessions</h3>
+              <div class="card-actions">
+                <span class="badge bg-purple" id="sessionCount">0</span>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="row row-deck row-cards" id="sessionGrid">
+                <div class="col-12 text-muted">No active sessions</div>
+              </div>
+            </div>
+          </div>
+
           <!-- Task Submission -->
           <div class="card mb-3">
             <div class="card-header">
@@ -77,17 +96,19 @@
                     </select>
                   </div>
                   <div class="col-md-4 mb-3">
-                    <label class="form-label">Working Directory</label>
-                    <input type="text" class="form-control" id="workdir" required placeholder="/path/to/project">
+                    <label class="form-label">Session</label>
+                    <select class="form-select" id="sessionSelect">
+                      <option value="">New session</option>
+                    </select>
                   </div>
                   <div class="col-md-2 mb-3">
-                    <label class="form-label">Timeout (seconds)</label>
+                    <label class="form-label">Timeout (s)</label>
                     <input type="number" class="form-control" id="timeout" value="1800" min="1">
                   </div>
                   <div class="col-md-2 mb-3">
                     <label class="form-label">Model</label>
                     <select class="form-select" id="model">
-                      <option value="">Default</option>
+                      <option value="">Auto</option>
                       <option value="opus">Opus</option>
                       <option value="sonnet">Sonnet</option>
                       <option value="haiku">Haiku</option>
@@ -129,6 +150,16 @@
 
     // Tracked task for monitoring
     let activeTask = null;
+
+    // Clear stale sessions on page load (refresh clears cache)
+    localStorage.removeItem('agency_sessions');
+
+    // Sessions storage: { sessionId: { agentUrl, tasks: [{taskId, state, prompt}], createdAt } }
+    const sessions = {};
+
+    function saveSessions() {
+      localStorage.setItem('agency_sessions', JSON.stringify(sessions));
+    }
 
     // API helper
     async function api(path, options = {}) {
@@ -205,6 +236,81 @@
         </div>`;
     }
 
+    // Render session card
+    function renderSessionCard(sessionId, session) {
+      const taskCount = session.tasks ? session.tasks.length : 0;
+      const lastTask = session.tasks && session.tasks.length > 0 ? session.tasks[session.tasks.length - 1] : null;
+      const stateColors = {
+        'completed': 'bg-green',
+        'failed': 'bg-red',
+        'working': 'bg-yellow',
+        'queued': 'bg-secondary'
+      };
+      const lastState = lastTask ? lastTask.state : 'unknown';
+
+      return `
+        <div class="col-sm-6 col-lg-4">
+          <div class="card session-card">
+            <div class="card-body">
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <span class="badge ${stateColors[lastState] || 'bg-secondary'} status-badge">${lastState}</span>
+                <button class="btn btn-sm btn-outline-primary" onclick="continueSession('${sessionId}')">Continue</button>
+              </div>
+              <div class="small text-muted mb-2">
+                Session: ${sessionId.slice(0, 8)}...<br>
+                Agent: ${session.agentUrl}<br>
+                Tasks: ${taskCount}
+              </div>
+              <div class="session-tasks">
+                ${(session.tasks || []).slice(-3).map(t => `
+                  <div class="session-task small">
+                    <span class="badge ${stateColors[t.state] || 'bg-secondary'} me-1">${t.state}</span>
+                    ${escapeHtml((t.prompt || '').slice(0, 40))}${(t.prompt || '').length > 40 ? '...' : ''}
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    // Update sessions display
+    function updateSessionsUI() {
+      const sessionGrid = document.getElementById('sessionGrid');
+      const sessionSelect = document.getElementById('sessionSelect');
+      const sessionIds = Object.keys(sessions);
+
+      document.getElementById('sessionCount').textContent = sessionIds.length;
+
+      if (sessionIds.length > 0) {
+        sessionGrid.innerHTML = sessionIds.map(id => renderSessionCard(id, sessions[id])).join('');
+      } else {
+        sessionGrid.innerHTML = '<div class="col-12 text-muted">No active sessions</div>';
+      }
+
+      // Update session dropdown, preserving current selection
+      const currentSessionValue = sessionSelect.value;
+      sessionSelect.innerHTML = '<option value="">New session</option>' +
+        sessionIds.map(id => {
+          const s = sessions[id];
+          const taskCount = s.tasks ? s.tasks.length : 0;
+          return `<option value="${id}">${id.slice(0, 8)}... (${taskCount} tasks, ${s.agentUrl})</option>`;
+        }).join('');
+      if (currentSessionValue && sessionIds.includes(currentSessionValue)) {
+        sessionSelect.value = currentSessionValue;
+      }
+    }
+
+    // Continue session - pre-fill form
+    function continueSession(sessionId) {
+      const session = sessions[sessionId];
+      if (!session) return;
+
+      document.getElementById('sessionSelect').value = sessionId;
+      document.getElementById('agentSelect').value = session.agentUrl;
+      document.getElementById('prompt').focus();
+    }
+
     // Update dashboard
     async function refresh() {
       const indicator = document.getElementById('refreshIndicator');
@@ -249,6 +355,9 @@
         if (activeTask) {
           await pollTask();
         }
+
+        // Update sessions UI
+        updateSessionsUI();
       } catch (err) {
         console.error('Refresh failed:', err);
       } finally {
@@ -288,8 +397,16 @@
         `;
         monitor.style.display = 'block';
 
-        // Clear active task if completed
+        // Update session state if completed
         if (['completed', 'failed', 'cancelled'].includes(status.state)) {
+          if (activeTask.sessionId && sessions[activeTask.sessionId]) {
+            const session = sessions[activeTask.sessionId];
+            const taskEntry = session.tasks.find(t => t.taskId === activeTask.taskId);
+            if (taskEntry) {
+              taskEntry.state = status.state;
+              saveSessions();
+            }
+          }
           activeTask = null;
         }
       } catch (err) {
@@ -311,11 +428,18 @@
 
       try {
         const agentUrl = document.getElementById('agentSelect').value;
+        const prompt = document.getElementById('prompt').value;
+        const sessionId = document.getElementById('sessionSelect').value;
+
         const body = {
           agent_url: agentUrl,
-          prompt: document.getElementById('prompt').value,
-          workdir: document.getElementById('workdir').value
+          prompt: prompt
         };
+
+        // Include session_id if continuing an existing session
+        if (sessionId) {
+          body.session_id = sessionId;
+        }
 
         const timeout = parseInt(document.getElementById('timeout').value);
         if (timeout > 0) body.timeout_seconds = timeout;
@@ -329,12 +453,22 @@
         });
 
         result.className = 'mt-3 alert alert-success show';
-        result.textContent = `Task submitted: ${resp.task_id}`;
+        result.textContent = `Task submitted: ${resp.task_id} (session: ${resp.session_id ? resp.session_id.slice(0, 8) + '...' : 'new'})`;
+
+        // Track session
+        const sid = resp.session_id;
+        if (sid) {
+          if (!sessions[sid]) {
+            sessions[sid] = { agentUrl: agentUrl, tasks: [], createdAt: new Date().toISOString() };
+          }
+          sessions[sid].tasks.push({ taskId: resp.task_id, state: 'queued', prompt: prompt });
+          saveSessions();
+        }
 
         // Start monitoring
-        activeTask = { taskId: resp.task_id, agentUrl: resp.agent_url };
+        activeTask = { taskId: resp.task_id, agentUrl: resp.agent_url, sessionId: sid };
 
-        // Clear form
+        // Clear prompt but keep other fields for follow-ups
         document.getElementById('prompt').value = '';
 
         // Refresh to show agent as busy

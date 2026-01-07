@@ -10,9 +10,17 @@ import (
 
 // Config represents the agent configuration
 type Config struct {
-	Port     int          `yaml:"port"`
-	LogLevel string       `yaml:"log_level"`
-	Claude   ClaudeConfig `yaml:"claude"`
+	Port       int             `yaml:"port"`
+	LogLevel   string          `yaml:"log_level"`
+	SessionDir string          `yaml:"session_dir"` // Base directory for session workspaces
+	Claude     ClaudeConfig    `yaml:"claude"`
+	Projects   []ProjectConfig `yaml:"projects,omitempty"`
+}
+
+// ProjectConfig defines a project context that can be prepended to task prompts
+type ProjectConfig struct {
+	Name   string `yaml:"name"`
+	Prompt string `yaml:"prompt"`
 }
 
 // ClaudeConfig holds Claude CLI settings
@@ -23,17 +31,19 @@ type ClaudeConfig struct {
 
 // Defaults
 const (
-	DefaultPort     = 9000
-	DefaultModel    = "sonnet"
-	DefaultTimeout  = 30 * time.Minute
-	DefaultLogLevel = "info"
+	DefaultPort       = 9000
+	DefaultModel      = "sonnet"
+	DefaultTimeout    = 30 * time.Minute
+	DefaultLogLevel   = "info"
+	DefaultSessionDir = "/tmp/agency/sessions"
 )
 
 // Parse parses YAML config data
 func Parse(data []byte) (*Config, error) {
 	cfg := &Config{
-		Port:     DefaultPort,
-		LogLevel: DefaultLogLevel,
+		Port:       DefaultPort,
+		LogLevel:   DefaultLogLevel,
+		SessionDir: DefaultSessionDir,
 		Claude: ClaudeConfig{
 			Model:   DefaultModel,
 			Timeout: DefaultTimeout,
@@ -81,8 +91,9 @@ func (c *Config) Validate() error {
 // Default returns a config with default values
 func Default() *Config {
 	return &Config{
-		Port:     DefaultPort,
-		LogLevel: DefaultLogLevel,
+		Port:       DefaultPort,
+		LogLevel:   DefaultLogLevel,
+		SessionDir: DefaultSessionDir,
 		Claude: ClaudeConfig{
 			Model:   DefaultModel,
 			Timeout: DefaultTimeout,

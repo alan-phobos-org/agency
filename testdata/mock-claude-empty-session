@@ -1,0 +1,5 @@
+#!/bin/bash
+# Mock Claude CLI that returns empty session_id
+# This simulates a bug scenario where Claude's response lacks session_id
+
+echo '{"session_id":"","result":"Task completed","exit_code":0,"usage":{"input_tokens":100,"output_tokens":50}}'

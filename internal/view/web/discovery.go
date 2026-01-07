@@ -12,7 +12,8 @@ import (
 // ComponentStatus represents the status of a discovered component
 type ComponentStatus struct {
 	URL           string       `json:"url"`
-	Roles         []string     `json:"roles"`
+	Type          string       `json:"type"`                 // agent, director, helper, view
+	Interfaces    []string     `json:"interfaces,omitempty"` // statusable, taskable, observable, configurable
 	Version       string       `json:"version"`
 	State         string       `json:"state"`
 	UptimeSeconds float64      `json:"uptime_seconds"`
@@ -177,7 +178,7 @@ func (d *Discovery) Agents() []*ComponentStatus {
 
 	var agents []*ComponentStatus
 	for _, comp := range d.components {
-		if hasRole(comp.Roles, "agent") {
+		if comp.Type == "agent" {
 			agents = append(agents, comp)
 		}
 	}
@@ -191,7 +192,7 @@ func (d *Discovery) Directors() []*ComponentStatus {
 
 	var directors []*ComponentStatus
 	for _, comp := range d.components {
-		if hasRole(comp.Roles, "director") {
+		if comp.Type == "director" {
 			directors = append(directors, comp)
 		}
 	}
@@ -218,11 +219,39 @@ func (d *Discovery) GetComponent(url string) (*ComponentStatus, bool) {
 	return comp, ok
 }
 
-func hasRole(roles []string, target string) bool {
-	for _, r := range roles {
-		if r == target {
+func hasInterface(interfaces []string, target string) bool {
+	for _, i := range interfaces {
+		if i == target {
 			return true
 		}
 	}
 	return false
+}
+
+// Taskables returns all discovered components with the taskable interface
+func (d *Discovery) Taskables() []*ComponentStatus {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	var result []*ComponentStatus
+	for _, comp := range d.components {
+		if hasInterface(comp.Interfaces, "taskable") {
+			result = append(result, comp)
+		}
+	}
+	return result
+}
+
+// Observables returns all discovered components with the observable interface
+func (d *Discovery) Observables() []*ComponentStatus {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	var result []*ComponentStatus
+	for _, comp := range d.components {
+		if hasInterface(comp.Interfaces, "observable") {
+			result = append(result, comp)
+		}
+	}
+	return result
 }

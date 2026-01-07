@@ -34,17 +34,16 @@ All three must pass before committing.
 ```
 agency/
 ├── cmd/
-│   ├── agency/           # CLI tool (fleet management, stub)
 │   ├── ag-agent-claude/  # Agent binary
-│   ├── ag-director-cli/  # CLI director binary
-│   └── ag-director-web/  # Web director binary
+│   ├── ag-cli/           # CLI tool (task, status, discover)
+│   └── ag-view-web/      # Web view binary
 ├── deployment/           # Local deployment scripts
 ├── internal/
 │   ├── agent/      # Agent logic + REST API handlers
+│   ├── api/        # Shared types and constants
 │   ├── config/     # YAML parsing, validation
-│   ├── director/
-│   │   ├── cli/    # CLI director implementation
-│   │   └── web/    # Web director (dashboard + discovery)
+│   ├── view/
+│   │   └── web/    # Web view (dashboard + discovery)
 │   └── testutil/   # Test helpers (port allocation, health checks)
 └── testdata/       # Test fixtures and mock Claude scripts
 ```
@@ -63,15 +62,14 @@ agency/
 |---------|-------|-------|
 | internal/agent | Unit + Integration + System | Well covered |
 | internal/config | Unit | Validation tests |
-| internal/director/cli | Unit | HTTP client + polling tests |
-| internal/director/web | Unit + Integration + System | Discovery, auth, handlers |
+| internal/view/web | Unit + Integration + System | Discovery, auth, handlers |
 | cmd/* | None | Thin entry points |
 
 ## Environment Variables
 
 - `AGENCY_ROOT`: Override config directory (default: ~/.agency)
 - `CLAUDE_BIN`: Path to Claude CLI (default: claude from PATH)
-- `AG_WEB_TOKEN`: Authentication token for web director
+- `AG_WEB_TOKEN`: Authentication token for web view
 
 ## Phase 1 - Complete
 
@@ -79,26 +77,32 @@ MVP: Agent + CLI director with REST API.
 
 ### Agent Endpoints
 - `GET /status` - Agent state, version, config, current task preview
-- `POST /task` - Submit task (prompt, workdir, timeout, env, model)
-- `GET /task/:id` - Task status and output
+- `POST /task` - Submit task (prompt, timeout, env, model, session_id, project)
+- `GET /task/:id` - Task status and output (includes session_id)
 - `POST /task/:id/cancel` - Cancel running task
 - `POST /shutdown` - Graceful shutdown (supports force flag)
+
+### Session Directories
+Agent uses a shared session directory (`/tmp/agency/sessions/<session_id>/`) instead of per-task workdirs:
+- New sessions: directory is created fresh (cleaned if exists)
+- Resumed sessions: directory is reused with existing state
+- Configurable via `session_dir` in agent config
 
 ### Agent States
 - `idle` - Ready to accept tasks
 - `working` - Executing a task
 - `cancelling` - Task cancellation in progress
 
-### CLI Director
-- Connects to agent at specified URL
-- Submits task and polls until completion
-- Displays result to stdout
+### ag-cli
+- `ag-cli task <prompt>` - Submit task to agent and poll until completion
+- `ag-cli status [url]` - Get status of component
+- `ag-cli discover` - Discover running components
 
 ## Phase 1.1 - Complete
 
-Web Director: Status dashboard and task submission UI.
+Web View: Status dashboard and task submission UI.
 
-### Web Director Features
+### Web View Features
 - HTTPS with auto-generated self-signed certificates
 - Token-based authentication (header or query param)
 - Port scanning discovery of agents and directors
@@ -106,42 +110,79 @@ Web Director: Status dashboard and task submission UI.
 - Task submission form with model/timeout selection
 - Task monitoring with output display
 
-### Web Director Endpoints
+### Web View Endpoints
 - `GET /status` - Universal status endpoint (no auth)
 - `GET /` - Dashboard HTML page
 - `GET /api/agents` - List discovered agents
 - `GET /api/directors` - List discovered directors
-- `POST /api/task` - Submit task to selected agent
+- `POST /api/task` - Submit task to selected agent (supports session_id)
 - `GET /api/task/:id` - Get task status (requires agent_url param)
 
-### Running the Web Director
+### Running the Web View
 ```bash
 # Start with defaults (port 8443, scan 9000-9199)
-./bin/ag-director-web
+./bin/ag-view-web
 
 # With custom options
-./bin/ag-director-web -port 8080 -port-start 9000 -port-end 9050
+./bin/ag-view-web -port 8080 -port-start 9000 -port-end 9050
 
 # Token from environment or .env file
-AG_WEB_TOKEN=your-secret-token ./bin/ag-director-web
+AG_WEB_TOKEN=your-secret-token ./bin/ag-view-web
 ```
 
 Access dashboard at `https://localhost:8443/?token=your-token`
+
+## Phase 1.2 - Complete
+
+Interface-based architecture refactoring.
+
+### Core Interfaces
+- **Statusable** - Report type, version, basic config (`GET /status`)
+- **Taskable** - Accept prompts, execute work (`POST /task`, `GET /task/:id`)
+- **Observable** - Report held tasks (`GET /tasks`)
+- **Configurable** - Get/set config (Phase 2+)
+
+### Component Types
+- **Agent** (Statusable + Taskable) - ag-agent-claude
+- **Director** (Statusable + Observable + Taskable) - ag-director-claude
+- **Helper** (Statusable + Observable) - ag-tool-scheduler
+- **View** (Statusable + Observable) - ag-view-web
+
+### Sessions
+Multi-turn conversations via Claude Code `--session-id` and `--resume`:
+- Agent generates session ID if not provided
+- Pass `session_id` in task request to continue session
+- Response always includes `session_id`
+
+### Embedded Instructions
+Components have embedded CLAUDE.md files that are prepended to all prompts:
+- `internal/agent/claude.md` - Agent instructions (git commit rules, etc.)
+- `internal/director/claude.md` - Director instructions
+These ensure consistent behavior across all Claude invocations.
+
+### Project Context
+Tasks can include project context prepended to prompt:
+```json
+{"prompt": "...", "project": {"name": "myapp", "prompt": "Work in repo..."}}
+```
 
 ## Deployment Scripts
 
 Quick-start scripts for running the full agency stack locally:
 
 ```bash
-# Start web director + agent
+# Start web view + agent
 ./deployment/agency.sh
 
 # Stop all services
 ./deployment/stop-agency.sh
+
+# Deploy to remote host
+./deployment/deploy-agency.sh user@host [ssh-port] [ssh-key]
 ```
 
 Environment variables:
-- `AG_WEB_PORT`: Web director port (default: 8443)
+- `AG_WEB_PORT`: Web view port (default: 8443)
 - `AG_AGENT_PORT`: Agent port (default: 9000)
 - `AG_WEB_TOKEN`: Auth token (loaded from .env if not set)
 
@@ -152,8 +193,4 @@ Logs written to `deployment/*.log`, PIDs tracked in `deployment/agency.pids`.
 - Single-task agent (returns 409 if busy)
 - No task history persistence
 - No structured logging (stderr only)
-- Web director is stateless (task-to-agent mapping in browser)
-
-## Additional Notes
-
-This repository was successfully cloned and modified using Claude Code.
+- Web view is stateless (session/task mapping in browser localStorage)

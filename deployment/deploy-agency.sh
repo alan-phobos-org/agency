@@ -32,8 +32,8 @@ SSH_PORT="${2:-22}"
 SSH_KEY="${3:-${SSH_KEY:-}}"
 
 # Build SSH options
-SSH_OPTS="-p $SSH_PORT"
-SCP_OPTS="-P $SSH_PORT"
+SSH_OPTS="-C -p $SSH_PORT"
+SCP_OPTS="-C -P $SSH_PORT"
 if [ -n "$SSH_KEY" ]; then
     SSH_OPTS="$SSH_OPTS -i $SSH_KEY"
     SCP_OPTS="$SCP_OPTS -i $SSH_KEY"

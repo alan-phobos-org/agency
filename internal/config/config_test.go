@@ -20,8 +20,9 @@ func TestParse(t *testing.T) {
 			name: "minimal config",
 			yaml: "port: 9000",
 			want: &Config{
-				Port:     9000,
-				LogLevel: DefaultLogLevel,
+				Port:       9000,
+				LogLevel:   DefaultLogLevel,
+				SessionDir: DefaultSessionDir,
 				Claude: ClaudeConfig{
 					Model:   DefaultModel,
 					Timeout: DefaultTimeout,
@@ -38,8 +39,9 @@ claude:
   timeout: 1h
 `,
 			want: &Config{
-				Port:     9001,
-				LogLevel: "debug",
+				Port:       9001,
+				LogLevel:   "debug",
+				SessionDir: DefaultSessionDir,
 				Claude: ClaudeConfig{
 					Model:   "opus",
 					Timeout: time.Hour,
@@ -100,6 +102,7 @@ func TestDefault(t *testing.T) {
 	cfg := Default()
 	require.Equal(t, DefaultPort, cfg.Port)
 	require.Equal(t, DefaultLogLevel, cfg.LogLevel)
+	require.Equal(t, DefaultSessionDir, cfg.SessionDir)
 	require.Equal(t, DefaultModel, cfg.Claude.Model)
 	require.Equal(t, DefaultTimeout, cfg.Claude.Timeout)
 }

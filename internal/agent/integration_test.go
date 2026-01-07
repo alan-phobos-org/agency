@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -74,10 +73,9 @@ func TestIntegrationAgentDirectorFlow(t *testing.T) {
 		ContainsKey("uptime_seconds")
 
 	// Submit task via director
-	workdir := t.TempDir()
 	director := cli.New(agentURL)
 
-	result, err := director.Run("Hello, please respond", workdir, 30*time.Second)
+	result, err := director.Run("Hello, please respond", 30*time.Second)
 	require.NoError(t, err)
 
 	require.Equal(t, "completed", result.State)
@@ -129,13 +127,11 @@ func TestIntegrationTaskCancellation(t *testing.T) {
 	}()
 
 	e := httpexpect.Default(t, agentURL)
-	workdir := t.TempDir()
 
 	// Submit long-running task
 	resp := e.POST("/task").
 		WithJSON(map[string]interface{}{
-			"prompt":  "slow task",
-			"workdir": workdir,
+			"prompt": "slow task",
 		}).
 		Expect().
 		Status(http.StatusCreated).
@@ -199,10 +195,9 @@ func TestIntegrationPromptWithDashes(t *testing.T) {
 		agent.Shutdown(ctx)
 	}()
 
-	workdir := t.TempDir()
-
-	// Create a file to capture the prompt
-	promptFile := filepath.Join(workdir, "captured_prompt.txt")
+	// Create a temp dir for captured prompt
+	tmpDir := t.TempDir()
+	promptFile := filepath.Join(tmpDir, "captured_prompt.txt")
 	t.Setenv("MOCK_CLAUDE_OUTPUT", promptFile)
 
 	// Test prompts that could be misinterpreted as flags
@@ -228,14 +223,15 @@ func TestIntegrationPromptWithDashes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := director.Run(tt.prompt, workdir, 30*time.Second)
+			result, err := director.Run(tt.prompt, 30*time.Second)
 			require.NoError(t, err)
 			require.Equal(t, "completed", result.State)
 
 			// Verify the prompt was received correctly by the mock
 			captured, err := os.ReadFile(promptFile)
 			require.NoError(t, err)
-			require.Equal(t, tt.prompt, strings.TrimSpace(string(captured)))
+			// The captured prompt includes agent instructions now, so just check the prompt is contained
+			require.Contains(t, string(captured), tt.prompt)
 		})
 	}
 }

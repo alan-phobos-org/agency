@@ -98,14 +98,39 @@ Each phase in a focused Claude session:
 - `ag-agent-claude` - Executes prompts via Claude CLI in a given directory
 
 **Directors** (multiple implementations):
-- `ag-director-cli` - Interactive CLI for ad-hoc tasking
 - `ag-director-github` - Watches issues/PRs, creates branches, opens PRs
 - `ag-director-gitlab` - Same pattern for GitLab
 - `ag-director-scheduler` - Cron-based task scheduling
-- `ag-director-web` - Status dashboard with task submission form (HTTPS, auth)
-- `claude-director` - AI-driven PM for autonomous coordination (future)
+- `ag-director-claude` - AI-driven PM for autonomous coordination (future)
+
+**Views:**
+- `ag-view-web` - Status dashboard with task submission form (HTTPS, auth)
+
+**Tools:**
+- `ag-cli` - Interactive CLI for ad-hoc tasking, status, discovery
 
 **Hybrid components** - Some components may act as both agent and director (e.g., a coordinator that receives tasks and delegates subtasks). The discovery protocol handles this by having `/status` return a `roles` array.
+
+### Architectural Note: Agent vs Director Taxonomy
+
+The agent/director split provides clear responsibilities but creates tension when a component needs both capabilities. `ag-director-claude` is the prime example - it's really a **hierarchical agent** (an agent that can delegate to other agents).
+
+**Alternative mental model - "Agents with capabilities":**
+
+| Component | Capabilities | Autonomy |
+|-----------|--------------|----------|
+| ag-agent-claude | execute | low (single task) |
+| ag-director-cli | - | - (client only) |
+| ag-director-web | discover | - (dashboard only) |
+| ag-director-claude | execute, delegate, discover | high (breaks down goals) |
+| ag-director-github | delegate, discover | medium (rule-based) |
+
+The current naming convention is retained because:
+1. Simple agents remain simple - no delegation logic pollution
+2. "Director" signals "this component coordinates others"
+3. Refactoring taxonomy can happen later once patterns emerge
+
+**Key insight:** `ag-director-claude` is an *agent that happens to direct other agents*, not a director that happens to use Claude. This distinction matters for implementation - it receives the same sandboxing, task API, and lifecycle management as regular agents.
 
 ### Communication Pattern
 
@@ -123,12 +148,12 @@ Alternative considered: **gRPC** offers better typing and streaming, but adds co
 
 ```
 # Universal endpoints (server-based components only)
-GET  /status          # {roles: ["agent"|"director"], version, config, state}
+GET  /status          # {type, interfaces, version, config, state}
 POST /shutdown        # Graceful shutdown with drain period
 
 # Agent endpoints
-POST /task            # {prompt, workdir, timeout} → {task_id}
-GET  /task/:id        # {state, output, exit_code}
+POST /task            # {prompt, timeout, session_id, project} → {task_id, session_id}
+GET  /task/:id        # {state, output, exit_code, session_id}
 POST /task/:id/cancel # Cancel running task
 GET  /history         # Past task executions for this agent
 
@@ -136,6 +161,8 @@ GET  /history         # Past task executions for this agent
 GET  /history         # Recent task executions (director's view)
 GET  /agents          # Connected agents and their states
 ```
+
+**Note:** Agents use a shared session directory (`<session_dir>/<session_id>/`) instead of per-task workdirs. New sessions get a fresh directory; resumed sessions reuse the existing one.
 
 Note: The CLI director (`ag-director-cli`) is a one-shot command-line tool, not a server. It does not expose any HTTP endpoints.
 
@@ -490,7 +517,8 @@ agency/
 │   ├── agent/            # Agent logic + HTTP handlers
 │   ├── config/           # YAML parsing, validation
 │   ├── director/         # Director implementations
-│   │   └── cli/          # CLI director (Phase 1)
+│   │   ├── cli/          # CLI director (Phase 1)
+│   │   └── web/          # Web director (Phase 1.1)
 │   └── testutil/         # Shared test helpers
 └── testdata/             # Test fixtures and mock scripts
     ├── configs/          # Test config files
@@ -499,11 +527,8 @@ agency/
 ```
 
 **Future packages (Phase 2+):**
-- `internal/api/` - Shared HTTP middleware (if extracted from agent)
-- `internal/discovery/` - Port scanning, mDNS
 - `internal/director/github/` - GitHub director
 - `internal/director/scheduler/` - Cron-based director
-- `internal/director/web/` - Web dashboard director
 
 ### Versioning Strategy
 
@@ -548,7 +573,7 @@ Every agent and director gets a dedicated root directory:
 
 **Log rotation:**
 - `agent.log` / `director.log`: Rolling buffer, last 1000 entries
-- `history/`: Retains last 10 completed task records, oldest auto-deleted
+- `history/`: Retains last 100 completed task records, oldest auto-deleted
 - `workspaces/`: Temporary per-task directories, cleaned up after task completion
 
 ---
@@ -1023,22 +1048,253 @@ internal/agent/
 └── system_test.go        # Updated to include web director tests
 ```
 
-### Phase 2: Observability
+### Phase 1.2: Interface-Based Architecture
 
-**Goal:** Production-ready logging, history, and status reporting.
+**Goal:** Refactor to a clean interface-based architecture with explicit component types and capabilities.
+
+#### Core Interfaces
+
+| Interface | Purpose | Endpoints |
+|-----------|---------|-----------|
+| **Statusable** | Report type, version, basic config | `GET /status` |
+| **Taskable** | Accept prompts, execute agentic work | `POST /task`, `GET /task/:id`, `POST /task/:id/cancel` |
+| **Observable** | Report tasks held by the component | `GET /tasks` |
+| **Configurable** | Get/set configuration (Phase 2+) | `GET /config`, `PUT /config` |
+
+#### Component Types
+
+| Type | Interfaces | Can Task Others | Examples |
+|------|------------|-----------------|----------|
+| **Agent** | Statusable + Taskable | No | ag-agent-claude |
+| **Director** | Statusable + Observable + Taskable | Yes | ag-director-claude |
+| **Helper** | Statusable + Observable | Yes (not taskable itself) | ag-tool-scheduler |
+| **View** | Statusable + Observable | Yes (tasks + observes) | ag-view-web |
+
+#### Component Renaming
+
+| Old Name | New Name | Rationale |
+|----------|----------|-----------|
+| ag-director-web | **ag-view-web** | It's a view, not a director—observes + tasks but isn't taskable |
+| ag-director-cli + agency | **ag-cli** | Pure CLI client, not a component |
+
+#### Sessions
+
+Sessions enable multi-turn conversations that persist across CLI invocations using Claude Code's `--session-id` and `--resume` flags.
+
+**Concept:**
+- Sessions are owned by directors/views
+- Tasks are individual prompts within a session
+- Agent generates session ID if not provided, returns it in response
+- Caller passes session_id to continue conversation
+
+**API Changes:**
+- `POST /task` request: optional `session_id` field to resume
+- `POST /task` response: always includes `session_id`
+- Agent behavior: empty session_id → new UUID; set session_id → use `--resume`
+
+#### Project Context
+
+Tasks can include a project context that gets prepended to the prompt:
+
+```json
+{
+  "prompt": "Fix the bug in auth",
+  "project": {
+    "name": "myapp",
+    "prompt": "Work in https://github.com/org/myapp, reset to main..."
+  }
+}
+```
+
+#### Status Response Changes
+
+```json
+{
+  "type": "agent",
+  "interfaces": ["statusable", "taskable"],
+  "version": "...",
+  "state": "idle"
+}
+```
+
+Note: The deprecated `roles` field has been removed. Use `type` and `interfaces` for component identification.
+
+#### Session Directories
+
+Agents use a shared session directory instead of per-task workdirs:
+- Directory: `<session_dir>/<session_id>/` (configurable, default `/tmp/agency/sessions`)
+- New sessions: directory is created fresh (cleaned if exists)
+- Resumed sessions: directory is reused with existing state
+
+This eliminates the need for callers to manage workdirs.
+
+#### Embedded Instructions
+
+Components have embedded CLAUDE.md files that are prepended to all prompts:
+- `internal/agent/claude.md` - Agent instructions (e.g., no AI references in git commits)
+- `internal/director/claude.md` - Director instructions
+
+These ensure consistent behavior across all Claude invocations.
+
+**Deliverables:**
+- `internal/api/types.go` with shared types and constants
+- Renamed ag-director-web → ag-view-web
+- Merged ag-director-cli + agency → ag-cli
+- Session support in agent (--session-id, --resume)
+- Session directories instead of per-task workdirs
+- Embedded CLAUDE.md files for agent/director instructions
+- Project context support (prepended to prompt)
+- Updated status responses with type/interfaces (roles removed)
+- Updated discovery to filter by interface
+
+### Phase 2: Production Readiness
+
+**Goal:** Observability, security isolation, and multi-instance support.
+
+#### 2.0 Cleanup
+
+- Rename packages to remove github.com/anthropics 
+- Tidy up deployment scripts so there's local and remote and one command to rebuild and deploy to each
+
+#### 2.1 Observability
 
 **Deliverables:**
 - Structured logging (JSON) with levels
-- Per-task history storage
-- `/history` API endpoint
+- Per-task history storage (last 100 tasks retained)
+- `/history` API endpoint with pagination
+- `/history/:id` endpoint for full task details
 - Health checks and graceful shutdown
 - Fleet management CLI (`agency shutdown --all`)
 
 **Success criteria:**
 - `/status` returns rolling log buffer with lifecycle events (task started, completed, errors) - NOT full Claude output
-- `/history` returns per-run details (completed tasks, outcomes, timestamps, full output)
+- `/history` returns paginated task list (default 20, max 100 per page)
+- `/history/:id` returns full task details including complete logs
+- History persists across agent restarts (loaded from disk)
 
-### Phase 3: GitHub Director
+**API Design:**
+```
+GET /history?page=1&limit=20    # Paginated task list (summary only)
+GET /history/:id                # Full task details with logs
+```
+
+**UI Integration:**
+- Dashboard shows task overview list
+- Each task row has expand button (`+`)
+- Expanding loads full logs on demand via `/history/:id`
+- Keeps initial page load fast even with large history
+
+#### 2.2 Agent Sandbox Isolation
+
+**Deliverables:**
+- `internal/sandbox/` package with platform-specific implementations
+- bubblewrap (Linux) and sandbox-exec (macOS) support
+- Configurable read-only/read-write paths
+
+**Failure Policy:** Sandbox setup failures cause immediate task failure. No fallback to unsandboxed execution - fail closed for security.
+
+**Success criteria:**
+- Tasks cannot read/write outside workdir and explicitly allowed paths
+- Existing tests pass without modification (sandbox disabled or mocked)
+- Integration test verifies sandbox blocks `/etc/passwd` access
+- Sandbox setup failure returns error type `sandbox_error` with clear message
+
+**Design:** See Appendix E for full implementation details.
+
+#### 2.3 Multi-Instance Architecture
+
+**Goal:** Support dev/prod instances on same host without conflicts.
+
+**Key points:**
+- Sandbox is stateless and per-invocation (no coordination needed)
+- No global config or daemon - each `Wrap()` call is independent
+- Temp files use unique names via `os.CreateTemp`
+- Agent ports already isolated via config
+
+**Limitation:** Multiple agents share `~/.claude` config directory. For true dev/prod isolation of Claude state, use separate OS users or containers.
+
+#### 2.4 Task Flow Improvements
+
+**Goal:** Enable Claude sessions that can be revisited with additional context via API.
+
+**Session Model:**
+Tasks run until the caller explicitly ends them. The agent does not auto-detect "questions" or "paused" states - session lifecycle is entirely caller-controlled.
+
+**Deliverables:**
+- Session continuation support in task API
+- `POST /task/:id/continue` endpoint for providing follow-up context
+- `POST /task/:id/end` endpoint for explicitly ending a session
+- Web director UI for continuing or ending sessions
+
+**API Design:**
+```
+POST /task/:id/continue    # Send follow-up prompt to existing session
+     Body: {"prompt": "Yes, proceed with option A"}
+     Response: {"task_id": "...", "state": "working"}
+
+POST /task/:id/end         # Explicitly end a session
+     Response: {"task_id": "...", "state": "completed", "output": "..."}
+```
+
+**Acceptance criteria:**
+- Task stays in "idle" state after Claude returns (awaiting continue or end)
+- Caller sends follow-up via `/task/:id/continue`
+- Claude resumes with shared session context
+- Caller explicitly ends session via `/task/:id/end`
+- Multiple continue calls work within same session
+
+### Phase 3: ag-director-claude MVP
+
+**Goal:** AI-driven "manager agent" that delegates implementation work to other agents while focusing on exploratory testing and deployment.
+
+**Architecture:**
+`ag-director-claude` is a hybrid component - both an agent (accepts tasks, runs in sandbox) and a director (discovers and delegates to other agents). It's an "agent that directs other agents" rather than a pure orchestrator.
+
+**Core Responsibilities:**
+- Receive high-level goals from users/other directors
+- Break down goals into implementation tasks
+- Delegate coding tasks to `ag-agent-claude` instances
+- Clone and inspect codebases to evaluate progress
+- Run applications to perform exploratory acceptance testing
+- Focus on user-facing behavior validation, NOT unit/system test execution
+- Handle deployment concerns
+
+**Explicitly NOT responsible for:**
+- Writing code directly (delegates to implementation agents)
+- Running automated test suites (that's the implementation agent's job)
+- The split maintains implementer/tester separation
+
+**Discovery & Delegation:**
+- Uses same port-scan discovery as web director
+- Simple affinity model for agent selection (prefer previously-used agent for same workdir)
+- Cannot spawn new agents, only uses existing ones
+
+**Sandbox Requirement:**
+Since `ag-director-claude` runs Claude to make decisions, it requires sandboxing just like `ag-agent-claude`. Uses same `internal/sandbox/` package with appropriate permissions for:
+- Cloning repositories (read-write to workdir)
+- Running applications for testing (network access)
+- Inspecting file contents (read-only to delegated workdirs)
+
+**Deliverables:**
+- `ag-director-claude` binary
+- Task submission/monitoring (same API as agent)
+- Agent discovery and delegation logic
+- Sandbox configuration for manager operations
+
+**Success criteria:**
+- Receives goal like "Fix the login bug in repo X"
+- Clones repo, inspects code to understand the issue
+- Delegates implementation task to an idle agent
+- Monitors agent progress, inspects results
+- Runs application to verify fix works from user perspective
+- Reports outcome to caller
+
+**Design notes:**
+- Prototype with minimal scope first
+- Start with single-agent delegation before multi-agent coordination
+- Reuses existing agent infrastructure where possible
+
+### Phase 4: GitHub Director
 
 **Goal:** Feature parity with h2ai v1 GitHub integration.
 
@@ -1057,7 +1313,7 @@ internal/agent/
 - Waits for approval (👍) or follow-up comment (more work requested)
 - On shutdown: removes status issue cleanly
 
-### Phase 4: Scheduler Director
+### Phase 5: Scheduler Director
 
 **Goal:** Cron-based task scheduling.
 
@@ -1074,9 +1330,7 @@ internal/agent/
 - REST API allows modifying schedule (`PUT /schedule`, `POST /schedule/task`)
 - Schedule changes take effect without restart
 
-### Phase 5+: Extensions
-
-- Claude-driven director (autonomous PM)
+### Phase 6+: Extensions
 - GitLab director
 - mDNS discovery
 - Multi-VM coordination
@@ -1148,6 +1402,61 @@ The phased delivery ensures each component is solid before building on it. Start
 
 ---
 
+## Non-Functional Requirements
+
+### Observability
+
+**Log correlation:** Keep it simple. Rely on timestamps and manual correlation across components. Avoid distributed tracing complexity until proven needed. Each component logs independently; operators correlate via timestamps when debugging cross-component issues.
+
+**Structured logging** (Phase 2) will use JSON format with consistent fields (`timestamp`, `level`, `component`, `message`) but no trace IDs or span contexts.
+
+### Error UX (Web Director)
+
+**Visual indicators** for agent health state:
+- **Green (healthy):** Agent responding normally
+- **Yellow (warning):** 1-2 consecutive failed polls; show last-known status
+- **Red (error):** 3+ consecutive failed polls; show "unreachable" with last-known state
+- **Recovery:** Returns to green on first successful poll
+
+This gives operators visibility into degraded state rather than silently removing unreachable agents.
+
+### Scalability
+
+**Adaptive polling** to reduce load:
+- Idle agents: Poll every 5 seconds
+- Working agents: Poll every 1 second
+
+This reduces polling traffic by ~5x for idle agents while maintaining responsiveness for active tasks. For <20 agents this is sufficient; revisit if fleet grows significantly.
+
+### Debug Access
+
+**Separate debug endpoint** for raw Claude CLI output:
+```
+GET /task/:id/debug    # Returns raw stderr/stdout from Claude process
+```
+
+Normal `/task/:id` returns parsed, structured output. Debug endpoint returns unparsed process output for troubleshooting Claude CLI issues, encoding problems, or unexpected behavior.
+
+Debug output is retained alongside task history and cleared with the same retention policy.
+
+### Startup Behavior
+
+**Health endpoint stages** for startup validation:
+
+1. Agent starts, binds port immediately
+2. `/status` returns `{"state": "starting", ...}` during initialization
+3. Agent validates: config correctness, Claude CLI exists and runs `--version`
+4. `/status` transitions to `{"state": "idle", ...}` when ready
+5. Task requests during `starting` state return `503 Service Unavailable`
+
+This provides:
+- Fast port binding (process supervision sees it come up quickly)
+- Clear signal to load balancers/discovery that agent isn't ready
+- Fail-fast on config errors before accepting work
+- Web director can show "starting" state in UI
+
+---
+
 ## Appendix A: API Schemas
 
 ### Universal Endpoints
@@ -1216,10 +1525,13 @@ The phased delivery ensures each component is solid before building on it. Start
 // Request
 {
   "prompt": "Fix the authentication bug in login.go. The session token is not being validated correctly.",
-  "workdir": "/home/claude/projects/myapp",
   "model": "opus",             // optional: override agent's default model
   "timeout_seconds": 1800,     // optional: override agent's default timeout
-  "session_id": null,
+  "session_id": null,          // optional: resume existing session
+  "project": {                 // optional: project context prepended to prompt
+    "name": "myapp",
+    "prompt": "Work in https://github.com/org/myapp..."
+  },
   "env": {
     "GITHUB_TOKEN": "ghp_xxx"
   }
@@ -1228,6 +1540,7 @@ The phased delivery ensures each component is solid before building on it. Start
 // Response 201 Created
 {
   "task_id": "task-abc123",
+  "session_id": "session-def456",  // always returned
   "status": "queued"
 }
 
@@ -1241,7 +1554,7 @@ The phased delivery ensures each component is solid before building on it. Start
 // Response 400 Bad Request
 {
   "error": "validation_error",
-  "message": "workdir does not exist: /home/claude/projects/myapp"
+  "message": "prompt is required"
 }
 ```
 
@@ -1735,3 +2048,360 @@ func (it *IntegrationTest) Cleanup() {
     it.Director.Shutdown(ctx)
 }
 ```
+
+---
+
+## Appendix E: Agent Sandbox Isolation
+
+### Overview
+
+Filesystem isolation for `ag-agent-claude` so each task runs in a sandbox with controlled filesystem access. Uses platform-specific mechanisms: `bubblewrap` on Linux, `sandbox-exec` on macOS.
+
+### Design Goals
+
+1. **Minimal core code impact** - Sandbox logic isolated to a single package
+2. **Testable without sandboxing** - Tests can run with sandbox disabled
+3. **Graceful degradation** - Agent works (with warning) if sandbox tools unavailable
+4. **Simple abstraction** - One interface, two implementations
+
+### Package Structure
+
+```
+internal/
+├── agent/
+│   └── agent.go          # Uses sandbox.Wrap() when building command
+└── sandbox/
+    ├── sandbox.go        # Interface + factory + config
+    ├── sandbox_linux.go  # bubblewrap implementation
+    ├── sandbox_darwin.go # sandbox-exec implementation
+    ├── sandbox_noop.go   # Passthrough (disabled/unsupported)
+    └── sandbox_test.go   # Unit tests
+```
+
+### Interface
+
+```go
+package sandbox
+
+// Config controls what the sandboxed process can access
+type Config struct {
+    Workdir        string   // Read-write (required)
+    ReadOnlyPaths  []string // Mounted read-only (e.g., /usr, /lib)
+    ReadWritePaths []string // Additional writable paths beyond Workdir
+    AllowNetwork   bool     // Permit network access (default: false)
+}
+
+// Sandbox wraps command execution with platform-specific isolation
+type Sandbox interface {
+    // Wrap transforms a command to run inside the sandbox.
+    // Returns the wrapped command and a cleanup function.
+    Wrap(cmd *exec.Cmd, cfg Config) (*exec.Cmd, func(), error)
+
+    // Available reports if this sandbox can be used
+    Available() bool
+
+    // Name returns the sandbox implementation name
+    Name() string
+}
+
+// New returns the appropriate sandbox for the current platform.
+// If sandbox tools are unavailable, returns a noop sandbox.
+func New() Sandbox
+```
+
+### Linux Implementation (bubblewrap)
+
+```go
+// sandbox_linux.go
+
+func (s *bwrapSandbox) Wrap(cmd *exec.Cmd, cfg Config) (*exec.Cmd, func(), error) {
+    args := []string{
+        // Minimal root filesystem
+        "--ro-bind", "/usr", "/usr",
+        "--ro-bind", "/lib", "/lib",
+        "--ro-bind", "/lib64", "/lib64",
+        "--ro-bind", "/bin", "/bin",
+        "--ro-bind", "/etc/resolv.conf", "/etc/resolv.conf",
+        "--ro-bind", "/etc/ssl", "/etc/ssl",
+        "--symlink", "/usr/bin", "/sbin",
+
+        // Process isolation
+        "--unshare-pid",
+        "--unshare-uts",
+
+        // Private temp
+        "--tmpfs", "/tmp",
+
+        // Workdir (read-write)
+        "--bind", cfg.Workdir, cfg.Workdir,
+        "--chdir", cfg.Workdir,
+    }
+
+    for _, p := range cfg.ReadOnlyPaths {
+        args = append(args, "--ro-bind", p, p)
+    }
+    for _, p := range cfg.ReadWritePaths {
+        args = append(args, "--bind", p, p)
+    }
+    if !cfg.AllowNetwork {
+        args = append(args, "--unshare-net")
+    }
+
+    args = append(args, "--", cmd.Path)
+    args = append(args, cmd.Args[1:]...)
+
+    wrapped := exec.CommandContext(cmd.Context(), "bwrap", args...)
+    wrapped.Dir = cmd.Dir
+    wrapped.Env = cmd.Env
+    wrapped.Stdin, wrapped.Stdout, wrapped.Stderr = cmd.Stdin, cmd.Stdout, cmd.Stderr
+
+    return wrapped, func() {}, nil
+}
+```
+
+### macOS Implementation (sandbox-exec)
+
+```go
+// sandbox_darwin.go
+
+func (s *seatbeltSandbox) Wrap(cmd *exec.Cmd, cfg Config) (*exec.Cmd, func(), error) {
+    profile := s.generateProfile(cfg)
+
+    // Write profile to temp file
+    profileFile, err := os.CreateTemp("", "sandbox-*.sb")
+    if err != nil {
+        return nil, nil, err
+    }
+    profileFile.WriteString(profile)
+    profileFile.Close()
+
+    cleanup := func() { os.Remove(profileFile.Name()) }
+
+    args := []string{"-f", profileFile.Name(), cmd.Path}
+    args = append(args, cmd.Args[1:]...)
+
+    wrapped := exec.CommandContext(cmd.Context(), "sandbox-exec", args...)
+    wrapped.Dir = cmd.Dir
+    wrapped.Env = cmd.Env
+    wrapped.Stdin, wrapped.Stdout, wrapped.Stderr = cmd.Stdin, cmd.Stdout, cmd.Stderr
+
+    return wrapped, cleanup, nil
+}
+
+func (s *seatbeltSandbox) generateProfile(cfg Config) string {
+    var b strings.Builder
+    b.WriteString("(version 1)\n(deny default)\n")
+
+    // Process execution
+    b.WriteString("(allow process-exec process-fork signal)\n")
+
+    // System read access
+    b.WriteString("(allow file-read* (subpath \"/usr\") (subpath \"/Library\") ")
+    b.WriteString("(subpath \"/System\") (subpath \"/bin\") (subpath \"/sbin\") ")
+    b.WriteString("(literal \"/dev/null\") (literal \"/dev/random\") (literal \"/dev/urandom\"))\n")
+
+    // Workdir: full access
+    fmt.Fprintf(&b, "(allow file-read* file-write* (subpath %q))\n", cfg.Workdir)
+
+    // Additional paths
+    for _, p := range cfg.ReadOnlyPaths {
+        fmt.Fprintf(&b, "(allow file-read* (subpath %q))\n", p)
+    }
+    for _, p := range cfg.ReadWritePaths {
+        fmt.Fprintf(&b, "(allow file-read* file-write* (subpath %q))\n", p)
+    }
+
+    // Temp directories
+    b.WriteString("(allow file-read* file-write* (subpath \"/private/tmp\") ")
+    b.WriteString("(regex #\"^/var/folders/\"))\n")
+
+    if cfg.AllowNetwork {
+        b.WriteString("(allow network*)\n")
+    }
+
+    return b.String()
+}
+```
+
+### Noop Implementation (fallback)
+
+```go
+// sandbox_noop.go
+
+type noopSandbox struct{ reason string }
+
+func (s *noopSandbox) Wrap(cmd *exec.Cmd, _ Config) (*exec.Cmd, func(), error) {
+    return cmd, func() {}, nil
+}
+
+func (s *noopSandbox) Available() bool { return true }
+func (s *noopSandbox) Name() string    { return "noop (" + s.reason + ")" }
+```
+
+### Configuration Extension
+
+```yaml
+# In agent config
+sandbox:
+  enabled: true           # default: true
+  allow_network: true     # default: true (Claude needs API access)
+  read_only_paths: []     # additional read-only paths
+  read_write_paths: []    # additional writable paths
+```
+
+```go
+// internal/config/config.go
+
+type SandboxConfig struct {
+    Enabled        bool     `yaml:"enabled"`
+    AllowNetwork   bool     `yaml:"allow_network"`
+    ReadOnlyPaths  []string `yaml:"read_only_paths"`
+    ReadWritePaths []string `yaml:"read_write_paths"`
+}
+```
+
+### Agent Integration
+
+Changes to [agent.go](internal/agent/agent.go) are minimal (~15 lines):
+
+```go
+// In Agent struct
+type Agent struct {
+    // ... existing fields ...
+    sandbox sandbox.Sandbox
+}
+
+// In New()
+func New(cfg *config.Config, version string) *Agent {
+    var sb sandbox.Sandbox
+    if cfg.Sandbox.Enabled {
+        sb = sandbox.New()
+        if !sb.Available() {
+            fmt.Fprintf(os.Stderr, "Warning: sandbox unavailable, running without isolation\n")
+        }
+    } else {
+        sb = sandbox.Noop("disabled")
+    }
+    return &Agent{/* ... */ sandbox: sb}
+}
+
+// In executeTask() - wrap the command (around line 432)
+cmd := exec.CommandContext(ctx, claudeBin, args...)
+cmd.Dir = task.Workdir
+// ... env setup ...
+
+sbCfg := sandbox.Config{
+    Workdir:        task.Workdir,
+    ReadOnlyPaths:  a.config.Sandbox.ReadOnlyPaths,
+    ReadWritePaths: a.config.Sandbox.ReadWritePaths,
+    AllowNetwork:   a.config.Sandbox.AllowNetwork,
+}
+wrapped, cleanup, err := a.sandbox.Wrap(cmd, sbCfg)
+if err != nil {
+    // Fail closed - no fallback to unsandboxed execution
+    task.State = StateFailed
+    task.Error = &TaskError{
+        Type:    "sandbox_error",
+        Message: fmt.Sprintf("sandbox setup failed: %v", err),
+    }
+    return
+}
+defer cleanup()
+task.cmd = wrapped
+```
+
+### Testing Strategy
+
+**1. Unit Tests (no actual sandboxing)**
+
+```go
+func TestBwrapArgsGeneration(t *testing.T) {
+    s := &bwrapSandbox{}
+    cmd := exec.Command("echo", "test")
+    wrapped, _, _ := s.Wrap(cmd, Config{Workdir: "/work"})
+
+    // Verify args without executing
+    require.Contains(t, wrapped.Args, "--bind")
+    require.Contains(t, wrapped.Args, "/work")
+}
+
+func TestSeatbeltProfileGeneration(t *testing.T) {
+    s := &seatbeltSandbox{}
+    profile := s.generateProfile(Config{Workdir: "/test/work"})
+
+    require.Contains(t, profile, "(version 1)")
+    require.Contains(t, profile, `(subpath "/test/work")`)
+}
+```
+
+**2. Agent Unit Tests (mock sandbox)**
+
+```go
+func TestAgentWithMockSandbox(t *testing.T) {
+    mockSb := &mockSandbox{
+        wrapFn: func(cmd *exec.Cmd, cfg Config) (*exec.Cmd, func(), error) {
+            require.Equal(t, expectedWorkdir, cfg.Workdir)
+            return cmd, func() {}, nil
+        },
+    }
+    agent := New(cfg, "test")
+    agent.sandbox = mockSb  // Inject mock
+    // ... test as normal ...
+}
+```
+
+**3. Integration Tests (real sandbox, mock Claude)**
+
+```go
+func TestSandboxBlocksFileAccess(t *testing.T) {
+    if !sandbox.New().Available() {
+        t.Skip("sandbox not available")
+    }
+    // Use testdata/mock-claude-escape that tries to read /etc/passwd
+    // Verify it fails
+}
+```
+
+**4. Test Fixtures**
+
+```bash
+# testdata/mock-claude-escape
+#!/bin/bash
+# Attempts to access files outside workdir
+if cat /etc/passwd > /dev/null 2>&1; then
+    echo "ESCAPE_SUCCEEDED"
+    exit 1
+else
+    echo "ESCAPE_BLOCKED"
+    exit 0
+fi
+```
+
+### Known Challenges and Mitigations
+
+| Challenge | Mitigation |
+|-----------|------------|
+| **Claude CLI dependencies** | Start with generous read-only paths; config allows adding more without code changes |
+| **Claude config directory** | Add `~/.claude`, `~/.config/claude` to ReadWritePaths by default |
+| **Git operations** | Workdir includes `.git`; add `~/.gitconfig` to read-only paths |
+| **Network for Claude API** | `AllowNetwork: true` by default |
+| **sandbox-exec deprecation** | Still works, used by major tools; monitor for alternatives |
+| **Linux user namespaces** | Detect availability; fall back to noop with warning |
+
+### Default Paths
+
+**Linux (bubblewrap):**
+- Read-only: `/usr`, `/lib`, `/lib64`, `/bin`, `/etc/ssl`, `/etc/resolv.conf`
+- Read-write: workdir, `~/.claude`, `~/.config/claude`
+
+**macOS (sandbox-exec):**
+- Read-only: `/usr`, `/Library`, `/System`, `/bin`, `/sbin`, `/private/var`
+- Read-write: workdir, `/private/tmp`, `/var/folders/*`, `~/.claude`
+
+### Rollout Phases
+
+1. **Package implementation** - Create `internal/sandbox/` with noop + interface
+2. **Linux support** - Implement bubblewrap, unit tests
+3. **macOS support** - Implement sandbox-exec, unit tests
+4. **Agent integration** - Add SandboxConfig, integrate into executeTask()
+5. **Hardening** - Escape-attempt tests, real Claude testing

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/anthropics/agency/internal/config"
 	"github.com/stretchr/testify/require"
@@ -24,7 +25,8 @@ func TestStatusEndpoint(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Contains(t, w.Body.String(), `"state":"idle"`)
 	require.Contains(t, w.Body.String(), `"version":"test-version"`)
-	require.Contains(t, w.Body.String(), `"roles":["agent"]`)
+	require.Contains(t, w.Body.String(), `"type":"agent"`)
+	require.Contains(t, w.Body.String(), `"interfaces":["statusable","taskable"]`)
 }
 
 func TestCreateTaskValidation(t *testing.T) {
@@ -38,15 +40,9 @@ func TestCreateTaskValidation(t *testing.T) {
 	}{
 		{
 			name:       "missing prompt",
-			body:       `{"workdir": "/tmp"}`,
+			body:       `{}`,
 			wantStatus: http.StatusBadRequest,
 			wantError:  "prompt is required",
-		},
-		{
-			name:       "missing workdir",
-			body:       `{"prompt": "test"}`,
-			wantStatus: http.StatusBadRequest,
-			wantError:  "workdir is required",
 		},
 		{
 			name:       "invalid json",
@@ -79,12 +75,10 @@ func TestCreateTaskSuccess(t *testing.T) {
 	t.Setenv("CLAUDE_BIN", "echo")
 
 	cfg := config.Default()
+	cfg.SessionDir = t.TempDir()
 	a := New(cfg, "test")
 
-	// Use temp directory
-	workdir := t.TempDir()
-
-	body := `{"prompt": "test prompt", "workdir": "` + workdir + `"}`
+	body := `{"prompt": "test prompt"}`
 	req := httptest.NewRequest("POST", "/task", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -93,20 +87,19 @@ func TestCreateTaskSuccess(t *testing.T) {
 
 	require.Equal(t, http.StatusCreated, w.Code)
 	require.Contains(t, w.Body.String(), "task_id")
+	require.Contains(t, w.Body.String(), "session_id")
 	require.Contains(t, w.Body.String(), "queued")
 }
 
-func TestCreateTaskCreatesWorkdir(t *testing.T) {
+func TestCreateTaskCreatesSessionDir(t *testing.T) {
 	// Cannot use t.Parallel() with t.Setenv()
 	t.Setenv("CLAUDE_BIN", "echo")
 
 	cfg := config.Default()
+	cfg.SessionDir = filepath.Join(t.TempDir(), "sessions")
 	a := New(cfg, "test")
 
-	// Use a nonexistent subdirectory under temp
-	workdir := filepath.Join(t.TempDir(), "nested", "workdir")
-
-	body := `{"prompt": "test prompt", "workdir": "` + workdir + `"}`
+	body := `{"prompt": "test prompt"}`
 	req := httptest.NewRequest("POST", "/task", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -114,7 +107,12 @@ func TestCreateTaskCreatesWorkdir(t *testing.T) {
 	a.Router().ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusCreated, w.Code)
-	require.DirExists(t, workdir)
+
+	// Wait for task to start executing (creates session directory)
+	time.Sleep(100 * time.Millisecond)
+
+	// The session directory should exist under SessionDir
+	require.DirExists(t, cfg.SessionDir)
 }
 
 func TestGetTaskNotFound(t *testing.T) {
@@ -136,12 +134,11 @@ func TestAgentBusy(t *testing.T) {
 	t.Setenv("CLAUDE_BIN", "sleep")
 
 	cfg := config.Default()
+	cfg.SessionDir = t.TempDir()
 	a := New(cfg, "test")
 
-	workdir := t.TempDir()
-
 	// Submit first task
-	body := `{"prompt": "test", "workdir": "` + workdir + `"}`
+	body := `{"prompt": "test"}`
 	req1 := httptest.NewRequest("POST", "/task", strings.NewReader(body))
 	req1.Header.Set("Content-Type", "application/json")
 	w1 := httptest.NewRecorder()
@@ -188,10 +185,12 @@ func TestBuildClaudeArgs(t *testing.T) {
 			},
 			verify: func(t *testing.T, args []string) {
 				require.Contains(t, args, "--")
-				// Prompt should come after --
 				dashIdx := indexOf(args, "--")
 				require.Greater(t, dashIdx, 0, "-- should be present")
-				require.Equal(t, "Hello world", args[dashIdx+1])
+				prompt := args[dashIdx+1]
+				// Prompt should contain agent instructions and original prompt
+				require.Contains(t, prompt, "# Agent Instructions")
+				require.Contains(t, prompt, "Hello world")
 			},
 		},
 		{
@@ -203,7 +202,9 @@ func TestBuildClaudeArgs(t *testing.T) {
 			verify: func(t *testing.T, args []string) {
 				dashIdx := indexOf(args, "--")
 				require.Greater(t, dashIdx, 0, "-- should be present")
-				require.Equal(t, "- clone https://github.com/example/repo", args[dashIdx+1])
+				prompt := args[dashIdx+1]
+				require.Contains(t, prompt, "# Agent Instructions")
+				require.Contains(t, prompt, "- clone https://github.com/example/repo")
 			},
 		},
 		{
@@ -215,7 +216,9 @@ func TestBuildClaudeArgs(t *testing.T) {
 			verify: func(t *testing.T, args []string) {
 				dashIdx := indexOf(args, "--")
 				require.Greater(t, dashIdx, 0, "-- should be present")
-				require.Equal(t, "- clone repo\n- remove file\n- commit and push", args[dashIdx+1])
+				prompt := args[dashIdx+1]
+				require.Contains(t, prompt, "# Agent Instructions")
+				require.Contains(t, prompt, "- clone repo\n- remove file\n- commit and push")
 			},
 		},
 		{
@@ -227,7 +230,43 @@ func TestBuildClaudeArgs(t *testing.T) {
 			verify: func(t *testing.T, args []string) {
 				dashIdx := indexOf(args, "--")
 				require.Greater(t, dashIdx, 0, "-- should be present")
-				require.Equal(t, "--help me with this", args[dashIdx+1])
+				prompt := args[dashIdx+1]
+				require.Contains(t, prompt, "# Agent Instructions")
+				require.Contains(t, prompt, "--help me with this")
+			},
+		},
+		{
+			name: "new session with session ID",
+			task: &Task{
+				Model:         "sonnet",
+				Prompt:        "test prompt",
+				SessionID:     "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+				ResumeSession: false,
+			},
+			verify: func(t *testing.T, args []string) {
+				// Should use --session-id for new sessions
+				require.Contains(t, args, "--session-id")
+				idx := indexOf(args, "--session-id")
+				require.Equal(t, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", args[idx+1])
+				// Should NOT have --resume
+				require.NotContains(t, args, "--resume")
+			},
+		},
+		{
+			name: "resumed session with session ID",
+			task: &Task{
+				Model:         "sonnet",
+				Prompt:        "test prompt",
+				SessionID:     "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+				ResumeSession: true,
+			},
+			verify: func(t *testing.T, args []string) {
+				// Should use --resume for continued sessions
+				require.Contains(t, args, "--resume")
+				idx := indexOf(args, "--resume")
+				require.Equal(t, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", args[idx+1])
+				// Should NOT have --session-id
+				require.NotContains(t, args, "--session-id")
 			},
 		},
 	}

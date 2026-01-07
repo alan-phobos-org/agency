@@ -7,10 +7,9 @@ LDFLAGS="-X main.version=$VERSION"
 case "${1:-help}" in
     build)
         echo "Building agency $VERSION..."
-        go build -ldflags "$LDFLAGS" -o bin/agency ./cmd/agency
         go build -ldflags "$LDFLAGS" -o bin/ag-agent-claude ./cmd/ag-agent-claude
-        go build -ldflags "$LDFLAGS" -o bin/ag-director-cli ./cmd/ag-director-cli
-        go build -ldflags "$LDFLAGS" -o bin/ag-director-web ./cmd/ag-director-web
+        go build -ldflags "$LDFLAGS" -o bin/ag-view-web ./cmd/ag-view-web
+        go build -ldflags "$LDFLAGS" -o bin/ag-cli ./cmd/ag-cli
         ;;
     test)
         echo "Running unit tests..."

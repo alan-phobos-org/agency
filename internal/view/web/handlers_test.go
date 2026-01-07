@@ -29,7 +29,8 @@ func TestHandleStatus(t *testing.T) {
 	err = json.Unmarshal(rec.Body.Bytes(), &resp)
 	require.NoError(t, err)
 
-	require.Equal(t, []interface{}{"director"}, resp["roles"])
+	require.Equal(t, "view", resp["type"])
+	require.Equal(t, []interface{}{"statusable", "observable"}, resp["interfaces"])
 	require.Equal(t, "test-version", resp["version"])
 	require.Equal(t, "running", resp["state"])
 	require.NotNil(t, resp["uptime_seconds"])
@@ -41,9 +42,10 @@ func TestHandleAgents(t *testing.T) {
 	// Setup mock agent
 	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"roles":   []string{"agent"},
-			"version": "agent-v1",
-			"state":   "idle",
+			"type":       "agent",
+			"interfaces": []string{"statusable", "taskable"},
+			"version":    "agent-v1",
+			"state":      "idle",
 		})
 	}))
 	defer agent.Close()
@@ -95,9 +97,10 @@ func TestHandleDirectors(t *testing.T) {
 	// Setup mock director
 	director := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"roles":   []string{"director"},
-			"version": "dir-v1",
-			"state":   "running",
+			"type":       "director",
+			"interfaces": []string{"statusable", "observable", "taskable"},
+			"version":    "dir-v1",
+			"state":      "running",
 		})
 	}))
 	defer director.Close()
@@ -137,18 +140,13 @@ func TestHandleTaskSubmitValidation(t *testing.T) {
 	}{
 		{
 			name:    "missing agent_url",
-			body:    `{"prompt": "test", "workdir": "/tmp"}`,
+			body:    `{"prompt": "test"}`,
 			wantErr: "agent_url is required",
 		},
 		{
 			name:    "missing prompt",
-			body:    `{"agent_url": "http://localhost:9000", "workdir": "/tmp"}`,
+			body:    `{"agent_url": "http://localhost:9000"}`,
 			wantErr: "prompt is required",
-		},
-		{
-			name:    "missing workdir",
-			body:    `{"agent_url": "http://localhost:9000", "prompt": "test"}`,
-			wantErr: "workdir is required",
 		},
 		{
 			name:    "invalid json",
@@ -177,7 +175,7 @@ func TestHandleTaskSubmitAgentNotFound(t *testing.T) {
 	h, err := NewHandlers(d, "test")
 	require.NoError(t, err)
 
-	body := `{"agent_url": "http://localhost:59999", "prompt": "test", "workdir": "/tmp"}`
+	body := `{"agent_url": "http://localhost:59999", "prompt": "test"}`
 	req := httptest.NewRequest("POST", "/api/task", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 
@@ -193,9 +191,10 @@ func TestHandleTaskSubmitAgentBusy(t *testing.T) {
 	// Setup mock agent in working state
 	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"roles":   []string{"agent"},
-			"version": "v1",
-			"state":   "working",
+			"type":       "agent",
+			"interfaces": []string{"statusable", "taskable"},
+			"version":    "v1",
+			"state":      "working",
 		})
 	}))
 	defer agent.Close()
@@ -205,7 +204,7 @@ func TestHandleTaskSubmitAgentBusy(t *testing.T) {
 	d.mu.Lock()
 	d.components[agent.URL] = &ComponentStatus{
 		URL:   agent.URL,
-		Roles: []string{"agent"},
+		Type:  "agent",
 		State: "working",
 	}
 	d.mu.Unlock()
@@ -213,7 +212,7 @@ func TestHandleTaskSubmitAgentBusy(t *testing.T) {
 	h, err := NewHandlers(d, "test")
 	require.NoError(t, err)
 
-	body := `{"agent_url": "` + agent.URL + `", "prompt": "test", "workdir": "/tmp"}`
+	body := `{"agent_url": "` + agent.URL + `", "prompt": "test"}`
 	req := httptest.NewRequest("POST", "/api/task", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 
@@ -232,7 +231,7 @@ func TestHandleTaskSubmitSuccess(t *testing.T) {
 		switch r.URL.Path {
 		case "/status":
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"roles": []string{"agent"}, "state": "idle",
+				"type": "agent", "state": "idle",
 			})
 		case "/task":
 			taskReceived = true
@@ -249,7 +248,7 @@ func TestHandleTaskSubmitSuccess(t *testing.T) {
 	d.mu.Lock()
 	d.components[agent.URL] = &ComponentStatus{
 		URL:   agent.URL,
-		Roles: []string{"agent"},
+		Type:  "agent",
 		State: "idle",
 	}
 	d.mu.Unlock()
@@ -257,7 +256,7 @@ func TestHandleTaskSubmitSuccess(t *testing.T) {
 	h, err := NewHandlers(d, "test")
 	require.NoError(t, err)
 
-	body := `{"agent_url": "` + agent.URL + `", "prompt": "test prompt", "workdir": "/tmp"}`
+	body := `{"agent_url": "` + agent.URL + `", "prompt": "test prompt"}`
 	req := httptest.NewRequest("POST", "/api/task", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 

@@ -27,7 +27,8 @@ func TestIntegrationDiscoveryAndAPI(t *testing.T) {
 		switch r.URL.Path {
 		case "/status":
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"roles":          []string{"agent"},
+				"type":           "agent",
+				"interfaces":     []string{"statusable", "taskable"},
 				"version":        "mock-agent-v1",
 				"state":          "idle",
 				"uptime_seconds": 100,
@@ -57,7 +58,8 @@ func TestIntegrationDiscoveryAndAPI(t *testing.T) {
 	// Create mock director server
 	mockDirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"roles":          []string{"director"},
+			"type":           "director",
+			"interfaces":     []string{"statusable", "observable", "taskable"},
 			"version":        "mock-director-v1",
 			"state":          "running",
 			"uptime_seconds": 50,
@@ -119,7 +121,7 @@ func TestIntegrationDiscoveryAndAPI(t *testing.T) {
 		var status map[string]interface{}
 		err = json.NewDecoder(resp.Body).Decode(&status)
 		require.NoError(t, err)
-		require.Equal(t, []interface{}{"director"}, status["roles"])
+		require.Equal(t, "view", status["type"])
 		require.Equal(t, "test-integration", status["version"])
 	})
 
@@ -155,7 +157,7 @@ func TestIntegrationDiscoveryAndAPI(t *testing.T) {
 		d.discovery.mu.Lock()
 		d.discovery.components[mockAgent.URL] = &ComponentStatus{
 			URL:     mockAgent.URL,
-			Roles:   []string{"agent"},
+			Type:    "agent",
 			State:   "idle",
 			Version: "mock-agent-v1",
 		}
@@ -202,15 +204,14 @@ func TestIntegrationDiscoveryAndAPI(t *testing.T) {
 		d.discovery.mu.Lock()
 		d.discovery.components[mockAgent.URL] = &ComponentStatus{
 			URL:   mockAgent.URL,
-			Roles: []string{"agent"},
+			Type:  "agent",
 			State: "idle",
 		}
 		d.discovery.mu.Unlock()
 
 		body := fmt.Sprintf(`{
 			"agent_url": %q,
-			"prompt": "Integration test task",
-			"workdir": "/tmp"
+			"prompt": "Integration test task"
 		}`, mockAgent.URL)
 
 		req, _ := http.NewRequest("POST", ts.URL+"/api/task", strings.NewReader(body))
@@ -319,7 +320,7 @@ func TestIntegrationDiscoveryPolling(t *testing.T) {
 		state := states[stateIdx%len(states)]
 		stateIdx++
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"roles":   []string{"agent"},
+			"type":    "agent",
 			"version": "v1",
 			"state":   state,
 		})

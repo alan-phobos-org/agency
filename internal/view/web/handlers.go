@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/anthropics/agency/internal/api"
 )
 
 //go:embed templates/*.html
@@ -45,10 +47,11 @@ func (h *Handlers) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// HandleStatus returns the web director's own status (universal /status endpoint)
+// HandleStatus returns the web view's own status (universal /status endpoint)
 func (h *Handlers) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]interface{}{
-		"roles":          []string{"director"},
+		"type":           api.TypeView,
+		"interfaces":     []string{api.InterfaceStatusable, api.InterfaceObservable},
 		"version":        h.version,
 		"state":          "running",
 		"uptime_seconds": time.Since(h.startTime).Seconds(),
@@ -77,20 +80,21 @@ func (h *Handlers) HandleDirectors(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, directors)
 }
 
-// TaskSubmitRequest represents a task submission through the web director
+// TaskSubmitRequest represents a task submission through the web view
 type TaskSubmitRequest struct {
 	AgentURL       string            `json:"agent_url"`
 	Prompt         string            `json:"prompt"`
-	Workdir        string            `json:"workdir"`
 	Model          string            `json:"model,omitempty"`
 	TimeoutSeconds int               `json:"timeout_seconds,omitempty"`
+	SessionID      string            `json:"session_id,omitempty"` // Continue existing session
 	Env            map[string]string `json:"env,omitempty"`
 }
 
 // TaskSubmitResponse is returned after successful task submission
 type TaskSubmitResponse struct {
-	TaskID   string `json:"task_id"`
-	AgentURL string `json:"agent_url"`
+	TaskID    string `json:"task_id"`
+	AgentURL  string `json:"agent_url"`
+	SessionID string `json:"session_id,omitempty"` // Session ID from agent
 }
 
 // HandleTaskSubmit proxies task submission to the selected agent
@@ -109,10 +113,6 @@ func (h *Handlers) HandleTaskSubmit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "validation_error", "prompt is required")
 		return
 	}
-	if req.Workdir == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "workdir is required")
-		return
-	}
 
 	// Verify agent exists and is idle
 	agent, ok := h.discovery.GetComponent(req.AgentURL)
@@ -125,16 +125,18 @@ func (h *Handlers) HandleTaskSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build agent task request (different format than our input)
+	// Build agent task request
 	agentReq := map[string]interface{}{
-		"prompt":  req.Prompt,
-		"workdir": req.Workdir,
+		"prompt": req.Prompt,
 	}
 	if req.Model != "" {
 		agentReq["model"] = req.Model
 	}
 	if req.TimeoutSeconds > 0 {
 		agentReq["timeout_seconds"] = req.TimeoutSeconds
+	}
+	if req.SessionID != "" {
+		agentReq["session_id"] = req.SessionID
 	}
 	if len(req.Env) > 0 {
 		agentReq["env"] = req.Env
@@ -162,7 +164,8 @@ func (h *Handlers) HandleTaskSubmit(w http.ResponseWriter, r *http.Request) {
 
 	// Parse agent response
 	var agentResp struct {
-		TaskID string `json:"task_id"`
+		TaskID    string `json:"task_id"`
+		SessionID string `json:"session_id"`
 	}
 	if err := json.Unmarshal(respBody, &agentResp); err != nil {
 		writeError(w, http.StatusBadGateway, "parse_error", "Invalid agent response")
@@ -170,8 +173,9 @@ func (h *Handlers) HandleTaskSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, TaskSubmitResponse{
-		TaskID:   agentResp.TaskID,
-		AgentURL: req.AgentURL,
+		TaskID:    agentResp.TaskID,
+		AgentURL:  req.AgentURL,
+		SessionID: agentResp.SessionID,
 	})
 }
 

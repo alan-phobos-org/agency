@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/anthropics/agency/internal/director/web"
+	"github.com/anthropics/agency/internal/view/web"
 )
 
 var version = "dev"
