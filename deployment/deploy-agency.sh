@@ -54,7 +54,7 @@ cd "$PROJECT_ROOT"
 GOOS=linux GOARCH=amd64 ./build.sh build
 
 # Verify binaries exist
-for bin in ag-director-web ag-agent-claude; do
+for bin in ag-view-web ag-agent-claude; do
     if [ ! -f "$PROJECT_ROOT/bin/$bin" ]; then
         echo "ERROR: Binary $bin not found"
         exit 1
@@ -73,7 +73,7 @@ ssh $SSH_OPTS "$REMOTE_HOST" "mkdir -p $REMOTE_DIR/bin $REMOTE_DIR/deployment"
 # Copy binaries
 echo "Copying binaries..."
 scp $SCP_OPTS \
-    "$PROJECT_ROOT/bin/ag-director-web" \
+    "$PROJECT_ROOT/bin/ag-view-web" \
     "$PROJECT_ROOT/bin/ag-agent-claude" \
     "$REMOTE_HOST:$REMOTE_DIR/bin/"
 
@@ -129,10 +129,10 @@ if [ -f "$PID_FILE" ]; then
     exit 1
 fi
 
-# Start web director
-echo "Starting web director on port $WEB_PORT..."
-"$AGENCY_DIR/bin/ag-director-web" -port "$WEB_PORT" -env "$AGENCY_DIR/.env" > "$AGENCY_DIR/director.log" 2>&1 &
-DIRECTOR_PID=$!
+# Start web view
+echo "Starting web view on port $WEB_PORT..."
+"$AGENCY_DIR/bin/ag-view-web" -port "$WEB_PORT" -env "$AGENCY_DIR/.env" > "$AGENCY_DIR/web.log" 2>&1 &
+WEB_PID=$!
 
 # Start claude agent
 echo "Starting claude agent on port $AGENT_PORT..."
@@ -140,29 +140,29 @@ echo "Starting claude agent on port $AGENT_PORT..."
 AGENT_PID=$!
 
 # Save PIDs
-echo "$DIRECTOR_PID" > "$PID_FILE"
+echo "$WEB_PID" > "$PID_FILE"
 echo "$AGENT_PID" >> "$PID_FILE"
 
 # Wait for services
 sleep 2
 
 # Check if processes are running
-if ! kill -0 "$DIRECTOR_PID" 2>/dev/null; then
-    echo "ERROR: Web director failed to start. Check director.log"
+if ! kill -0 "$WEB_PID" 2>/dev/null; then
+    echo "ERROR: Web view failed to start. Check web.log"
     rm -f "$PID_FILE"
     exit 1
 fi
 
 if ! kill -0 "$AGENT_PID" 2>/dev/null; then
     echo "ERROR: Agent failed to start. Check agent.log"
-    kill "$DIRECTOR_PID" 2>/dev/null || true
+    kill "$WEB_PID" 2>/dev/null || true
     rm -f "$PID_FILE"
     exit 1
 fi
 
 echo ""
 echo "Agency started!"
-echo "  Web Director PID: $DIRECTOR_PID"
+echo "  Web View PID: $WEB_PID"
 echo "  Agent PID: $AGENT_PID"
 echo ""
 echo "Dashboard: https://$(hostname):$WEB_PORT/?token=$AG_WEB_TOKEN"
