@@ -7,16 +7,16 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta17/dist/css/tabler.min.css">
   <style>
     .status-badge { font-size: 0.75rem; }
-    .card-task { border-left: 3px solid var(--tblr-primary); }
-    .task-preview { font-size: 0.85rem; color: var(--tblr-muted); }
     .refresh-indicator { opacity: 0; transition: opacity 0.2s; }
     .refresh-indicator.active { opacity: 1; }
     #submitResult { display: none; }
     #submitResult.show { display: block; }
-    .session-card { border-left: 3px solid var(--tblr-purple); }
-    .session-tasks { max-height: 200px; overflow-y: auto; }
-    .session-task { padding: 0.5rem; border-bottom: 1px solid var(--tblr-border-color); }
-    .session-task:last-child { border-bottom: none; }
+    .table-component { margin-bottom: 0; }
+    .table-component td, .table-component th { vertical-align: middle; padding: 0.5rem; }
+    .table-component .task-col { max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .table-component .session-id { font-family: monospace; font-size: 0.85rem; }
+    .table-component .btn-sm { padding: 0.2rem 0.5rem; font-size: 0.75rem; }
+    .empty-message { color: var(--tblr-muted); font-style: italic; padding: 1rem; }
   </style>
 </head>
 <body class="theme-light">
@@ -44,10 +44,21 @@
                 <span class="badge bg-azure" id="agentCount">0</span>
               </div>
             </div>
-            <div class="card-body">
-              <div class="row row-deck row-cards" id="agentGrid">
-                <div class="col-12 text-muted">No agents discovered</div>
-              </div>
+            <div class="table-responsive">
+              <table class="table table-vcenter table-component" id="agentTable">
+                <thead>
+                  <tr>
+                    <th style="width: 60px;">Status</th>
+                    <th>URL</th>
+                    <th style="width: 80px;">Version</th>
+                    <th style="width: 80px;">Uptime</th>
+                    <th>Current Task</th>
+                  </tr>
+                </thead>
+                <tbody id="agentTableBody">
+                  <tr><td colspan="5" class="empty-message">No agents discovered</td></tr>
+                </tbody>
+              </table>
             </div>
           </div>
 
@@ -59,10 +70,20 @@
                 <span class="badge bg-purple" id="directorCount">0</span>
               </div>
             </div>
-            <div class="card-body">
-              <div class="row row-deck row-cards" id="directorGrid">
-                <div class="col-12 text-muted">No directors discovered</div>
-              </div>
+            <div class="table-responsive">
+              <table class="table table-vcenter table-component" id="directorTable">
+                <thead>
+                  <tr>
+                    <th style="width: 60px;">Status</th>
+                    <th>URL</th>
+                    <th style="width: 80px;">Version</th>
+                    <th style="width: 80px;">Uptime</th>
+                  </tr>
+                </thead>
+                <tbody id="directorTableBody">
+                  <tr><td colspan="4" class="empty-message">No directors discovered</td></tr>
+                </tbody>
+              </table>
             </div>
           </div>
 
@@ -74,10 +95,22 @@
                 <span class="badge bg-purple" id="sessionCount">0</span>
               </div>
             </div>
-            <div class="card-body">
-              <div class="row row-deck row-cards" id="sessionGrid">
-                <div class="col-12 text-muted">No active sessions</div>
-              </div>
+            <div class="table-responsive">
+              <table class="table table-vcenter table-component" id="sessionTable">
+                <thead>
+                  <tr>
+                    <th style="width: 60px;">Status</th>
+                    <th style="width: 120px;">Session</th>
+                    <th>Agent</th>
+                    <th style="width: 60px;">Tasks</th>
+                    <th>Last Prompt</th>
+                    <th style="width: 80px;"></th>
+                  </tr>
+                </thead>
+                <tbody id="sessionTableBody">
+                  <tr><td colspan="6" class="empty-message">No active sessions</td></tr>
+                </tbody>
+              </table>
             </div>
           </div>
 
@@ -225,8 +258,8 @@
       return resp.json();
     }
 
-    // Render agent card
-    function renderAgentCard(agent) {
+    // Render agent table row
+    function renderAgentRow(agent) {
       const stateColors = {
         'idle': 'bg-green',
         'working': 'bg-yellow',
@@ -234,54 +267,35 @@
       };
       const stateColor = stateColors[agent.state] || 'bg-secondary';
 
-      let taskInfo = '';
+      let taskInfo = '—';
       if (agent.current_task) {
-        taskInfo = `
-          <div class="mt-2 task-preview">
-            <strong>Task:</strong> ${agent.current_task.id}<br>
-            <small>${escapeHtml(agent.current_task.prompt_preview || '')}</small>
-          </div>`;
+        const preview = escapeHtml(agent.current_task.prompt_preview || '');
+        taskInfo = `<span class="task-col" title="${preview}">${agent.current_task.id}: ${preview}</span>`;
       }
 
       return `
-        <div class="col-sm-6 col-lg-4">
-          <div class="card ${agent.current_task ? 'card-task' : ''}">
-            <div class="card-body">
-              <div class="d-flex align-items-center mb-2">
-                <span class="badge ${stateColor} status-badge me-2">${agent.state}</span>
-                <span class="text-muted small">${agent.url}</span>
-              </div>
-              <div class="small text-muted">
-                Version: ${agent.version || 'unknown'}<br>
-                Uptime: ${formatUptime(agent.uptime_seconds)}
-              </div>
-              ${taskInfo}
-            </div>
-          </div>
-        </div>`;
+        <tr>
+          <td><span class="badge ${stateColor} status-badge" title="${agent.state}">${stateIcon(agent.state)} ${agent.state}</span></td>
+          <td class="text-muted small">${agent.url}</td>
+          <td class="small">${agent.version || '—'}</td>
+          <td class="small">${formatUptime(agent.uptime_seconds)}</td>
+          <td class="small">${taskInfo}</td>
+        </tr>`;
     }
 
-    // Render director card
-    function renderDirectorCard(director) {
+    // Render director table row
+    function renderDirectorRow(director) {
       return `
-        <div class="col-sm-6 col-lg-4">
-          <div class="card">
-            <div class="card-body">
-              <div class="d-flex align-items-center mb-2">
-                <span class="badge bg-purple status-badge me-2">director</span>
-                <span class="text-muted small">${director.url}</span>
-              </div>
-              <div class="small text-muted">
-                Version: ${director.version || 'unknown'}<br>
-                Uptime: ${formatUptime(director.uptime_seconds)}
-              </div>
-            </div>
-          </div>
-        </div>`;
+        <tr>
+          <td><span class="badge bg-purple status-badge">dir</span></td>
+          <td class="text-muted small">${director.url}</td>
+          <td class="small">${director.version || '—'}</td>
+          <td class="small">${formatUptime(director.uptime_seconds)}</td>
+        </tr>`;
     }
 
-    // Render session card
-    function renderSessionCard(sessionId, session) {
+    // Render session table row
+    function renderSessionRow(sessionId, session) {
       const taskCount = session.tasks ? session.tasks.length : 0;
       const lastTask = session.tasks && session.tasks.length > 0 ? session.tasks[session.tasks.length - 1] : null;
       const stateColors = {
@@ -291,45 +305,32 @@
         'queued': 'bg-secondary'
       };
       const lastState = lastTask ? lastTask.state : 'unknown';
+      const lastPrompt = lastTask ? escapeHtml((lastTask.prompt || '').slice(0, 50)) : '—';
+      const fullPrompt = lastTask ? escapeHtml(lastTask.prompt || '') : '';
 
       return `
-        <div class="col-sm-6 col-lg-4">
-          <div class="card session-card">
-            <div class="card-body">
-              <div class="d-flex align-items-center justify-content-between mb-2">
-                <span class="badge ${stateColors[lastState] || 'bg-secondary'} status-badge">${lastState}</span>
-                <button class="btn btn-sm btn-outline-primary" onclick="continueSession('${sessionId}')">Continue</button>
-              </div>
-              <div class="small text-muted mb-2">
-                Session: ${sessionId.slice(0, 8)}...<br>
-                Agent: ${session.agentUrl}<br>
-                Tasks: ${taskCount}
-              </div>
-              <div class="session-tasks">
-                ${(session.tasks || []).slice(-3).map(t => `
-                  <div class="session-task small">
-                    <span class="badge ${stateColors[t.state] || 'bg-secondary'} me-1">${t.state}</span>
-                    ${escapeHtml((t.prompt || '').slice(0, 40))}${(t.prompt || '').length > 40 ? '...' : ''}
-                  </div>
-                `).join('')}
-              </div>
-            </div>
-          </div>
-        </div>`;
+        <tr>
+          <td><span class="badge ${stateColors[lastState] || 'bg-secondary'} status-badge" title="${lastState}">${stateIcon(lastState)}</span></td>
+          <td class="session-id">${sessionId.slice(0, 8)}...</td>
+          <td class="text-muted small">${session.agentUrl}</td>
+          <td class="text-center">${taskCount}</td>
+          <td class="small task-col" title="${fullPrompt}">${lastPrompt}${(lastTask?.prompt || '').length > 50 ? '...' : ''}</td>
+          <td><button class="btn btn-sm btn-outline-primary" onclick="continueSession('${sessionId}')">Continue</button></td>
+        </tr>`;
     }
 
     // Update sessions display
     function updateSessionsUI() {
-      const sessionGrid = document.getElementById('sessionGrid');
+      const sessionTableBody = document.getElementById('sessionTableBody');
       const sessionSelect = document.getElementById('sessionSelect');
       const sessionIds = Object.keys(sessions);
 
       document.getElementById('sessionCount').textContent = sessionIds.length;
 
       if (sessionIds.length > 0) {
-        sessionGrid.innerHTML = sessionIds.map(id => renderSessionCard(id, sessions[id])).join('');
+        sessionTableBody.innerHTML = sessionIds.map(id => renderSessionRow(id, sessions[id])).join('');
       } else {
-        sessionGrid.innerHTML = '<div class="col-12 text-muted">No active sessions</div>';
+        sessionTableBody.innerHTML = '<tr><td colspan="6" class="empty-message">No active sessions</td></tr>';
       }
 
       // Update session dropdown, preserving current selection
@@ -367,21 +368,21 @@
           loadSessions()
         ]);
 
-        // Update agent grid
-        const agentGrid = document.getElementById('agentGrid');
+        // Update agent table
+        const agentTableBody = document.getElementById('agentTableBody');
         if (agents.length > 0) {
-          agentGrid.innerHTML = agents.map(renderAgentCard).join('');
+          agentTableBody.innerHTML = agents.map(renderAgentRow).join('');
         } else {
-          agentGrid.innerHTML = '<div class="col-12 text-muted">No agents discovered</div>';
+          agentTableBody.innerHTML = '<tr><td colspan="5" class="empty-message">No agents discovered</td></tr>';
         }
         document.getElementById('agentCount').textContent = agents.length;
 
-        // Update director grid
-        const directorGrid = document.getElementById('directorGrid');
+        // Update director table
+        const directorTableBody = document.getElementById('directorTableBody');
         if (directors.length > 0) {
-          directorGrid.innerHTML = directors.map(renderDirectorCard).join('');
+          directorTableBody.innerHTML = directors.map(renderDirectorRow).join('');
         } else {
-          directorGrid.innerHTML = '<div class="col-12 text-muted">No directors discovered</div>';
+          directorTableBody.innerHTML = '<tr><td colspan="4" class="empty-message">No directors discovered</td></tr>';
         }
         document.getElementById('directorCount').textContent = directors.length;
 
@@ -430,7 +431,7 @@
 
         details.innerHTML = `
           <div class="mb-2">
-            <span class="badge ${stateColors[status.state] || 'bg-secondary'}">${status.state}</span>
+            <span class="badge ${stateColors[status.state] || 'bg-secondary'}" title="${status.state}">${stateIcon(status.state)}</span>
             <strong class="ms-2">${status.task_id}</strong>
           </div>
           <div class="small text-muted mb-2">
@@ -539,6 +540,19 @@
     });
 
     // Helpers
+    function stateIcon(state) {
+      const icons = {
+        'idle': '✓',
+        'completed': '✓',
+        'working': '●',
+        'queued': '○',
+        'failed': '✕',
+        'cancelling': '⊘',
+        'cancelled': '⊘'
+      };
+      return icons[state] || '?';
+    }
+
     function formatUptime(seconds) {
       if (!seconds) return 'unknown';
       if (seconds < 60) return `${Math.floor(seconds)}s`;

@@ -70,6 +70,10 @@ fi
 echo "Creating remote directory..."
 ssh $SSH_OPTS "$REMOTE_HOST" "mkdir -p $REMOTE_DIR/bin $REMOTE_DIR/deployment"
 
+# Stop running services before copying (binaries can't be overwritten while running)
+echo "Stopping existing services..."
+ssh $SSH_OPTS "$REMOTE_HOST" "[ -f $REMOTE_DIR/stop.sh ] && $REMOTE_DIR/stop.sh || true"
+
 # Copy binaries
 echo "Copying binaries..."
 scp $SCP_OPTS \

@@ -27,10 +27,10 @@ if [ ! -f "$PROJECT_ROOT/bin/ag-view-web" ] || [ ! -f "$PROJECT_ROOT/bin/ag-agen
     cd "$PROJECT_ROOT" && ./build.sh build
 fi
 
-# Check if already running
+# Stop any existing instance
 if [ -f "$PID_FILE" ]; then
-    echo "Agency appears to be running. Stop it first with stop-agency.sh"
-    exit 1
+    echo "Stopping existing instance..."
+    "$SCRIPT_DIR/stop-agency.sh"
 fi
 
 # Start web view
