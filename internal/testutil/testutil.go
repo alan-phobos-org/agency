@@ -11,8 +11,16 @@ import (
 // AllocateTestPort returns a deterministic port based on test name
 func AllocateTestPort(t *testing.T) int {
 	t.Helper()
+	return AllocateTestPortN(t, 0)
+}
+
+// AllocateTestPortN returns a deterministic port based on test name and index.
+// Use different index values to get multiple unique ports within the same test.
+func AllocateTestPortN(t *testing.T, n int) int {
+	t.Helper()
 	h := fnv.New32a()
 	h.Write([]byte(t.Name()))
+	h.Write([]byte{byte(n)})
 	return 10000 + int(h.Sum32()%10000)
 }
 

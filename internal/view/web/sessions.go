@@ -1,6 +1,7 @@
 package web
 
 import (
+	"sort"
 	"sync"
 	"time"
 )
@@ -42,7 +43,7 @@ func (s *SessionStore) Get(id string) (*Session, bool) {
 	return session, ok
 }
 
-// GetAll returns all sessions
+// GetAll returns all sessions sorted by UpdatedAt (newest first)
 func (s *SessionStore) GetAll() []*Session {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -51,6 +52,11 @@ func (s *SessionStore) GetAll() []*Session {
 	for _, session := range s.sessions {
 		result = append(result, session)
 	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].UpdatedAt.After(result[j].UpdatedAt)
+	})
+
 	return result
 }
 

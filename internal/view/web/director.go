@@ -112,6 +112,7 @@ func (d *Director) Router() chi.Router {
 	// API endpoints
 	protected.Route("/api", func(r chi.Router) {
 		r.Get("/status", d.handlers.HandleStatus)
+		r.Get("/dashboard", d.handlers.HandleDashboardData) // Consolidated endpoint with ETag
 		r.Get("/agents", d.handlers.HandleAgents)
 		r.Get("/directors", d.handlers.HandleDirectors)
 		r.Post("/task", d.handlers.HandleTaskSubmit)

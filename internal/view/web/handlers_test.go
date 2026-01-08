@@ -371,3 +371,183 @@ func TestHandleStatusUptime(t *testing.T) {
 	uptime := resp["uptime_seconds"].(float64)
 	require.Greater(t, uptime, 0.0, "Uptime should be positive")
 }
+
+func TestHandleDashboardData(t *testing.T) {
+	t.Parallel()
+
+	// Create mock agent
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"type":       "agent",
+			"interfaces": []string{"statusable", "taskable"},
+			"version":    "agent-v1",
+			"state":      "idle",
+		})
+	}))
+	defer agent.Close()
+
+	// Create mock director
+	director := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"type":       "director",
+			"interfaces": []string{"statusable", "observable", "taskable"},
+			"version":    "dir-v1",
+			"state":      "running",
+		})
+	}))
+	defer director.Close()
+
+	agentPort := extractPort(t, agent.URL)
+	directorPort := extractPort(t, director.URL)
+
+	d := NewDiscovery(DiscoveryConfig{PortStart: agentPort, PortEnd: directorPort})
+	d.scan()
+
+	h, err := NewHandlers(d, "test")
+	require.NoError(t, err)
+
+	// Add some sessions
+	h.sessionStore.AddTask("sess-1", "http://agent:9000", "task-1", "completed", "prompt 1")
+	h.sessionStore.AddTask("sess-2", "http://agent:9001", "task-2", "working", "prompt 2")
+
+	req := httptest.NewRequest("GET", "/api/dashboard", nil)
+	rec := httptest.NewRecorder()
+
+	h.HandleDashboardData(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var data DashboardData
+	err = json.Unmarshal(rec.Body.Bytes(), &data)
+	require.NoError(t, err)
+
+	// Should have agents, directors, and sessions
+	require.GreaterOrEqual(t, len(data.Agents), 1, "Should have at least 1 agent")
+	require.GreaterOrEqual(t, len(data.Directors), 1, "Should have at least 1 director")
+	require.Len(t, data.Sessions, 2, "Should have 2 sessions")
+}
+
+func TestHandleDashboardDataEmpty(t *testing.T) {
+	t.Parallel()
+
+	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
+	h, err := NewHandlers(d, "test")
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("GET", "/api/dashboard", nil)
+	rec := httptest.NewRecorder()
+
+	h.HandleDashboardData(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var data DashboardData
+	err = json.Unmarshal(rec.Body.Bytes(), &data)
+	require.NoError(t, err)
+
+	require.Empty(t, data.Agents)
+	require.Empty(t, data.Directors)
+	require.Empty(t, data.Sessions)
+}
+
+func TestHandleDashboardDataETag(t *testing.T) {
+	t.Parallel()
+
+	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
+	h, err := NewHandlers(d, "test")
+	require.NoError(t, err)
+
+	// First request - should return data and ETag
+	req1 := httptest.NewRequest("GET", "/api/dashboard", nil)
+	rec1 := httptest.NewRecorder()
+	h.HandleDashboardData(rec1, req1)
+
+	require.Equal(t, http.StatusOK, rec1.Code)
+	etag := rec1.Header().Get("ETag")
+	require.NotEmpty(t, etag, "First response should have ETag header")
+	require.True(t, strings.HasPrefix(etag, `"`), "ETag should be quoted")
+	require.True(t, strings.HasSuffix(etag, `"`), "ETag should be quoted")
+
+	// Second request with matching ETag - should return 304
+	req2 := httptest.NewRequest("GET", "/api/dashboard", nil)
+	req2.Header.Set("If-None-Match", etag)
+	rec2 := httptest.NewRecorder()
+	h.HandleDashboardData(rec2, req2)
+
+	require.Equal(t, http.StatusNotModified, rec2.Code)
+	require.Empty(t, rec2.Body.Bytes(), "304 response should have no body")
+}
+
+func TestHandleDashboardDataETagChangesOnUpdate(t *testing.T) {
+	t.Parallel()
+
+	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
+	h, err := NewHandlers(d, "test")
+	require.NoError(t, err)
+
+	// First request
+	req1 := httptest.NewRequest("GET", "/api/dashboard", nil)
+	rec1 := httptest.NewRecorder()
+	h.HandleDashboardData(rec1, req1)
+	etag1 := rec1.Header().Get("ETag")
+
+	// Add a session - data changes
+	h.sessionStore.AddTask("new-session", "http://agent:9000", "task-1", "working", "prompt")
+
+	// Second request - ETag should be different
+	req2 := httptest.NewRequest("GET", "/api/dashboard", nil)
+	rec2 := httptest.NewRecorder()
+	h.HandleDashboardData(rec2, req2)
+	etag2 := rec2.Header().Get("ETag")
+
+	require.NotEqual(t, etag1, etag2, "ETag should change when data changes")
+
+	// Request with old ETag should get new data, not 304
+	req3 := httptest.NewRequest("GET", "/api/dashboard", nil)
+	req3.Header.Set("If-None-Match", etag1)
+	rec3 := httptest.NewRecorder()
+	h.HandleDashboardData(rec3, req3)
+
+	require.Equal(t, http.StatusOK, rec3.Code, "Old ETag should not match, returns 200")
+}
+
+func TestHandleDashboardDataETagMismatch(t *testing.T) {
+	t.Parallel()
+
+	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
+	h, err := NewHandlers(d, "test")
+	require.NoError(t, err)
+
+	// Request with wrong ETag should return 200 with data
+	req := httptest.NewRequest("GET", "/api/dashboard", nil)
+	req.Header.Set("If-None-Match", `"wrong-etag"`)
+	rec := httptest.NewRecorder()
+	h.HandleDashboardData(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotEmpty(t, rec.Body.Bytes(), "Should return data for mismatched ETag")
+}
+
+func TestHandleDashboardDataSessionsSorted(t *testing.T) {
+	t.Parallel()
+
+	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
+	h, err := NewHandlers(d, "test")
+	require.NoError(t, err)
+
+	// Add sessions with different timestamps
+	h.sessionStore.AddTask("sess-old", "http://agent:9000", "task-1", "completed", "old")
+	time.Sleep(10 * time.Millisecond)
+	h.sessionStore.AddTask("sess-new", "http://agent:9001", "task-2", "working", "new")
+
+	req := httptest.NewRequest("GET", "/api/dashboard", nil)
+	rec := httptest.NewRecorder()
+	h.HandleDashboardData(rec, req)
+
+	var data DashboardData
+	json.Unmarshal(rec.Body.Bytes(), &data)
+
+	require.Len(t, data.Sessions, 2)
+	require.Equal(t, "sess-new", data.Sessions[0].ID, "Newest session should be first")
+	require.Equal(t, "sess-old", data.Sessions[1].ID, "Older session should be second")
+}

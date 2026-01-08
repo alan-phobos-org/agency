@@ -2,7 +2,9 @@ package web
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -263,4 +265,56 @@ func (h *Handlers) HandleUpdateSessionTask(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// DashboardData represents the consolidated dashboard response
+type DashboardData struct {
+	Agents    []*ComponentStatus `json:"agents"`
+	Directors []*ComponentStatus `json:"directors"`
+	Sessions  []*Session         `json:"sessions"`
+}
+
+// HandleDashboardData returns all dashboard data in a single request with ETag support
+func (h *Handlers) HandleDashboardData(w http.ResponseWriter, r *http.Request) {
+	agents := h.discovery.Agents()
+	if agents == nil {
+		agents = []*ComponentStatus{}
+	}
+
+	directors := h.discovery.Directors()
+	if directors == nil {
+		directors = []*ComponentStatus{}
+	}
+
+	sessions := h.sessionStore.GetAll()
+	if sessions == nil {
+		sessions = []*Session{}
+	}
+
+	data := DashboardData{
+		Agents:    agents,
+		Directors: directors,
+		Sessions:  sessions,
+	}
+
+	// Generate ETag from JSON content
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "marshal_error", err.Error())
+		return
+	}
+
+	hash := sha256.Sum256(jsonData)
+	etag := `"` + hex.EncodeToString(hash[:8]) + `"`
+
+	// Check If-None-Match header
+	if match := r.Header.Get("If-None-Match"); match == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("ETag", etag)
+	w.WriteHeader(http.StatusOK)
+	w.Write(jsonData)
 }

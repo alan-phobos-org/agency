@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -50,6 +51,53 @@ func TestSessionStoreGetAll(t *testing.T) {
 
 	sessions = store.GetAll()
 	require.Len(t, sessions, 2)
+}
+
+func TestSessionStoreGetAllSortedByUpdatedAt(t *testing.T) {
+	t.Parallel()
+
+	store := NewSessionStore()
+
+	// Add sessions in a specific order
+	store.AddTask("session-old", "http://agent:9000", "task-1", "completed", "old prompt")
+	time.Sleep(10 * time.Millisecond) // Ensure different timestamps
+	store.AddTask("session-new", "http://agent:9001", "task-2", "working", "new prompt")
+
+	// GetAll should return newest first
+	sessions := store.GetAll()
+	require.Len(t, sessions, 2)
+	require.Equal(t, "session-new", sessions[0].ID, "Newest session should be first")
+	require.Equal(t, "session-old", sessions[1].ID, "Older session should be second")
+
+	// Update old session - it should now be first
+	time.Sleep(10 * time.Millisecond)
+	store.UpdateTaskState("session-old", "task-1", "failed")
+
+	sessions = store.GetAll()
+	require.Equal(t, "session-old", sessions[0].ID, "Recently updated session should be first")
+	require.Equal(t, "session-new", sessions[1].ID, "Less recently updated should be second")
+}
+
+func TestSessionStoreGetAllSortedAfterAddingTasks(t *testing.T) {
+	t.Parallel()
+
+	store := NewSessionStore()
+
+	// Create two sessions
+	store.AddTask("session-A", "http://agent:9000", "task-1", "completed", "prompt A")
+	time.Sleep(10 * time.Millisecond)
+	store.AddTask("session-B", "http://agent:9001", "task-2", "completed", "prompt B")
+
+	// B is newest
+	sessions := store.GetAll()
+	require.Equal(t, "session-B", sessions[0].ID)
+
+	// Add task to A - should make it newest
+	time.Sleep(10 * time.Millisecond)
+	store.AddTask("session-A", "http://agent:9000", "task-3", "working", "prompt A2")
+
+	sessions = store.GetAll()
+	require.Equal(t, "session-A", sessions[0].ID, "Session with newly added task should be first")
 }
 
 func TestSessionStoreUpdateTaskState(t *testing.T) {

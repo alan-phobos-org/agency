@@ -1230,3 +1230,158 @@ func TestIntegrationSessionAPI(t *testing.T) {
 		require.Len(t, sessions, 2)
 	})
 }
+
+// TestIntegrationConsolidatedDashboard tests the /api/dashboard endpoint
+func TestIntegrationConsolidatedDashboard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	// Create mock agent
+	mockAgent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"type":           "agent",
+			"interfaces":     []string{"statusable", "taskable"},
+			"version":        "mock-agent-v1",
+			"state":          "idle",
+			"uptime_seconds": 100,
+		})
+	}))
+	defer mockAgent.Close()
+
+	tmpDir := t.TempDir()
+	cfg := &Config{
+		Port:            0,
+		Bind:            "127.0.0.1",
+		Token:           "secret-token",
+		PortStart:       59020,
+		PortEnd:         59020,
+		RefreshInterval: time.Hour,
+		TLS: TLSConfig{
+			CertFile:     filepath.Join(tmpDir, "cert.pem"),
+			KeyFile:      filepath.Join(tmpDir, "key.pem"),
+			AutoGenerate: true,
+		},
+	}
+
+	d, err := New(cfg, "test-dashboard")
+	require.NoError(t, err)
+
+	// Manually register mock agent
+	d.discovery.mu.Lock()
+	d.discovery.components[mockAgent.URL] = &ComponentStatus{
+		URL:     mockAgent.URL,
+		Type:    "agent",
+		State:   "idle",
+		Version: "mock-agent-v1",
+	}
+	d.discovery.mu.Unlock()
+
+	// Add some sessions
+	d.handlers.sessionStore.AddTask("sess-1", mockAgent.URL, "task-1", "completed", "prompt 1")
+	d.handlers.sessionStore.AddTask("sess-2", mockAgent.URL, "task-2", "working", "prompt 2")
+
+	ts := httptest.NewServer(d.Router())
+	defer ts.Close()
+
+	client := ts.Client()
+
+	authRequest := func(method, path string, headers map[string]string) (*http.Response, error) {
+		req, _ := http.NewRequest(method, ts.URL+path, nil)
+		req.Header.Set("Authorization", "Bearer secret-token")
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		return client.Do(req)
+	}
+
+	t.Run("returns all data in one response", func(t *testing.T) {
+		resp, err := authRequest("GET", "/api/dashboard", nil)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var data DashboardData
+		json.NewDecoder(resp.Body).Decode(&data)
+
+		require.GreaterOrEqual(t, len(data.Agents), 1, "Should have agent")
+		require.NotNil(t, data.Directors, "Directors should not be nil")
+		require.Len(t, data.Sessions, 2, "Should have 2 sessions")
+	})
+
+	t.Run("returns ETag header", func(t *testing.T) {
+		resp, err := authRequest("GET", "/api/dashboard", nil)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		etag := resp.Header.Get("ETag")
+		require.NotEmpty(t, etag, "Should have ETag header")
+		require.True(t, strings.HasPrefix(etag, `"`), "ETag should be quoted")
+	})
+
+	t.Run("returns 304 for matching ETag", func(t *testing.T) {
+		// First request to get ETag
+		resp1, _ := authRequest("GET", "/api/dashboard", nil)
+		etag := resp1.Header.Get("ETag")
+		resp1.Body.Close()
+
+		// Second request with ETag
+		resp2, err := authRequest("GET", "/api/dashboard", map[string]string{
+			"If-None-Match": etag,
+		})
+		require.NoError(t, err)
+		defer resp2.Body.Close()
+
+		require.Equal(t, http.StatusNotModified, resp2.StatusCode)
+	})
+
+	t.Run("returns 200 when data changes", func(t *testing.T) {
+		// Get initial ETag
+		resp1, _ := authRequest("GET", "/api/dashboard", nil)
+		etag1 := resp1.Header.Get("ETag")
+		resp1.Body.Close()
+
+		// Add new session
+		d.handlers.sessionStore.AddTask("sess-3", mockAgent.URL, "task-3", "working", "new prompt")
+
+		// Request with old ETag should get 200, not 304
+		resp2, err := authRequest("GET", "/api/dashboard", map[string]string{
+			"If-None-Match": etag1,
+		})
+		require.NoError(t, err)
+		defer resp2.Body.Close()
+
+		require.Equal(t, http.StatusOK, resp2.StatusCode, "Should return 200 when data changed")
+
+		// New ETag should be different
+		etag2 := resp2.Header.Get("ETag")
+		require.NotEqual(t, etag1, etag2, "ETag should change")
+	})
+
+	t.Run("sessions are sorted by UpdatedAt", func(t *testing.T) {
+		// Clear and recreate sessions with known order
+		d.handlers.sessionStore = NewSessionStore()
+		d.handlers.sessionStore.AddTask("old-sess", mockAgent.URL, "task-old", "completed", "old")
+		time.Sleep(15 * time.Millisecond)
+		d.handlers.sessionStore.AddTask("new-sess", mockAgent.URL, "task-new", "working", "new")
+
+		resp, _ := authRequest("GET", "/api/dashboard", nil)
+		defer resp.Body.Close()
+
+		var data DashboardData
+		json.NewDecoder(resp.Body).Decode(&data)
+
+		require.Len(t, data.Sessions, 2)
+		require.Equal(t, "new-sess", data.Sessions[0].ID, "Newest should be first")
+		require.Equal(t, "old-sess", data.Sessions[1].ID, "Older should be second")
+	})
+
+	t.Run("auth required", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/dashboard", nil)
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	})
+}

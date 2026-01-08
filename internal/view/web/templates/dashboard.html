@@ -7,8 +7,6 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta17/dist/css/tabler.min.css">
   <style>
     .status-badge { font-size: 0.75rem; }
-    .refresh-indicator { opacity: 0; transition: opacity 0.2s; }
-    .refresh-indicator.active { opacity: 1; }
     #submitResult { display: none; }
     #submitResult.show { display: block; }
     .table-component { margin-bottom: 0; }
@@ -27,7 +25,6 @@
           <span class="text-primary">Agency</span> Dashboard
         </h1>
         <div class="navbar-nav flex-row order-md-last">
-          <span class="refresh-indicator badge bg-blue-lt me-2" id="refreshIndicator">Refreshing...</span>
           <span class="badge bg-green-lt">Connected</span>
         </div>
       </div>
@@ -36,6 +33,80 @@
     <div class="page-wrapper">
       <div class="page-body">
         <div class="container-xl">
+          <!-- Task Submission -->
+          <div class="card mb-3">
+            <div class="card-header">
+              <h3 class="card-title">Submit Task</h3>
+            </div>
+            <div class="card-body">
+              <form id="taskForm">
+                <div class="row">
+                  <div class="col-md-4 mb-3">
+                    <label class="form-label">Agent</label>
+                    <select class="form-select" id="agentSelect" required>
+                      <option value="">Select an idle agent...</option>
+                    </select>
+                  </div>
+                  <div class="col-md-4 mb-3">
+                    <label class="form-label">Session</label>
+                    <select class="form-select" id="sessionSelect">
+                      <option value="">New session</option>
+                    </select>
+                  </div>
+                  <div class="col-md-2 mb-3">
+                    <label class="form-label">Timeout (s)</label>
+                    <input type="number" class="form-control" id="timeout" value="1800" min="1">
+                  </div>
+                  <div class="col-md-2 mb-3">
+                    <label class="form-label">Model</label>
+                    <select class="form-select" id="model">
+                      <option value="">Auto</option>
+                      <option value="opus">Opus</option>
+                      <option value="sonnet">Sonnet</option>
+                      <option value="haiku">Haiku</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Prompt</label>
+                  <textarea class="form-control" id="prompt" rows="4" required placeholder="Describe the task..."></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary" id="submitBtn">
+                  <span class="spinner-border spinner-border-sm d-none" id="submitSpinner"></span>
+                  Submit Task
+                </button>
+              </form>
+              <div id="submitResult" class="mt-3 alert"></div>
+            </div>
+          </div>
+
+          <!-- Sessions Section -->
+          <div class="card mb-3">
+            <div class="card-header">
+              <h3 class="card-title">Sessions</h3>
+              <div class="card-actions">
+                <span class="badge bg-purple" id="sessionCount">0</span>
+              </div>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-vcenter table-component" id="sessionTable">
+                <thead>
+                  <tr>
+                    <th style="width: 60px;">Status</th>
+                    <th style="width: 120px;">Session</th>
+                    <th>Agent</th>
+                    <th style="width: 60px;">Tasks</th>
+                    <th>Last Prompt</th>
+                    <th style="width: 80px;"></th>
+                  </tr>
+                </thead>
+                <tbody id="sessionTableBody">
+                  <tr><td colspan="6" class="empty-message">No active sessions</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <!-- Agents Section -->
           <div class="card mb-3">
             <div class="card-header">
@@ -87,80 +158,6 @@
             </div>
           </div>
 
-          <!-- Sessions Section -->
-          <div class="card mb-3">
-            <div class="card-header">
-              <h3 class="card-title">Sessions</h3>
-              <div class="card-actions">
-                <span class="badge bg-purple" id="sessionCount">0</span>
-              </div>
-            </div>
-            <div class="table-responsive">
-              <table class="table table-vcenter table-component" id="sessionTable">
-                <thead>
-                  <tr>
-                    <th style="width: 60px;">Status</th>
-                    <th style="width: 120px;">Session</th>
-                    <th>Agent</th>
-                    <th style="width: 60px;">Tasks</th>
-                    <th>Last Prompt</th>
-                    <th style="width: 80px;"></th>
-                  </tr>
-                </thead>
-                <tbody id="sessionTableBody">
-                  <tr><td colspan="6" class="empty-message">No active sessions</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Task Submission -->
-          <div class="card mb-3">
-            <div class="card-header">
-              <h3 class="card-title">Submit Task</h3>
-            </div>
-            <div class="card-body">
-              <form id="taskForm">
-                <div class="row">
-                  <div class="col-md-4 mb-3">
-                    <label class="form-label">Agent</label>
-                    <select class="form-select" id="agentSelect" required>
-                      <option value="">Select an idle agent...</option>
-                    </select>
-                  </div>
-                  <div class="col-md-4 mb-3">
-                    <label class="form-label">Session</label>
-                    <select class="form-select" id="sessionSelect">
-                      <option value="">New session</option>
-                    </select>
-                  </div>
-                  <div class="col-md-2 mb-3">
-                    <label class="form-label">Timeout (s)</label>
-                    <input type="number" class="form-control" id="timeout" value="1800" min="1">
-                  </div>
-                  <div class="col-md-2 mb-3">
-                    <label class="form-label">Model</label>
-                    <select class="form-select" id="model">
-                      <option value="">Auto</option>
-                      <option value="opus">Opus</option>
-                      <option value="sonnet">Sonnet</option>
-                      <option value="haiku">Haiku</option>
-                    </select>
-                  </div>
-                </div>
-                <div class="mb-3">
-                  <label class="form-label">Prompt</label>
-                  <textarea class="form-control" id="prompt" rows="4" required placeholder="Describe the task..."></textarea>
-                </div>
-                <button type="submit" class="btn btn-primary" id="submitBtn">
-                  <span class="spinner-border spinner-border-sm d-none" id="submitSpinner"></span>
-                  Submit Task
-                </button>
-              </form>
-              <div id="submitResult" class="mt-3 alert"></div>
-            </div>
-          </div>
-
           <!-- Active Task Monitor -->
           <div class="card" id="taskMonitor" style="display: none;">
             <div class="card-header">
@@ -186,27 +183,16 @@
 
     // Sessions storage - fetched from server for global access
     let sessions = {};
+    let sessionOrder = []; // Maintain server's sort order (newest first)
 
-    // Load sessions from server
-    async function loadSessions() {
-      try {
-        const serverSessions = await api('/api/sessions');
-        sessions = {};
-        for (const s of serverSessions) {
-          sessions[s.id] = {
-            agentUrl: s.agent_url,
-            tasks: s.tasks ? s.tasks.map(t => ({
-              taskId: t.task_id,
-              state: t.state,
-              prompt: t.prompt
-            })) : [],
-            createdAt: s.created_at
-          };
-        }
-      } catch (err) {
-        console.error('Failed to load sessions:', err);
-      }
-    }
+    // ETag for caching
+    let dashboardETag = null;
+
+    // Adaptive polling interval (ms)
+    const POLL_IDLE = 5000;    // 5s when idle
+    const POLL_ACTIVE = 1000;  // 1s when task running
+    let pollInterval = POLL_IDLE;
+    let refreshTimer = null;
 
     // Save task to server session
     async function saveSessionTask(sessionId, agentUrl, taskId, state, prompt) {
@@ -255,6 +241,29 @@
         const err = await resp.json().catch(() => ({ message: resp.statusText }));
         throw new Error(err.message || `HTTP ${resp.status}`);
       }
+      return resp.json();
+    }
+
+    // Fetch dashboard data with ETag support
+    async function fetchDashboard() {
+      const url = new URL('/api/dashboard', window.location.origin);
+      if (token) url.searchParams.set('token', token);
+
+      const headers = { 'Content-Type': 'application/json' };
+      if (dashboardETag) headers['If-None-Match'] = dashboardETag;
+
+      const resp = await fetch(url, { headers });
+
+      if (resp.status === 304) {
+        return null; // No change
+      }
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ message: resp.statusText }));
+        throw new Error(err.message || `HTTP ${resp.status}`);
+      }
+
+      dashboardETag = resp.headers.get('ETag');
       return resp.json();
     }
 
@@ -323,12 +332,11 @@
     function updateSessionsUI() {
       const sessionTableBody = document.getElementById('sessionTableBody');
       const sessionSelect = document.getElementById('sessionSelect');
-      const sessionIds = Object.keys(sessions);
 
-      document.getElementById('sessionCount').textContent = sessionIds.length;
+      document.getElementById('sessionCount').textContent = sessionOrder.length;
 
-      if (sessionIds.length > 0) {
-        sessionTableBody.innerHTML = sessionIds.map(id => renderSessionRow(id, sessions[id])).join('');
+      if (sessionOrder.length > 0) {
+        sessionTableBody.innerHTML = sessionOrder.map(id => renderSessionRow(id, sessions[id])).join('');
       } else {
         sessionTableBody.innerHTML = '<tr><td colspan="6" class="empty-message">No active sessions</td></tr>';
       }
@@ -336,12 +344,12 @@
       // Update session dropdown, preserving current selection
       const currentSessionValue = sessionSelect.value;
       sessionSelect.innerHTML = '<option value="">New session</option>' +
-        sessionIds.map(id => {
+        sessionOrder.map(id => {
           const s = sessions[id];
           const taskCount = s.tasks ? s.tasks.length : 0;
           return `<option value="${id}">${id.slice(0, 8)}... (${taskCount} tasks, ${s.agentUrl})</option>`;
         }).join('');
-      if (currentSessionValue && sessionIds.includes(currentSessionValue)) {
+      if (currentSessionValue && sessionOrder.includes(currentSessionValue)) {
         sessionSelect.value = currentSessionValue;
       }
     }
@@ -358,15 +366,32 @@
 
     // Update dashboard
     async function refresh() {
-      const indicator = document.getElementById('refreshIndicator');
-      indicator.classList.add('active');
-
       try {
-        const [agents, directors] = await Promise.all([
-          api('/api/agents'),
-          api('/api/directors'),
-          loadSessions()
-        ]);
+        const data = await fetchDashboard();
+
+        // If 304 (no change), only poll active task
+        if (data === null) {
+          if (activeTask) await pollTask();
+          return;
+        }
+
+        const { agents, directors, sessions: serverSessions } = data;
+
+        // Update sessions from server data
+        sessions = {};
+        sessionOrder = [];
+        for (const s of serverSessions) {
+          sessions[s.id] = {
+            agentUrl: s.agent_url,
+            tasks: s.tasks ? s.tasks.map(t => ({
+              taskId: t.task_id,
+              state: t.state,
+              prompt: t.prompt
+            })) : [],
+            createdAt: s.created_at
+          };
+          sessionOrder.push(s.id);
+        }
 
         // Update agent table
         const agentTableBody = document.getElementById('agentTableBody');
@@ -406,8 +431,6 @@
         updateSessionsUI();
       } catch (err) {
         console.error('Refresh failed:', err);
-      } finally {
-        indicator.classList.remove('active');
       }
     }
 
@@ -458,6 +481,7 @@
             }
           }
           activeTask = null;
+          scheduleRefresh(); // Switch to slow polling
         }
       } catch (err) {
         console.error('Task poll failed:', err);
@@ -518,6 +542,7 @@
 
         // Start monitoring
         activeTask = { taskId: resp.task_id, agentUrl: resp.agent_url, sessionId: sid };
+        scheduleRefresh(); // Switch to fast polling
 
         // Clear prompt but keep other fields for follow-ups
         document.getElementById('prompt').value = '';
@@ -568,9 +593,19 @@
                 .replace(/"/g, '&quot;');
     }
 
+    // Adaptive polling - faster when task is active
+    function scheduleRefresh() {
+      const newInterval = activeTask ? POLL_ACTIVE : POLL_IDLE;
+      if (newInterval !== pollInterval) {
+        pollInterval = newInterval;
+        if (refreshTimer) clearInterval(refreshTimer);
+        refreshTimer = setInterval(refresh, pollInterval);
+      }
+    }
+
     // Start refresh loop
     refresh();
-    setInterval(refresh, 1000);
+    refreshTimer = setInterval(refresh, pollInterval);
   </script>
 </body>
 </html>
