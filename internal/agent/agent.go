@@ -10,12 +10,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/anthropics/agency/internal/api"
 	"github.com/anthropics/agency/internal/config"
+	"github.com/anthropics/agency/internal/history"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
@@ -112,6 +114,7 @@ type Agent struct {
 	version   string
 	startTime time.Time
 	preprompt string // Preprompt instructions loaded at startup
+	history   *history.Store
 
 	mu          sync.RWMutex
 	state       State
@@ -135,11 +138,22 @@ func New(cfg *config.Config, version string) *Agent {
 		}
 	}
 
+	// Initialize history store
+	var historyStore *history.Store
+	if cfg.HistoryDir != "" {
+		var err error
+		historyStore, err = history.NewStore(cfg.HistoryDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to initialize history store: %v\n", err)
+		}
+	}
+
 	return &Agent{
 		config:    cfg,
 		version:   version,
 		startTime: time.Now(),
 		preprompt: preprompt,
+		history:   historyStore,
 		state:     StateIdle,
 		tasks:     make(map[string]*Task),
 		shutdown:  make(chan struct{}),
@@ -157,6 +171,11 @@ func (a *Agent) Router() chi.Router {
 	r.Get("/task/{id}", a.handleGetTask)
 	r.Post("/task/{id}/cancel", a.handleCancelTask)
 	r.Post("/shutdown", a.handleShutdown)
+
+	// History endpoints
+	r.Get("/history", a.handleListHistory)
+	r.Get("/history/{id}", a.handleGetHistory)
+	r.Get("/history/{id}/debug", a.handleGetHistoryDebug)
 
 	return r
 }
@@ -555,6 +574,9 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 		task.ExitCode = &exitCode
 	}
 
+	// Save to history
+	a.saveTaskHistory(task, stdout.Bytes())
+
 	a.state = StateIdle
 	a.currentTask = nil
 }
@@ -590,4 +612,118 @@ func (a *Agent) buildClaudeArgs(task *Task) []string {
 
 	args = append(args, "-p", "--", prompt)
 	return args
+}
+
+// saveTaskHistory saves a completed task to the history store.
+func (a *Agent) saveTaskHistory(task *Task, rawOutput []byte) {
+	if a.history == nil {
+		return
+	}
+
+	entry := &history.Entry{
+		TaskID:          task.ID,
+		SessionID:       task.SessionID,
+		State:           string(task.State),
+		Prompt:          task.Prompt,
+		Model:           task.Model,
+		Output:          task.Output,
+		DurationSeconds: task.DurationSeconds,
+		ExitCode:        task.ExitCode,
+		Steps:           history.ExtractSteps(rawOutput),
+	}
+
+	if task.StartedAt != nil {
+		entry.StartedAt = *task.StartedAt
+	}
+	if task.CompletedAt != nil {
+		entry.CompletedAt = *task.CompletedAt
+	}
+	if task.Error != nil {
+		entry.Error = &history.EntryError{
+			Type:    task.Error.Type,
+			Message: task.Error.Message,
+		}
+	}
+	if task.TokenUsage != nil {
+		entry.TokenUsage = &history.TokenUsage{
+			Input:  task.TokenUsage.Input,
+			Output: task.TokenUsage.Output,
+		}
+	}
+
+	if err := a.history.Save(entry); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to save task history: %v\n", err)
+	}
+
+	// Save debug log (raw Claude output)
+	if len(rawOutput) > 0 {
+		if err := a.history.SaveDebugLog(task.ID, rawOutput); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to save debug log: %v\n", err)
+		}
+	}
+}
+
+// handleListHistory returns paginated task history.
+func (a *Agent) handleListHistory(w http.ResponseWriter, r *http.Request) {
+	if a.history == nil {
+		api.WriteError(w, http.StatusServiceUnavailable, "history_unavailable", "History storage not configured")
+		return
+	}
+
+	// Parse pagination params
+	page := 1
+	limit := 20
+	if p := r.URL.Query().Get("page"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil && v > 0 {
+			page = v
+		}
+	}
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 {
+			limit = v
+		}
+	}
+
+	result := a.history.List(history.ListOptions{
+		Page:  page,
+		Limit: limit,
+	})
+
+	api.WriteJSON(w, http.StatusOK, result)
+}
+
+// handleGetHistory returns a single history entry with outline.
+func (a *Agent) handleGetHistory(w http.ResponseWriter, r *http.Request) {
+	if a.history == nil {
+		api.WriteError(w, http.StatusServiceUnavailable, "history_unavailable", "History storage not configured")
+		return
+	}
+
+	taskID := chi.URLParam(r, "id")
+	entry, err := a.history.Get(taskID)
+	if err != nil {
+		api.WriteError(w, http.StatusNotFound, "not_found", err.Error())
+		return
+	}
+
+	api.WriteJSON(w, http.StatusOK, entry)
+}
+
+// handleGetHistoryDebug returns the full debug log for a task.
+func (a *Agent) handleGetHistoryDebug(w http.ResponseWriter, r *http.Request) {
+	if a.history == nil {
+		api.WriteError(w, http.StatusServiceUnavailable, "history_unavailable", "History storage not configured")
+		return
+	}
+
+	taskID := chi.URLParam(r, "id")
+	debugLog, err := a.history.GetDebugLog(taskID)
+	if err != nil {
+		api.WriteError(w, http.StatusNotFound, "not_found", err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(debugLog)
 }

@@ -75,8 +75,10 @@ func TestCreateTaskSuccess(t *testing.T) {
 	// Cannot use t.Parallel() with t.Setenv()
 	t.Setenv("CLAUDE_BIN", "echo")
 
+	tmpDir := t.TempDir()
 	cfg := config.Default()
-	cfg.SessionDir = t.TempDir()
+	cfg.SessionDir = filepath.Join(tmpDir, "sessions")
+	cfg.HistoryDir = filepath.Join(tmpDir, "history")
 	a := New(cfg, "test")
 
 	body := `{"prompt": "test prompt"}`
@@ -96,8 +98,10 @@ func TestCreateTaskCreatesSessionDir(t *testing.T) {
 	// Cannot use t.Parallel() with t.Setenv()
 	t.Setenv("CLAUDE_BIN", "echo")
 
+	tmpDir := t.TempDir()
 	cfg := config.Default()
-	cfg.SessionDir = filepath.Join(t.TempDir(), "sessions")
+	cfg.SessionDir = filepath.Join(tmpDir, "sessions")
+	cfg.HistoryDir = filepath.Join(tmpDir, "history")
 	a := New(cfg, "test")
 
 	body := `{"prompt": "test prompt"}`

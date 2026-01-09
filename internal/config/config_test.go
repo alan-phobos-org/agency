@@ -10,6 +10,9 @@ import (
 func TestParse(t *testing.T) {
 	t.Parallel()
 
+	// HistoryDir is derived dynamically, so compute expected value
+	expectedHistoryDir := DefaultHistoryPath(DefaultName)
+
 	tests := []struct {
 		name    string
 		yaml    string
@@ -21,8 +24,10 @@ func TestParse(t *testing.T) {
 			yaml: "port: 9000",
 			want: &Config{
 				Port:       9000,
+				Name:       DefaultName,
 				LogLevel:   DefaultLogLevel,
 				SessionDir: DefaultSessionDir,
+				HistoryDir: expectedHistoryDir,
 				Claude: ClaudeConfig{
 					Model:   DefaultModel,
 					Timeout: DefaultTimeout,
@@ -40,8 +45,10 @@ claude:
 `,
 			want: &Config{
 				Port:       9001,
+				Name:       DefaultName,
 				LogLevel:   "debug",
 				SessionDir: DefaultSessionDir,
+				HistoryDir: expectedHistoryDir,
 				Claude: ClaudeConfig{
 					Model:   "opus",
 					Timeout: time.Hour,
@@ -101,8 +108,10 @@ func TestDefault(t *testing.T) {
 
 	cfg := Default()
 	require.Equal(t, DefaultPort, cfg.Port)
+	require.Equal(t, DefaultName, cfg.Name)
 	require.Equal(t, DefaultLogLevel, cfg.LogLevel)
 	require.Equal(t, DefaultSessionDir, cfg.SessionDir)
+	require.Equal(t, DefaultHistoryPath(DefaultName), cfg.HistoryDir)
 	require.Equal(t, DefaultModel, cfg.Claude.Model)
 	require.Equal(t, DefaultTimeout, cfg.Claude.Timeout)
 }

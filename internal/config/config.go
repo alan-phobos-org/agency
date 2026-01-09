@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -11,8 +12,10 @@ import (
 // Config represents the agent configuration
 type Config struct {
 	Port          int             `yaml:"port"`
+	Name          string          `yaml:"name"` // Agent name (used for history directory)
 	LogLevel      string          `yaml:"log_level"`
 	SessionDir    string          `yaml:"session_dir"`    // Base directory for session workspaces
+	HistoryDir    string          `yaml:"history_dir"`    // Directory for task history storage
 	PrepromptFile string          `yaml:"preprompt_file"` // Optional path to custom preprompt file
 	Claude        ClaudeConfig    `yaml:"claude"`
 	Projects      []ProjectConfig `yaml:"projects,omitempty"`
@@ -33,16 +36,19 @@ type ClaudeConfig struct {
 // Defaults
 const (
 	DefaultPort       = 9000
+	DefaultName       = "agent"
 	DefaultModel      = "sonnet"
 	DefaultTimeout    = 30 * time.Minute
 	DefaultLogLevel   = "info"
 	DefaultSessionDir = "/tmp/agency/sessions"
+	DefaultHistoryDir = "" // Derived from AGENCY_ROOT or ~/.agency/history/<name>
 )
 
 // Parse parses YAML config data
 func Parse(data []byte) (*Config, error) {
 	cfg := &Config{
 		Port:       DefaultPort,
+		Name:       DefaultName,
 		LogLevel:   DefaultLogLevel,
 		SessionDir: DefaultSessionDir,
 		Claude: ClaudeConfig{
@@ -53,6 +59,11 @@ func Parse(data []byte) (*Config, error) {
 
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
+	}
+
+	// Derive HistoryDir if not set
+	if cfg.HistoryDir == "" {
+		cfg.HistoryDir = DefaultHistoryPath(cfg.Name)
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -93,11 +104,27 @@ func (c *Config) Validate() error {
 func Default() *Config {
 	return &Config{
 		Port:       DefaultPort,
+		Name:       DefaultName,
 		LogLevel:   DefaultLogLevel,
 		SessionDir: DefaultSessionDir,
+		HistoryDir: DefaultHistoryPath(DefaultName),
 		Claude: ClaudeConfig{
 			Model:   DefaultModel,
 			Timeout: DefaultTimeout,
 		},
 	}
+}
+
+// DefaultHistoryPath returns the default history directory path for an agent.
+// Uses AGENCY_ROOT env var if set, otherwise ~/.agency/history/<name>
+func DefaultHistoryPath(name string) string {
+	root := os.Getenv("AGENCY_ROOT")
+	if root == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			home = "/tmp"
+		}
+		root = filepath.Join(home, ".agency")
+	}
+	return filepath.Join(root, "history", name)
 }

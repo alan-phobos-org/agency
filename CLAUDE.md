@@ -42,6 +42,7 @@ agency/
 │   ├── agent/      # Agent logic + REST API handlers
 │   ├── api/        # Shared types and constants
 │   ├── config/     # YAML parsing, validation
+│   ├── history/    # Task history storage and outline extraction
 │   ├── view/
 │   │   └── web/    # Web view (dashboard + discovery)
 │   └── testutil/   # Test helpers (port allocation, health checks)
@@ -62,6 +63,7 @@ agency/
 |---------|-------|-------|
 | internal/agent | Unit + Integration + System | Well covered |
 | internal/config | Unit | Validation tests |
+| internal/history | Unit | Storage, pruning, outline extraction |
 | internal/view/web | Unit + Integration + System | Discovery, auth, handlers |
 | cmd/* | None | Thin entry points |
 
@@ -81,6 +83,9 @@ MVP: Agent + CLI director with REST API.
 - `GET /task/:id` - Task status and output (includes session_id)
 - `POST /task/:id/cancel` - Cancel running task
 - `POST /shutdown` - Graceful shutdown (supports force flag)
+- `GET /history` - Paginated task history (page, limit params)
+- `GET /history/:id` - Full task details with execution outline
+- `GET /history/:id/debug` - Raw Claude output (retained for 20 most recent tasks)
 
 ### Session Directories
 Agent uses a shared session directory (`/tmp/agency/sessions/<session_id>/`) instead of per-task workdirs:
@@ -202,6 +207,13 @@ Logs written to `deployment/*.log`, PIDs tracked in `deployment/agency.pids`.
 ## Known Limitations
 
 - Single-task agent (returns 409 if busy)
-- No task history persistence
 - No structured logging (stderr only)
 - Session data stored in memory (not persisted across web view restarts)
+
+## Task History
+
+Agent stores task history at `~/.agency/history/<agent-name>/`:
+- Outline entries: 100 tasks retained with execution step previews (200 char limit)
+- Debug logs: 20 most recent tasks retain full Claude output
+- Persisted to disk, survives agent restarts
+- Configurable via `history_dir` in agent config

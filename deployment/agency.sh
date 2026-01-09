@@ -13,11 +13,19 @@ PID_FILE="$PID_DIR/agency.pids"
 WEB_PORT="${AG_WEB_PORT:-8443}"
 AGENT_PORT="${AG_AGENT_PORT:-9000}"
 
-# Load token from .env if not set
-if [ -z "${AG_WEB_TOKEN:-}" ]; then
-    if [ -f "$PROJECT_ROOT/.env" ]; then
+# Load tokens from .env if not set
+if [ -f "$PROJECT_ROOT/.env" ]; then
+    if [ -z "${AG_WEB_TOKEN:-}" ]; then
         AG_WEB_TOKEN=$(grep '^AG_WEB_TOKEN=' "$PROJECT_ROOT/.env" | cut -d= -f2)
         export AG_WEB_TOKEN
+    fi
+    if [ -z "${GITHUB_TOKEN:-}" ]; then
+        GITHUB_TOKEN=$(grep '^GITHUB_TOKEN=' "$PROJECT_ROOT/.env" | cut -d= -f2)
+        export GITHUB_TOKEN
+    fi
+    if [ -z "${GIT_SSH_KEY_FILE:-}" ]; then
+        GIT_SSH_KEY_FILE=$(grep '^GIT_SSH_KEY_FILE=' "$PROJECT_ROOT/.env" | cut -d= -f2)
+        export GIT_SSH_KEY_FILE
     fi
 fi
 
