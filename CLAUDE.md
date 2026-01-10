@@ -16,6 +16,19 @@ This runs:
 
 All three must pass before committing.
 
+## Release Process
+
+Checklist for creating a new release:
+
+1. **Build check**: `./build.sh check` passes (format, lint, tests)
+2. **Full test suite**: `./build.sh test-all` passes
+3. **Local deploy test**: Run `./deployment/agency.sh`, verify startup, then `./deployment/stop-agency.sh`
+4. **Review changes**: `git log --oneline $(git describe --tags --abbrev=0)..HEAD`
+5. **Update CHANGELOG.md**: Document changes per [keepachangelog.com](https://keepachangelog.com/en/1.1.0/)
+6. **Determine version**: Choose semver version based on changes (version auto-derived from git tag at build time)
+7. **Commit changelog**: `git commit -am "Release vX.Y.Z"`
+8. **Tag release**: `git tag -a vX.Y.Z -m "Release vX.Y.Z"`
+
 ## Build Commands
 
 ```bash
