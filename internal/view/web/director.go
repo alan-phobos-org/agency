@@ -118,9 +118,9 @@ func (d *Director) Router() chi.Router {
 	r.Get("/pair", d.handlers.HandlePairPage)
 	r.Post("/pair", d.handlers.HandlePair)
 
-	// Protected routes with session middleware
+	// Protected routes with session middleware and rate limiting
 	protected := r.Group(nil)
-	protected.Use(SessionMiddleware(d.authStore, d.accessLogger))
+	protected.Use(SessionMiddlewareWithRateLimiter(d.authStore, d.accessLogger, d.rateLimiter))
 
 	// Dashboard
 	protected.Get("/", d.handlers.HandleDashboard)

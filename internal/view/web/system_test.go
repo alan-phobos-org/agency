@@ -57,7 +57,7 @@ func startWebViewWithContexts(t *testing.T, binDir string, port int, token strin
 	}
 
 	cmd := exec.Command(webBin, args...)
-	cmd.Env = append(os.Environ(), fmt.Sprintf("AG_WEB_TOKEN=%s", token))
+	cmd.Env = append(os.Environ(), fmt.Sprintf("AG_WEB_PASSWORD=%s", token))
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 

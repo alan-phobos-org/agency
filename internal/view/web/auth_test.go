@@ -276,12 +276,12 @@ func TestSessionMiddlewareWithAccessLogging(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
 
-	// Failed request (no cookie)
+	// Failed request (no cookie) - API paths return 401
 	req2 := httptest.NewRequest("POST", "/api/task", nil)
 	req2.RemoteAddr = "10.0.0.2:5001"
 	rec2 := httptest.NewRecorder()
 	handler.ServeHTTP(rec2, req2)
-	require.Equal(t, http.StatusFound, rec2.Code)
+	require.Equal(t, http.StatusUnauthorized, rec2.Code)
 
 	// Give logger time to write
 	time.Sleep(10 * time.Millisecond)

@@ -71,16 +71,21 @@ func TestIntegrationDiscoveryAndAPI(t *testing.T) {
 	agentPort := extractPort(t, mockAgent.URL)
 	directorPort := extractPort(t, mockDirector.URL)
 
-	// Create temp dir for TLS certs
+	// Create temp dir for TLS certs and auth store
 	tmpDir := t.TempDir()
 	certPath := filepath.Join(tmpDir, "cert.pem")
 	keyPath := filepath.Join(tmpDir, "key.pem")
+
+	// Create auth store with test password
+	authStorePath := filepath.Join(tmpDir, "auth-sessions.json")
+	authStore, err := NewAuthStore(authStorePath, "test-token-secret")
+	require.NoError(t, err)
 
 	// Create web director config
 	cfg := &Config{
 		Port:            0, // Will use test port
 		Bind:            "127.0.0.1",
-		AuthStore:       nil,
+		AuthStore:       authStore,
 		PortStart:       agentPort,
 		PortEnd:         directorPort,
 		RefreshInterval: 100 * time.Millisecond,
@@ -365,10 +370,15 @@ func TestIntegrationRateLimiting(t *testing.T) {
 	certPath := filepath.Join(tmpDir, "cert.pem")
 	keyPath := filepath.Join(tmpDir, "key.pem")
 
+	// Create auth store with test password
+	authStorePath := filepath.Join(tmpDir, "auth-sessions.json")
+	authStore, err := NewAuthStore(authStorePath, "secret-token")
+	require.NoError(t, err)
+
 	cfg := &Config{
 		Port:            0,
 		Bind:            "127.0.0.1",
-		AuthStore:       nil,
+		AuthStore:       authStore,
 		PortStart:       59000, // Use high ports to avoid conflicts
 		PortEnd:         59000,
 		RefreshInterval: time.Hour, // Disable polling
@@ -431,10 +441,15 @@ func TestIntegrationAccessLogging(t *testing.T) {
 	keyPath := filepath.Join(tmpDir, "key.pem")
 	accessLogPath := filepath.Join(tmpDir, "access.log")
 
+	// Create auth store with test password
+	authStorePath := filepath.Join(tmpDir, "auth-sessions.json")
+	authStore, err := NewAuthStore(authStorePath, "secret-token")
+	require.NoError(t, err)
+
 	cfg := &Config{
 		Port:            0,
 		Bind:            "127.0.0.1",
-		AuthStore:       nil,
+		AuthStore:       authStore,
 		PortStart:       59001,
 		PortEnd:         59001,
 		RefreshInterval: time.Hour,
@@ -546,10 +561,15 @@ func TestIntegrationMultiBrowserSession(t *testing.T) {
 	certPath := filepath.Join(tmpDir, "cert.pem")
 	keyPath := filepath.Join(tmpDir, "key.pem")
 
+	// Create auth store with test password
+	authStorePath := filepath.Join(tmpDir, "auth-sessions.json")
+	authStore, err := NewAuthStore(authStorePath, "secret-token")
+	require.NoError(t, err)
+
 	cfg := &Config{
 		Port:            0,
 		Bind:            "127.0.0.1",
-		AuthStore:       nil,
+		AuthStore:       authStore,
 		PortStart:       59010,
 		PortEnd:         59010,
 		RefreshInterval: time.Hour,
@@ -728,10 +748,15 @@ func TestIntegrationMultiBrowserSessionRace(t *testing.T) {
 	certPath := filepath.Join(tmpDir, "cert.pem")
 	keyPath := filepath.Join(tmpDir, "key.pem")
 
+	// Create auth store with test password
+	authStorePath := filepath.Join(tmpDir, "auth-sessions.json")
+	authStore, err := NewAuthStore(authStorePath, "secret-token")
+	require.NoError(t, err)
+
 	cfg := &Config{
 		Port:            0,
 		Bind:            "127.0.0.1",
-		AuthStore:       nil,
+		AuthStore:       authStore,
 		PortStart:       59011,
 		PortEnd:         59011,
 		RefreshInterval: time.Hour,
@@ -907,10 +932,16 @@ func TestIntegrationSessionBouncing(t *testing.T) {
 	defer mockAgent.Close()
 
 	tmpDir := t.TempDir()
+
+	// Create auth store with test password
+	authStorePath := filepath.Join(tmpDir, "auth-sessions.json")
+	authStore, err := NewAuthStore(authStorePath, "secret-token")
+	require.NoError(t, err)
+
 	cfg := &Config{
 		Port:            0,
 		Bind:            "127.0.0.1",
-		AuthStore:       nil,
+		AuthStore:       authStore,
 		PortStart:       59012,
 		PortEnd:         59012,
 		RefreshInterval: time.Hour,
@@ -1076,10 +1107,15 @@ func TestIntegrationSessionAPI(t *testing.T) {
 	certPath := filepath.Join(tmpDir, "cert.pem")
 	keyPath := filepath.Join(tmpDir, "key.pem")
 
+	// Create auth store with test password
+	authStorePath := filepath.Join(tmpDir, "auth-sessions.json")
+	authStore, err := NewAuthStore(authStorePath, "secret-token")
+	require.NoError(t, err)
+
 	cfg := &Config{
 		Port:            0,
 		Bind:            "127.0.0.1",
-		AuthStore:       nil,
+		AuthStore:       authStore,
 		PortStart:       59002,
 		PortEnd:         59002,
 		RefreshInterval: time.Hour,
@@ -1279,10 +1315,16 @@ func TestIntegrationSessionDetailHistoryFetch(t *testing.T) {
 	defer mockAgent.Close()
 
 	tmpDir := t.TempDir()
+
+	// Create auth store with test password
+	authStorePath := filepath.Join(tmpDir, "auth-sessions.json")
+	authStore, err := NewAuthStore(authStorePath, "secret-token")
+	require.NoError(t, err)
+
 	cfg := &Config{
 		Port:            0,
 		Bind:            "127.0.0.1",
-		AuthStore:       nil,
+		AuthStore:       authStore,
 		PortStart:       59030,
 		PortEnd:         59030,
 		RefreshInterval: time.Hour,
@@ -1421,10 +1463,16 @@ func TestIntegrationConsolidatedDashboard(t *testing.T) {
 	defer mockAgent.Close()
 
 	tmpDir := t.TempDir()
+
+	// Create auth store with test password
+	authStorePath := filepath.Join(tmpDir, "auth-sessions.json")
+	authStore, err := NewAuthStore(authStorePath, "secret-token")
+	require.NoError(t, err)
+
 	cfg := &Config{
 		Port:            0,
 		Bind:            "127.0.0.1",
-		AuthStore:       nil,
+		AuthStore:       authStore,
 		PortStart:       59020,
 		PortEnd:         59020,
 		RefreshInterval: time.Hour,

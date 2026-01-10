@@ -74,7 +74,10 @@ func NewDiscovery(cfg DiscoveryConfig) *Discovery {
 
 // Start begins the discovery polling loop
 func (d *Discovery) Start(ctx context.Context) {
-	ctx, d.cancel = context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(ctx)
+	d.mu.Lock()
+	d.cancel = cancel
+	d.mu.Unlock()
 
 	// Do initial scan immediately
 	d.scan()
@@ -95,8 +98,12 @@ func (d *Discovery) Start(ctx context.Context) {
 
 // Stop stops the discovery service
 func (d *Discovery) Stop() {
-	if d.cancel != nil {
-		d.cancel()
+	d.mu.Lock()
+	cancel := d.cancel
+	d.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
 		<-d.doneCh
 	}
 }
