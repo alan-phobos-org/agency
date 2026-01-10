@@ -113,22 +113,22 @@ PID_FILE="$AGENCY_DIR/agency.pids"
 WEB_PORT="${AG_WEB_PORT:-8443}"
 AGENT_PORT="${AG_AGENT_PORT:-9000}"
 
-# Load tokens from .env if not set
+# Load env vars from .env if not set
 if [ -f "$AGENCY_DIR/.env" ]; then
-    if [ -z "${AG_WEB_TOKEN:-}" ]; then
-        AG_WEB_TOKEN=$(grep '^AG_WEB_TOKEN=' "$AGENCY_DIR/.env" | cut -d= -f2)
-        export AG_WEB_TOKEN
+    if [ -z "${AG_WEB_PASSWORD:-}" ]; then
+        AG_WEB_PASSWORD=$(grep '^AG_WEB_PASSWORD=' "$AGENCY_DIR/.env" | cut -d= -f2 || true)
+        export AG_WEB_PASSWORD
     fi
     if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
-        CLAUDE_CODE_OAUTH_TOKEN=$(grep '^CLAUDE_CODE_OAUTH_TOKEN=' "$AGENCY_DIR/.env" | cut -d= -f2)
+        CLAUDE_CODE_OAUTH_TOKEN=$(grep '^CLAUDE_CODE_OAUTH_TOKEN=' "$AGENCY_DIR/.env" | cut -d= -f2 || true)
         export CLAUDE_CODE_OAUTH_TOKEN
     fi
     if [ -z "${GITHUB_TOKEN:-}" ]; then
-        GITHUB_TOKEN=$(grep '^GITHUB_TOKEN=' "$AGENCY_DIR/.env" | cut -d= -f2)
+        GITHUB_TOKEN=$(grep '^GITHUB_TOKEN=' "$AGENCY_DIR/.env" | cut -d= -f2 || true)
         export GITHUB_TOKEN
     fi
     if [ -z "${GIT_SSH_KEY_FILE:-}" ]; then
-        GIT_SSH_KEY_FILE=$(grep '^GIT_SSH_KEY_FILE=' "$AGENCY_DIR/.env" | cut -d= -f2)
+        GIT_SSH_KEY_FILE=$(grep '^GIT_SSH_KEY_FILE=' "$AGENCY_DIR/.env" | cut -d= -f2 || true)
         export GIT_SSH_KEY_FILE
     fi
 fi
@@ -179,7 +179,7 @@ echo "Agency started!"
 echo "  Web View PID: $WEB_PID"
 echo "  Agent PID: $AGENT_PID"
 echo ""
-echo "Dashboard: https://$(hostname):$WEB_PORT/?token=$AG_WEB_TOKEN"
+echo "Dashboard: https://$(hostname):$WEB_PORT"
 REMOTE_SCRIPT
 
 ssh $SSH_OPTS "$REMOTE_HOST" "chmod +x $REMOTE_DIR/start.sh"
