@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Agency</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .login-container {
+            background: #16213e;
+            border-radius: 8px;
+            padding: 2rem;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 1.5rem;
+            color: #4cc9f0;
+            font-size: 1.5rem;
+        }
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #aaa;
+            font-size: 0.9rem;
+        }
+        input[type="password"] {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #333;
+            border-radius: 4px;
+            background: #0f0f23;
+            color: #eee;
+            font-size: 1rem;
+        }
+        input[type="password"]:focus {
+            outline: none;
+            border-color: #4cc9f0;
+        }
+        button {
+            width: 100%;
+            padding: 0.75rem;
+            background: #4cc9f0;
+            color: #1a1a2e;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 1rem;
+        }
+        button:hover {
+            background: #7dd3fc;
+        }
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        .error {
+            background: #7f1d1d;
+            color: #fca5a5;
+            padding: 0.75rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+            display: none;
+        }
+        .error.show { display: block; }
+        .pair-link {
+            text-align: center;
+            margin-top: 1.5rem;
+            padding-top: 1rem;
+            border-top: 1px solid #333;
+        }
+        .pair-link a {
+            color: #4cc9f0;
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+        .pair-link a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <h1>Agency Login</h1>
+        <div id="error" class="error"></div>
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required autofocus>
+            </div>
+            <button type="submit" id="submitBtn">Login</button>
+        </form>
+        <div class="pair-link">
+            <a href="/pair">Have a pairing code?</a>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('loginForm');
+        const errorDiv = document.getElementById('error');
+        const submitBtn = document.getElementById('submitBtn');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errorDiv.classList.remove('show');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Logging in...';
+
+            const password = document.getElementById('password').value;
+
+            try {
+                const response = await fetch('/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `password=${encodeURIComponent(password)}`
+                });
+
+                if (response.ok) {
+                    window.location.href = '/';
+                } else if (response.status === 429) {
+                    errorDiv.textContent = 'Too many failed attempts. Please try again later.';
+                    errorDiv.classList.add('show');
+                } else {
+                    const data = await response.json().catch(() => ({}));
+                    errorDiv.textContent = data.message || 'Invalid password';
+                    errorDiv.classList.add('show');
+                }
+            } catch (err) {
+                errorDiv.textContent = 'Connection error. Please try again.';
+                errorDiv.classList.add('show');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Login';
+            }
+        });
+    </script>
+</body>
+</html>

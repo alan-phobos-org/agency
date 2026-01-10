@@ -63,25 +63,34 @@ func main() {
 		fmt.Println("Certificates will be regenerated on startup")
 	}
 
-	// Load token from env file
-	token := os.Getenv("AG_WEB_TOKEN")
-	if token == "" {
+	// Load password from env file
+	password := os.Getenv("AG_WEB_PASSWORD")
+	if password == "" {
 		envPath := *envFile
 		if envPath == "" {
 			envPath = ".env"
 		}
-		token = loadEnvToken(envPath)
+		password = loadEnvPassword(envPath)
 	}
 
-	if token == "" {
-		fmt.Fprintf(os.Stderr, "Warning: No AG_WEB_TOKEN set. Dashboard will be unauthenticated.\n")
-		fmt.Fprintf(os.Stderr, "Set AG_WEB_TOKEN in environment or .env file for security.\n")
+	if password == "" {
+		fmt.Fprintf(os.Stderr, "Error: AG_WEB_PASSWORD is required.\n")
+		fmt.Fprintf(os.Stderr, "Set AG_WEB_PASSWORD in environment or .env file.\n")
+		os.Exit(1)
+	}
+
+	// Create auth store
+	authStorePath := filepath.Join(agencyRoot, "auth-sessions.json")
+	authStore, err := web.NewAuthStore(authStorePath, password)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating auth store: %v\n", err)
+		os.Exit(1)
 	}
 
 	cfg := &web.Config{
 		Port:            *port,
 		Bind:            *bind,
-		Token:           token,
+		AuthStore:       authStore,
 		PortStart:       *portStart,
 		PortEnd:         *portEnd,
 		RefreshInterval: time.Second,
@@ -119,8 +128,8 @@ func main() {
 	}
 }
 
-// loadEnvToken reads AG_WEB_TOKEN from a .env file
-func loadEnvToken(path string) string {
+// loadEnvPassword reads AG_WEB_PASSWORD from a .env file
+func loadEnvPassword(path string) string {
 	f, err := os.Open(path)
 	if err != nil {
 		return ""
@@ -133,8 +142,8 @@ func loadEnvToken(path string) string {
 		if strings.HasPrefix(line, "#") {
 			continue
 		}
-		if strings.HasPrefix(line, "AG_WEB_TOKEN=") {
-			return strings.TrimPrefix(line, "AG_WEB_TOKEN=")
+		if strings.HasPrefix(line, "AG_WEB_PASSWORD=") {
+			return strings.TrimPrefix(line, "AG_WEB_PASSWORD=")
 		}
 	}
 	return ""

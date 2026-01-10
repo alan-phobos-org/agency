@@ -38,8 +38,12 @@
         <h1 class="navbar-brand navbar-brand-autodark d-none-navbar-horizontal pe-0 pe-md-3">
           <span class="text-primary">Agency</span> Dashboard
         </h1>
-        <div class="navbar-nav flex-row order-md-last">
-          <span class="badge bg-green-lt">Connected</span>
+        <div class="navbar-nav flex-row order-md-last align-items-center">
+          <span class="badge bg-green-lt me-3">Connected</span>
+          <button class="btn btn-sm btn-ghost-secondary me-2" onclick="showDevicesModal()">Devices</button>
+          <form action="/logout" method="POST" class="d-inline">
+            <button type="submit" class="btn btn-sm btn-ghost-danger">Logout</button>
+          </form>
         </div>
       </div>
     </header>
@@ -209,12 +213,39 @@
     </div>
   </div>
 
+  <!-- Devices Modal -->
+  <div class="modal modal-blur fade" id="devicesModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Device Management</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <button class="btn btn-primary w-100" onclick="generatePairingCode()">
+              Generate Pairing Code
+            </button>
+          </div>
+          <div id="pairingCodeDisplay" class="alert alert-info" style="display: none;">
+            <div class="text-center">
+              <div class="text-muted small mb-1">Enter this code on your new device:</div>
+              <div class="display-6 font-monospace mb-1" id="pairingCode"></div>
+              <div class="text-muted small">Expires in <span id="pairingExpiry"></span></div>
+            </div>
+          </div>
+          <hr>
+          <h6>Active Sessions</h6>
+          <div id="devicesList" class="list-group list-group-flush">
+            <div class="text-muted small">Loading...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta17/dist/js/tabler.min.js"></script>
   <script>
-    // Get auth token from URL
-    const urlParams = new URLSearchParams(window.location.search);
-    const token = urlParams.get('token') || '';
-
     // Tracked task for monitoring
     let activeTask = null;
 
@@ -267,13 +298,11 @@
       }
     }
 
-    // API helper
+    // API helper (uses cookies for auth)
     async function api(path, options = {}) {
-      const url = new URL(path, window.location.origin);
-      if (token) url.searchParams.set('token', token);
-
-      const resp = await fetch(url, {
+      const resp = await fetch(path, {
         ...options,
+        credentials: 'same-origin',
         headers: {
           'Content-Type': 'application/json',
           ...(options.headers || {})
@@ -285,6 +314,67 @@
         throw new Error(err.message || `HTTP ${resp.status}`);
       }
       return resp.json();
+    }
+
+    // Device management functions
+    let devicesModal = null;
+
+    function showDevicesModal() {
+      if (!devicesModal) {
+        devicesModal = new bootstrap.Modal(document.getElementById('devicesModal'));
+      }
+      loadDevices();
+      devicesModal.show();
+    }
+
+    async function loadDevices() {
+      const devicesList = document.getElementById('devicesList');
+      try {
+        const devices = await api('/api/devices');
+        if (devices.length === 0) {
+          devicesList.innerHTML = '<div class="text-muted small">No active sessions</div>';
+          return;
+        }
+        devicesList.innerHTML = devices.map(d => `
+          <div class="list-group-item d-flex justify-content-between align-items-center">
+            <div>
+              <div class="fw-bold">${escapeHtml(d.label || 'Unknown Device')}${d.is_current ? ' <span class="badge bg-blue-lt">Current</span>' : ''}</div>
+              <div class="text-muted small">
+                ${d.ip_address} &middot; Last seen: ${new Date(d.last_seen).toLocaleString()}
+              </div>
+            </div>
+            ${!d.is_current ? `<button class="btn btn-sm btn-ghost-danger" onclick="revokeDevice('${d.id}')">Revoke</button>` : ''}
+          </div>
+        `).join('');
+      } catch (err) {
+        devicesList.innerHTML = `<div class="text-danger small">Error: ${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    async function generatePairingCode() {
+      const display = document.getElementById('pairingCodeDisplay');
+      const codeEl = document.getElementById('pairingCode');
+      const expiryEl = document.getElementById('pairingExpiry');
+
+      try {
+        const resp = await api('/api/pair/code', { method: 'POST' });
+        codeEl.textContent = resp.code;
+        expiryEl.textContent = `${Math.floor(resp.expires_in / 60)} minutes`;
+        display.style.display = 'block';
+      } catch (err) {
+        alert('Failed to generate pairing code: ' + err.message);
+      }
+    }
+
+    async function revokeDevice(deviceId) {
+      if (!confirm('Revoke access for this device?')) return;
+
+      try {
+        await api(`/api/devices/${deviceId}`, { method: 'DELETE' });
+        loadDevices(); // Refresh list
+      } catch (err) {
+        alert('Failed to revoke device: ' + err.message);
+      }
     }
 
     // Fetch and populate contexts
@@ -359,13 +449,13 @@
 
     // Fetch dashboard data with ETag support
     async function fetchDashboard() {
-      const url = new URL('/api/dashboard', window.location.origin);
-      if (token) url.searchParams.set('token', token);
-
       const headers = { 'Content-Type': 'application/json' };
       if (dashboardETag) headers['If-None-Match'] = dashboardETag;
 
-      const resp = await fetch(url, { headers });
+      const resp = await fetch('/api/dashboard', {
+        credentials: 'same-origin',
+        headers
+      });
 
       if (resp.status === 304) {
         return null; // No change

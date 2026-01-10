@@ -74,7 +74,7 @@ agency/
 
 - `AGENCY_ROOT`: Override config directory (default: ~/.agency)
 - `CLAUDE_BIN`: Path to Claude CLI (default: claude from PATH)
-- `AG_WEB_TOKEN`: Authentication token for web view
+- `AG_WEB_PASSWORD`: Password for web view login (required)
 
 ## Phase 1 - Complete
 
@@ -131,7 +131,8 @@ Web View: Status dashboard and task submission UI.
 
 ### Web View Features
 - HTTPS with auto-generated self-signed certificates
-- Token-based authentication (header or query param)
+- Password-based authentication with secure session cookies
+- Device pairing for multi-device access (no password sharing)
 - IP rate limiting (10 failed attempts = 1 hour block)
 - Access logging (optional, via `-access-log` flag)
 - Port scanning discovery of agents and directors
@@ -142,8 +143,21 @@ Web View: Status dashboard and task submission UI.
 - Global sessions (server-side storage, shared across all UI views)
 - Extended thinking toggle (default: on)
 
+### Authentication
+Single-user auth with device pairing (password required):
+- **Password login**: Set `AG_WEB_PASSWORD` env var (required), login at `/login`
+- **Device pairing**: Generate pairing code from dashboard, enter at `/pair`
+- **Session types**: Auth sessions (12h, auto-refresh) and device sessions (long-lived)
+- **Session storage**: Persisted to `~/.agency/auth-sessions.json`
+- **Cookies**: HttpOnly, Secure, SameSite=Strict
+
 ### Web View Endpoints
 - `GET /status` - Universal status endpoint (no auth)
+- `GET /login` - Login form (no auth)
+- `POST /login` - Authenticate with password (no auth)
+- `GET /pair` - Device pairing form (no auth)
+- `POST /pair` - Exchange pairing code for session (no auth)
+- `POST /logout` - End session
 - `GET /` - Dashboard HTML page
 - `GET /api/agents` - List discovered agents
 - `GET /api/directors` - List discovered directors
@@ -153,26 +167,29 @@ Web View: Status dashboard and task submission UI.
 - `GET /api/sessions` - List all sessions (global across views)
 - `POST /api/sessions` - Add task to session
 - `PUT /api/sessions/:id/tasks/:taskId` - Update task state
+- `POST /api/pair/code` - Generate pairing code (10min TTL, single-use)
+- `GET /api/devices` - List active sessions/devices
+- `DELETE /api/devices/:id` - Revoke device session
 
 ### Running the Web View
 ```bash
 # Start with defaults (port 8443, scan 9000-9199)
-./bin/ag-view-web
+AG_WEB_PASSWORD=your-password ./bin/ag-view-web
 
 # With custom options
-./bin/ag-view-web -port 8080 -port-start 9000 -port-end 9050
-
-# Token from environment or .env file
-AG_WEB_TOKEN=your-secret-token ./bin/ag-view-web
+AG_WEB_PASSWORD=your-password ./bin/ag-view-web -port 8080 -port-start 9000 -port-end 9050
 
 # With access logging enabled
-./bin/ag-view-web -access-log /var/log/agency/access.log
+AG_WEB_PASSWORD=your-password ./bin/ag-view-web -access-log /var/log/agency/access.log
 
 # With task contexts
-./bin/ag-view-web -contexts configs/contexts.yaml
+AG_WEB_PASSWORD=your-password ./bin/ag-view-web -contexts configs/contexts.yaml
+
+# Password can be loaded from .env file (AG_WEB_PASSWORD=... in .env)
+./bin/ag-view-web
 ```
 
-Access dashboard at `https://localhost:8443/?token=your-token`
+Access dashboard at `https://localhost:8443` (redirects to login page)
 
 ### Task Contexts
 Contexts define predefined settings for task submission (prompt prefix, model, timeout, thinking).
@@ -246,7 +263,7 @@ Quick-start scripts for running the full agency stack locally:
 Environment variables:
 - `AG_WEB_PORT`: Web view port (default: 8443)
 - `AG_AGENT_PORT`: Agent port (default: 9000)
-- `AG_WEB_TOKEN`: Auth token (loaded from .env if not set)
+- `AG_WEB_PASSWORD`: Auth password (loaded from .env if not set)
 
 Logs written to `deployment/*.log`, PIDs tracked in `deployment/agency.pids`.
 
@@ -254,7 +271,7 @@ Logs written to `deployment/*.log`, PIDs tracked in `deployment/agency.pids`.
 
 - Single-task agent (returns 409 if busy)
 - No structured logging (stderr only)
-- Session data stored in memory (not persisted across web view restarts)
+- Task session data stored in memory (not persisted across web view restarts)
 
 ## Task History
 

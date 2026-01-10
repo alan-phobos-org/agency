@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -11,12 +12,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// newTestHandlers creates a Handlers instance for testing with a temporary auth store
+func newTestHandlers(t *testing.T, d *Discovery, version string, contexts *ContextsConfig) *Handlers {
+	t.Helper()
+	dir := t.TempDir()
+	authStore, err := NewAuthStore(filepath.Join(dir, "auth.json"), "")
+	require.NoError(t, err)
+
+	h, err := NewHandlers(d, version, contexts, authStore, NewRateLimiter(), false)
+	require.NoError(t, err)
+	return h
+}
+
 func TestHandleStatus(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test-version", nil)
-	require.NoError(t, err)
+	h := newTestHandlers(t, d, "test-version", nil)
 
 	req := httptest.NewRequest("GET", "/status", nil)
 	rec := httptest.NewRecorder()
@@ -26,7 +38,7 @@ func TestHandleStatus(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 
 	var resp map[string]interface{}
-	err = json.Unmarshal(rec.Body.Bytes(), &resp)
+	err := json.Unmarshal(rec.Body.Bytes(), &resp)
 	require.NoError(t, err)
 
 	require.Equal(t, "view", resp["type"])
@@ -54,8 +66,7 @@ func TestHandleAgents(t *testing.T) {
 	d := NewDiscovery(DiscoveryConfig{PortStart: port, PortEnd: port})
 	d.scan()
 
-	h, err := NewHandlers(d, "test", nil)
-	require.NoError(t, err)
+	h := newTestHandlers(t, d, "test", nil)
 
 	req := httptest.NewRequest("GET", "/api/agents", nil)
 	rec := httptest.NewRecorder()
@@ -65,7 +76,7 @@ func TestHandleAgents(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 
 	var agents []*ComponentStatus
-	err = json.Unmarshal(rec.Body.Bytes(), &agents)
+	err := json.Unmarshal(rec.Body.Bytes(), &agents)
 	require.NoError(t, err)
 	require.Len(t, agents, 1)
 	require.Equal(t, "idle", agents[0].State)
@@ -75,8 +86,7 @@ func TestHandleAgentsEmpty(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test", nil)
-	require.NoError(t, err)
+	h := newTestHandlers(t, d, "test", nil)
 
 	req := httptest.NewRequest("GET", "/api/agents", nil)
 	rec := httptest.NewRecorder()
@@ -86,7 +96,7 @@ func TestHandleAgentsEmpty(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 
 	var agents []interface{}
-	err = json.Unmarshal(rec.Body.Bytes(), &agents)
+	err := json.Unmarshal(rec.Body.Bytes(), &agents)
 	require.NoError(t, err)
 	require.Len(t, agents, 0)
 }
@@ -109,8 +119,7 @@ func TestHandleDirectors(t *testing.T) {
 	d := NewDiscovery(DiscoveryConfig{PortStart: port, PortEnd: port})
 	d.scan()
 
-	h, err := NewHandlers(d, "test", nil)
-	require.NoError(t, err)
+	h := newTestHandlers(t, d, "test", nil)
 
 	req := httptest.NewRequest("GET", "/api/directors", nil)
 	rec := httptest.NewRecorder()
@@ -120,7 +129,7 @@ func TestHandleDirectors(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 
 	var directors []*ComponentStatus
-	err = json.Unmarshal(rec.Body.Bytes(), &directors)
+	err := json.Unmarshal(rec.Body.Bytes(), &directors)
 	require.NoError(t, err)
 	require.Len(t, directors, 1)
 	require.Equal(t, "running", directors[0].State)
@@ -130,8 +139,7 @@ func TestHandleTaskSubmitValidation(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test", nil)
-	require.NoError(t, err)
+	h := newTestHandlers(t, d, "test", nil)
 
 	tests := []struct {
 		name    string
@@ -172,8 +180,7 @@ func TestHandleTaskSubmitAgentNotFound(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test", nil)
-	require.NoError(t, err)
+	h := newTestHandlers(t, d, "test", nil)
 
 	body := `{"agent_url": "http://localhost:59999", "prompt": "test"}`
 	req := httptest.NewRequest("POST", "/api/task", strings.NewReader(body))
@@ -209,8 +216,7 @@ func TestHandleTaskSubmitAgentBusy(t *testing.T) {
 	}
 	d.mu.Unlock()
 
-	h, err := NewHandlers(d, "test", nil)
-	require.NoError(t, err)
+	h := newTestHandlers(t, d, "test", nil)
 
 	body := `{"agent_url": "` + agent.URL + `", "prompt": "test"}`
 	req := httptest.NewRequest("POST", "/api/task", strings.NewReader(body))
@@ -253,8 +259,7 @@ func TestHandleTaskSubmitSuccess(t *testing.T) {
 	}
 	d.mu.Unlock()
 
-	h, err := NewHandlers(d, "test", nil)
-	require.NoError(t, err)
+	h := newTestHandlers(t, d, "test", nil)
 
 	body := `{"agent_url": "` + agent.URL + `", "prompt": "test prompt"}`
 	req := httptest.NewRequest("POST", "/api/task", strings.NewReader(body))
@@ -266,7 +271,7 @@ func TestHandleTaskSubmitSuccess(t *testing.T) {
 	require.True(t, taskReceived, "Agent should have received task")
 
 	var resp TaskSubmitResponse
-	err = json.Unmarshal(rec.Body.Bytes(), &resp)
+	err := json.Unmarshal(rec.Body.Bytes(), &resp)
 	require.NoError(t, err)
 	require.Equal(t, "task-test-123", resp.TaskID)
 	require.Equal(t, agent.URL, resp.AgentURL)
@@ -276,8 +281,7 @@ func TestHandleTaskStatusMissingAgentURL(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test", nil)
-	require.NoError(t, err)
+	h := newTestHandlers(t, d, "test", nil)
 
 	req := httptest.NewRequest("GET", "/api/task/task-123", nil)
 	rec := httptest.NewRecorder()
@@ -304,8 +308,7 @@ func TestHandleTaskStatusForwarding(t *testing.T) {
 	defer agent.Close()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test", nil)
-	require.NoError(t, err)
+	h := newTestHandlers(t, d, "test", nil)
 
 	req := httptest.NewRequest("GET", "/api/task/task-123?agent_url="+agent.URL, nil)
 	rec := httptest.NewRecorder()
@@ -315,7 +318,7 @@ func TestHandleTaskStatusForwarding(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 
 	var resp map[string]interface{}
-	err = json.Unmarshal(rec.Body.Bytes(), &resp)
+	err := json.Unmarshal(rec.Body.Bytes(), &resp)
 	require.NoError(t, err)
 	require.Equal(t, "completed", resp["state"])
 }
@@ -324,8 +327,7 @@ func TestHandleDashboard(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test", nil)
-	require.NoError(t, err)
+	h := newTestHandlers(t, d, "test", nil)
 
 	req := httptest.NewRequest("GET", "/", nil)
 	rec := httptest.NewRecorder()
@@ -342,8 +344,7 @@ func TestNewHandlersTemplateLoading(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "v1.2.3", nil)
-	require.NoError(t, err)
+	h := newTestHandlers(t, d, "v1.2.3", nil)
 	require.NotNil(t, h)
 	require.Equal(t, "v1.2.3", h.version)
 	require.False(t, h.startTime.IsZero())
@@ -353,8 +354,7 @@ func TestHandleStatusUptime(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test", nil)
-	require.NoError(t, err)
+	h := newTestHandlers(t, d, "test", nil)
 
 	// Wait a bit to get measurable uptime
 	time.Sleep(10 * time.Millisecond)
@@ -365,7 +365,7 @@ func TestHandleStatusUptime(t *testing.T) {
 	h.HandleStatus(rec, req)
 
 	var resp map[string]interface{}
-	err = json.Unmarshal(rec.Body.Bytes(), &resp)
+	err := json.Unmarshal(rec.Body.Bytes(), &resp)
 	require.NoError(t, err)
 
 	uptime := resp["uptime_seconds"].(float64)
@@ -403,8 +403,7 @@ func TestHandleDashboardData(t *testing.T) {
 	d := NewDiscovery(DiscoveryConfig{PortStart: agentPort, PortEnd: directorPort})
 	d.scan()
 
-	h, err := NewHandlers(d, "test", nil)
-	require.NoError(t, err)
+	h := newTestHandlers(t, d, "test", nil)
 
 	// Add some sessions
 	h.sessionStore.AddTask("sess-1", "http://agent:9000", "task-1", "completed", "prompt 1")
@@ -418,7 +417,7 @@ func TestHandleDashboardData(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 
 	var data DashboardData
-	err = json.Unmarshal(rec.Body.Bytes(), &data)
+	err := json.Unmarshal(rec.Body.Bytes(), &data)
 	require.NoError(t, err)
 
 	// Should have agents, directors, and sessions
@@ -431,8 +430,7 @@ func TestHandleDashboardDataEmpty(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test", nil)
-	require.NoError(t, err)
+	h := newTestHandlers(t, d, "test", nil)
 
 	req := httptest.NewRequest("GET", "/api/dashboard", nil)
 	rec := httptest.NewRecorder()
@@ -442,7 +440,7 @@ func TestHandleDashboardDataEmpty(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 
 	var data DashboardData
-	err = json.Unmarshal(rec.Body.Bytes(), &data)
+	err := json.Unmarshal(rec.Body.Bytes(), &data)
 	require.NoError(t, err)
 
 	require.Empty(t, data.Agents)
@@ -454,8 +452,7 @@ func TestHandleDashboardDataETag(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test", nil)
-	require.NoError(t, err)
+	h := newTestHandlers(t, d, "test", nil)
 
 	// First request - should return data and ETag
 	req1 := httptest.NewRequest("GET", "/api/dashboard", nil)
@@ -482,8 +479,7 @@ func TestHandleDashboardDataETagChangesOnUpdate(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test", nil)
-	require.NoError(t, err)
+	h := newTestHandlers(t, d, "test", nil)
 
 	// First request
 	req1 := httptest.NewRequest("GET", "/api/dashboard", nil)
@@ -515,8 +511,7 @@ func TestHandleDashboardDataETagMismatch(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test", nil)
-	require.NoError(t, err)
+	h := newTestHandlers(t, d, "test", nil)
 
 	// Request with wrong ETag should return 200 with data
 	req := httptest.NewRequest("GET", "/api/dashboard", nil)
@@ -532,8 +527,7 @@ func TestHandleDashboardDataSessionsSorted(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test", nil)
-	require.NoError(t, err)
+	h := newTestHandlers(t, d, "test", nil)
 
 	// Add sessions with different timestamps
 	h.sessionStore.AddTask("sess-old", "http://agent:9000", "task-1", "completed", "old")
@@ -556,8 +550,7 @@ func TestHandleContextsNoContexts(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test", nil)
-	require.NoError(t, err)
+	h := newTestHandlers(t, d, "test", nil)
 
 	req := httptest.NewRequest("GET", "/api/contexts", nil)
 	rec := httptest.NewRecorder()
@@ -566,7 +559,7 @@ func TestHandleContextsNoContexts(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 
 	var contexts []Context
-	err = json.Unmarshal(rec.Body.Bytes(), &contexts)
+	err := json.Unmarshal(rec.Body.Bytes(), &contexts)
 	require.NoError(t, err)
 
 	// Should have just manual context
@@ -579,8 +572,7 @@ func TestHandleDashboardContainsSessionDetail(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test", nil)
-	require.NoError(t, err)
+	h := newTestHandlers(t, d, "test", nil)
 
 	req := httptest.NewRequest("GET", "/", nil)
 	rec := httptest.NewRecorder()
@@ -610,8 +602,7 @@ func TestHandleDashboardSessionDetailCSS(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test", nil)
-	require.NoError(t, err)
+	h := newTestHandlers(t, d, "test", nil)
 
 	req := httptest.NewRequest("GET", "/", nil)
 	rec := httptest.NewRecorder()
@@ -652,8 +643,7 @@ func TestHandleContextsWithContexts(t *testing.T) {
 	}
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test", cfg)
-	require.NoError(t, err)
+	h := newTestHandlers(t, d, "test", cfg)
 
 	req := httptest.NewRequest("GET", "/api/contexts", nil)
 	rec := httptest.NewRecorder()
@@ -662,7 +652,7 @@ func TestHandleContextsWithContexts(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 
 	var contexts []Context
-	err = json.Unmarshal(rec.Body.Bytes(), &contexts)
+	err := json.Unmarshal(rec.Body.Bytes(), &contexts)
 	require.NoError(t, err)
 
 	// Should have manual + 2 configured contexts

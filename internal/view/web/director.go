@@ -16,9 +16,9 @@ import (
 type Config struct {
 	Port            int
 	Bind            string // Address to bind to (default: 0.0.0.0)
-	Token           string // Auth token (empty = no auth)
-	PortStart       int    // Discovery port range start
-	PortEnd         int    // Discovery port range end
+	AuthStore       *AuthStore
+	PortStart       int // Discovery port range start
+	PortEnd         int // Discovery port range end
 	RefreshInterval time.Duration
 	TLS             TLSConfig
 	AccessLogPath   string // Path for access log file (empty = no logging)
@@ -34,6 +34,7 @@ type Director struct {
 	server       *http.Server
 	rateLimiter  *RateLimiter
 	accessLogger *AccessLogger
+	authStore    *AuthStore
 }
 
 // New creates a new web director
@@ -71,11 +72,6 @@ func New(cfg *Config, version string) (*Director, error) {
 		fmt.Fprintf(os.Stderr, "Loaded %d contexts from %s\n", len(contexts.Contexts), cfg.ContextsPath)
 	}
 
-	handlers, err := NewHandlers(discovery, version, contexts)
-	if err != nil {
-		return nil, err
-	}
-
 	// Create rate limiter for auth protection
 	rateLimiter := NewRateLimiter()
 
@@ -90,6 +86,14 @@ func New(cfg *Config, version string) (*Director, error) {
 		fmt.Fprintf(os.Stderr, "Access logging enabled: %s\n", cfg.AccessLogPath)
 	}
 
+	// Determine if we should use secure cookies (HTTPS)
+	secureCookie := true // Always use secure cookies since we use HTTPS
+
+	handlers, err := NewHandlers(discovery, version, contexts, cfg.AuthStore, rateLimiter, secureCookie)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Director{
 		config:       cfg,
 		version:      version,
@@ -97,6 +101,7 @@ func New(cfg *Config, version string) (*Director, error) {
 		handlers:     handlers,
 		rateLimiter:  rateLimiter,
 		accessLogger: accessLogger,
+		authStore:    cfg.AuthStore,
 	}, nil
 }
 
@@ -106,20 +111,20 @@ func (d *Director) Router() chi.Router {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RealIP)
 
-	// Universal endpoint (no auth needed for /status - used by discovery)
-	r.Get("/status", d.handlers.HandleStatus)
+	// Public endpoints (no auth needed)
+	r.Get("/status", d.handlers.HandleStatus) // Used by discovery
+	r.Get("/login", d.handlers.HandleLoginPage)
+	r.Post("/login", d.handlers.HandleLogin)
+	r.Get("/pair", d.handlers.HandlePairPage)
+	r.Post("/pair", d.handlers.HandlePair)
 
-	// Protected routes with rate limiting and access logging
+	// Protected routes with session middleware
 	protected := r.Group(nil)
-	if d.config.Token != "" {
-		protected.Use(AuthMiddlewareWithLogging(d.config.Token, d.rateLimiter, d.accessLogger))
-	} else if d.accessLogger != nil {
-		// Log access even without auth
-		protected.Use(AuthMiddlewareWithLogging("", nil, d.accessLogger))
-	}
+	protected.Use(SessionMiddleware(d.authStore, d.accessLogger))
 
 	// Dashboard
 	protected.Get("/", d.handlers.HandleDashboard)
+	protected.Post("/logout", d.handlers.HandleLogout)
 
 	// API endpoints
 	protected.Route("/api", func(r chi.Router) {
@@ -137,13 +142,20 @@ func (d *Director) Router() chi.Router {
 			taskID := chi.URLParam(r, "id")
 			d.handlers.HandleTaskHistory(w, r, taskID)
 		})
-		// Session endpoints for global session tracking
+		// Session endpoints for global session tracking (task sessions)
 		r.Get("/sessions", d.handlers.HandleSessions)
 		r.Post("/sessions", d.handlers.HandleAddSessionTask)
 		r.Put("/sessions/{sessionId}/tasks/{taskId}", func(w http.ResponseWriter, r *http.Request) {
 			sessionID := chi.URLParam(r, "sessionId")
 			taskID := chi.URLParam(r, "taskId")
 			d.handlers.HandleUpdateSessionTask(w, r, sessionID, taskID)
+		})
+		// Device pairing and management
+		r.Post("/pair/code", d.handlers.HandleGeneratePairingCode)
+		r.Get("/devices", d.handlers.HandleListDevices)
+		r.Delete("/devices/{id}", func(w http.ResponseWriter, r *http.Request) {
+			deviceID := chi.URLParam(r, "id")
+			d.handlers.HandleRevokeDevice(w, r, deviceID)
 		})
 	})
 

@@ -31,10 +31,13 @@ type Handlers struct {
 	tmpl         *template.Template
 	sessionStore *SessionStore
 	contexts     *ContextsConfig
+	authStore    *AuthStore
+	rateLimiter  *RateLimiter
+	secureCookie bool // Whether to set Secure flag on cookies (HTTPS)
 }
 
 // NewHandlers creates handlers with dependencies
-func NewHandlers(discovery *Discovery, version string, contexts *ContextsConfig) (*Handlers, error) {
+func NewHandlers(discovery *Discovery, version string, contexts *ContextsConfig, authStore *AuthStore, rateLimiter *RateLimiter, secureCookie bool) (*Handlers, error) {
 	tmpl, err := template.ParseFS(templatesFS, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parsing templates: %w", err)
@@ -47,6 +50,9 @@ func NewHandlers(discovery *Discovery, version string, contexts *ContextsConfig)
 		tmpl:         tmpl,
 		sessionStore: NewSessionStore(),
 		contexts:     contexts,
+		authStore:    authStore,
+		rateLimiter:  rateLimiter,
+		secureCookie: secureCookie,
 	}, nil
 }
 
@@ -351,4 +357,214 @@ func (h *Handlers) HandleDashboardData(w http.ResponseWriter, r *http.Request) {
 // HandleContexts returns available contexts
 func (h *Handlers) HandleContexts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, h.contexts.GetAllContexts())
+}
+
+// HandleLoginPage renders the login form
+func (h *Handlers) HandleLoginPage(w http.ResponseWriter, r *http.Request) {
+	// If already logged in, redirect to dashboard
+	if cookie, err := r.Cookie(SessionCookieName); err == nil && cookie.Value != "" {
+		if session := h.authStore.GetSession(cookie.Value); session != nil {
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := h.tmpl.ExecuteTemplate(w, "login.html", nil); err != nil {
+		http.Error(w, "Template error: "+err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// HandleLogin processes login form submission
+func (h *Handlers) HandleLogin(w http.ResponseWriter, r *http.Request) {
+	ip := r.RemoteAddr
+	if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
+		ip = realIP
+	}
+
+	// Check rate limiting
+	if h.rateLimiter != nil && h.rateLimiter.IsBlocked(ip) {
+		writeError(w, http.StatusTooManyRequests, "rate_limited", "Too many failed attempts. Try again later.")
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid form data")
+		return
+	}
+
+	password := r.FormValue("password")
+	if password == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "Password is required")
+		return
+	}
+
+	// Validate password
+	if !h.authStore.ValidatePassword(password) {
+		if h.rateLimiter != nil {
+			h.rateLimiter.RecordFailure(ip)
+		}
+		writeError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid password")
+		return
+	}
+
+	// Create session
+	session, err := h.authStore.CreateAuthSession(ip, r.UserAgent())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "session_error", "Failed to create session")
+		return
+	}
+
+	if h.rateLimiter != nil {
+		h.rateLimiter.RecordSuccess(ip)
+	}
+
+	// Set cookie and redirect
+	SetSessionCookie(w, session.ID, h.secureCookie)
+	http.Redirect(w, r, "/", http.StatusFound)
+}
+
+// HandleLogout destroys the session
+func (h *Handlers) HandleLogout(w http.ResponseWriter, r *http.Request) {
+	if cookie, err := r.Cookie(SessionCookieName); err == nil && cookie.Value != "" {
+		h.authStore.DeleteSession(cookie.Value)
+	}
+	clearSessionCookie(w)
+	http.Redirect(w, r, "/login", http.StatusFound)
+}
+
+// HandlePairPage renders the pairing form
+func (h *Handlers) HandlePairPage(w http.ResponseWriter, r *http.Request) {
+	// If already logged in, redirect to dashboard
+	if cookie, err := r.Cookie(SessionCookieName); err == nil && cookie.Value != "" {
+		if session := h.authStore.GetSession(cookie.Value); session != nil {
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := h.tmpl.ExecuteTemplate(w, "pair.html", nil); err != nil {
+		http.Error(w, "Template error: "+err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// HandlePair processes pairing code submission
+func (h *Handlers) HandlePair(w http.ResponseWriter, r *http.Request) {
+	ip := r.RemoteAddr
+	if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
+		ip = realIP
+	}
+
+	// Check rate limiting
+	if h.rateLimiter != nil && h.rateLimiter.IsBlocked(ip) {
+		writeError(w, http.StatusTooManyRequests, "rate_limited", "Too many failed attempts. Try again later.")
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid form data")
+		return
+	}
+
+	code := r.FormValue("code")
+	label := r.FormValue("label")
+	if label == "" {
+		label = "Unknown Device"
+	}
+
+	if code == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "Pairing code is required")
+		return
+	}
+
+	// Create device session
+	session, err := h.authStore.CreateDeviceSession(code, label, ip, r.UserAgent())
+	if err != nil {
+		if h.rateLimiter != nil {
+			h.rateLimiter.RecordFailure(ip)
+		}
+		writeError(w, http.StatusUnauthorized, "invalid_code", "Invalid or expired pairing code")
+		return
+	}
+
+	if h.rateLimiter != nil {
+		h.rateLimiter.RecordSuccess(ip)
+	}
+
+	// Set long-lived cookie for device session
+	SetDeviceSessionCookie(w, session.ID, h.secureCookie)
+	http.Redirect(w, r, "/", http.StatusFound)
+}
+
+// PairingCodeResponse is returned when generating a pairing code
+type PairingCodeResponse struct {
+	Code      string `json:"code"`
+	ExpiresIn int    `json:"expires_in"` // seconds
+}
+
+// HandleGeneratePairingCode creates a new pairing code (requires session)
+func (h *Handlers) HandleGeneratePairingCode(w http.ResponseWriter, r *http.Request) {
+	code, err := h.authStore.CreatePairingCode()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "generation_error", "Failed to generate pairing code")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, PairingCodeResponse{
+		Code:      code,
+		ExpiresIn: int(PairingCodeTTL.Seconds()),
+	})
+}
+
+// DeviceInfo represents a paired device
+type DeviceInfo struct {
+	ID        string    `json:"id"`
+	Label     string    `json:"label"`
+	CreatedAt time.Time `json:"created_at"`
+	LastSeen  time.Time `json:"last_seen"`
+	IPAddress string    `json:"ip_address"`
+	IsCurrent bool      `json:"is_current"` // Is this the current session?
+}
+
+// HandleListDevices returns all paired devices (requires session)
+func (h *Handlers) HandleListDevices(w http.ResponseWriter, r *http.Request) {
+	currentSession := GetSessionFromContext(r.Context())
+
+	sessions := h.authStore.ListAllSessions()
+	devices := make([]DeviceInfo, 0, len(sessions))
+
+	for _, s := range sessions {
+		devices = append(devices, DeviceInfo{
+			ID:        s.ID,
+			Label:     s.Label,
+			CreatedAt: s.CreatedAt,
+			LastSeen:  s.LastSeen,
+			IPAddress: s.IPAddress,
+			IsCurrent: currentSession != nil && s.ID == currentSession.ID,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, devices)
+}
+
+// HandleRevokeDevice removes a device session (requires session)
+func (h *Handlers) HandleRevokeDevice(w http.ResponseWriter, r *http.Request, deviceID string) {
+	currentSession := GetSessionFromContext(r.Context())
+
+	// Prevent revoking own session
+	if currentSession != nil && deviceID == currentSession.ID {
+		writeError(w, http.StatusBadRequest, "invalid_request", "Cannot revoke your own session")
+		return
+	}
+
+	// Check if device exists
+	session := h.authStore.GetSession(deviceID)
+	if session == nil {
+		writeError(w, http.StatusNotFound, "not_found", "Device not found")
+		return
+	}
+
+	h.authStore.DeleteSession(deviceID)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

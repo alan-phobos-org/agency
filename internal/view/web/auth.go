@@ -1,11 +1,10 @@
 package web
 
 import (
-	"crypto/subtle"
+	"context"
 	"fmt"
 	"net/http"
 	"os"
-	"strings"
 	"sync"
 	"time"
 )
@@ -128,91 +127,99 @@ func (al *AccessLogger) Close() error {
 	return al.file.Close()
 }
 
-// AuthMiddleware returns HTTP middleware that validates bearer token authentication.
-// Token can be provided via:
-// - Authorization header: "Bearer <token>"
-// - Query parameter: "?token=<token>"
-// Includes rate limiting for failed attempts and optional access logging.
-func AuthMiddleware(token string) func(http.Handler) http.Handler {
-	return AuthMiddlewareWithLogging(token, nil, nil)
+// SessionCookieName is the name of the session cookie.
+const SessionCookieName = "agency_session"
+
+// contextKey is a custom type for context keys to avoid collisions.
+type contextKey string
+
+const sessionContextKey contextKey = "session"
+
+// GetSessionFromContext retrieves the AuthSession from the request context.
+func GetSessionFromContext(ctx context.Context) *AuthSession {
+	session, _ := ctx.Value(sessionContextKey).(*AuthSession)
+	return session
 }
 
-// AuthMiddlewareWithLogging returns auth middleware with rate limiting and access logging
-func AuthMiddlewareWithLogging(token string, rateLimiter *RateLimiter, accessLogger *AccessLogger) func(http.Handler) http.Handler {
+// SessionMiddleware validates session cookies and protects routes.
+// Requests without valid session cookies are redirected to /login.
+func SessionMiddleware(store *AuthStore, accessLogger *AccessLogger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ip := r.RemoteAddr
-			// Use X-Real-IP if available (set by RealIP middleware)
 			if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
 				ip = realIP
 			}
 
-			// Check if IP is blocked
-			if rateLimiter != nil && rateLimiter.IsBlocked(ip) {
+			// Get session cookie
+			cookie, err := r.Cookie(SessionCookieName)
+			if err != nil || cookie.Value == "" {
 				if accessLogger != nil {
-					accessLogger.Log(ip, r.Method, r.URL.Path, http.StatusTooManyRequests, false)
+					accessLogger.Log(ip, r.Method, r.URL.Path, http.StatusFound, false)
 				}
-				http.Error(w, `{"error":"rate_limited","message":"Too many failed attempts. Try again later."}`, http.StatusTooManyRequests)
+				http.Redirect(w, r, "/login", http.StatusFound)
 				return
 			}
 
-			// Skip auth if no token configured
-			if token == "" {
+			// Validate session
+			session := store.GetSession(cookie.Value)
+			if session == nil {
+				// Invalid or expired session - clear cookie and redirect
+				clearSessionCookie(w)
 				if accessLogger != nil {
-					accessLogger.Log(ip, r.Method, r.URL.Path, http.StatusOK, true)
+					accessLogger.Log(ip, r.Method, r.URL.Path, http.StatusFound, false)
 				}
-				next.ServeHTTP(w, r)
+				http.Redirect(w, r, "/login", http.StatusFound)
 				return
 			}
 
-			// Try Authorization header first
-			authHeader := r.Header.Get("Authorization")
-			if authHeader != "" {
-				if strings.HasPrefix(authHeader, "Bearer ") {
-					providedToken := strings.TrimPrefix(authHeader, "Bearer ")
-					if secureCompare(providedToken, token) {
-						if rateLimiter != nil {
-							rateLimiter.RecordSuccess(ip)
-						}
-						if accessLogger != nil {
-							accessLogger.Log(ip, r.Method, r.URL.Path, http.StatusOK, true)
-						}
-						next.ServeHTTP(w, r)
-						return
-					}
-				}
-			}
+			// Refresh session (updates last_seen and extends auth session expiry)
+			store.RefreshSession(session.ID)
 
-			// Try query parameter
-			queryToken := r.URL.Query().Get("token")
-			if queryToken != "" && secureCompare(queryToken, token) {
-				if rateLimiter != nil {
-					rateLimiter.RecordSuccess(ip)
-				}
-				if accessLogger != nil {
-					accessLogger.Log(ip, r.Method, r.URL.Path, http.StatusOK, true)
-				}
-				next.ServeHTTP(w, r)
-				return
-			}
+			// Add session to context for handlers
+			ctx := context.WithValue(r.Context(), sessionContextKey, session)
 
-			// Unauthorized - record failure
-			blocked := false
-			if rateLimiter != nil {
-				blocked = rateLimiter.RecordFailure(ip)
-			}
 			if accessLogger != nil {
-				accessLogger.Log(ip, r.Method, r.URL.Path, http.StatusUnauthorized, false)
+				accessLogger.Log(ip, r.Method, r.URL.Path, http.StatusOK, true)
 			}
-			if blocked {
-				fmt.Fprintf(os.Stderr, "WARNING: IP %s blocked after %d failed auth attempts\n", ip, maxFailedAttempts)
-			}
-			http.Error(w, `{"error":"unauthorized","message":"Invalid or missing token"}`, http.StatusUnauthorized)
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
 
-// secureCompare performs constant-time comparison to prevent timing attacks
-func secureCompare(a, b string) bool {
-	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+// SetSessionCookie sets the session cookie on the response.
+func SetSessionCookie(w http.ResponseWriter, sessionID string, secure bool) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     SessionCookieName,
+		Value:    sessionID,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   0, // Session cookie (expires when browser closes)
+	})
+}
+
+// SetDeviceSessionCookie sets a long-lived cookie for device sessions.
+func SetDeviceSessionCookie(w http.ResponseWriter, sessionID string, secure bool) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     SessionCookieName,
+		Value:    sessionID,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   365 * 24 * 60 * 60, // 1 year
+	})
+}
+
+// clearSessionCookie removes the session cookie.
+func clearSessionCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     SessionCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		MaxAge:   -1,
+	})
 }

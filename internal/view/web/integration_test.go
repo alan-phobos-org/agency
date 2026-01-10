@@ -80,7 +80,7 @@ func TestIntegrationDiscoveryAndAPI(t *testing.T) {
 	cfg := &Config{
 		Port:            0, // Will use test port
 		Bind:            "127.0.0.1",
-		Token:           "test-token-secret",
+		AuthStore:       nil,
 		PortStart:       agentPort,
 		PortEnd:         directorPort,
 		RefreshInterval: 100 * time.Millisecond,
@@ -368,7 +368,7 @@ func TestIntegrationRateLimiting(t *testing.T) {
 	cfg := &Config{
 		Port:            0,
 		Bind:            "127.0.0.1",
-		Token:           "secret-token",
+		AuthStore:       nil,
 		PortStart:       59000, // Use high ports to avoid conflicts
 		PortEnd:         59000,
 		RefreshInterval: time.Hour, // Disable polling
@@ -434,7 +434,7 @@ func TestIntegrationAccessLogging(t *testing.T) {
 	cfg := &Config{
 		Port:            0,
 		Bind:            "127.0.0.1",
-		Token:           "secret-token",
+		AuthStore:       nil,
 		PortStart:       59001,
 		PortEnd:         59001,
 		RefreshInterval: time.Hour,
@@ -549,7 +549,7 @@ func TestIntegrationMultiBrowserSession(t *testing.T) {
 	cfg := &Config{
 		Port:            0,
 		Bind:            "127.0.0.1",
-		Token:           "secret-token",
+		AuthStore:       nil,
 		PortStart:       59010,
 		PortEnd:         59010,
 		RefreshInterval: time.Hour,
@@ -731,7 +731,7 @@ func TestIntegrationMultiBrowserSessionRace(t *testing.T) {
 	cfg := &Config{
 		Port:            0,
 		Bind:            "127.0.0.1",
-		Token:           "secret-token",
+		AuthStore:       nil,
 		PortStart:       59011,
 		PortEnd:         59011,
 		RefreshInterval: time.Hour,
@@ -910,7 +910,7 @@ func TestIntegrationSessionBouncing(t *testing.T) {
 	cfg := &Config{
 		Port:            0,
 		Bind:            "127.0.0.1",
-		Token:           "secret-token",
+		AuthStore:       nil,
 		PortStart:       59012,
 		PortEnd:         59012,
 		RefreshInterval: time.Hour,
@@ -1079,7 +1079,7 @@ func TestIntegrationSessionAPI(t *testing.T) {
 	cfg := &Config{
 		Port:            0,
 		Bind:            "127.0.0.1",
-		Token:           "secret-token",
+		AuthStore:       nil,
 		PortStart:       59002,
 		PortEnd:         59002,
 		RefreshInterval: time.Hour,
@@ -1282,7 +1282,7 @@ func TestIntegrationSessionDetailHistoryFetch(t *testing.T) {
 	cfg := &Config{
 		Port:            0,
 		Bind:            "127.0.0.1",
-		Token:           "secret-token",
+		AuthStore:       nil,
 		PortStart:       59030,
 		PortEnd:         59030,
 		RefreshInterval: time.Hour,
@@ -1424,7 +1424,7 @@ func TestIntegrationConsolidatedDashboard(t *testing.T) {
 	cfg := &Config{
 		Port:            0,
 		Bind:            "127.0.0.1",
-		Token:           "secret-token",
+		AuthStore:       nil,
 		PortStart:       59020,
 		PortEnd:         59020,
 		RefreshInterval: time.Hour,
