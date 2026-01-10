@@ -1,0 +1,57 @@
+#!/bin/bash
+# Mock Claude CLI for testing max_turns auto-resume behavior
+# First N calls return error_max_turns, then returns success
+# Uses MOCK_MAX_TURNS_COUNTER file to track calls
+
+SESSION_ID=""
+RESUME=false
+CAPTURE_NEXT=""
+
+for arg in "$@"; do
+    if [ "$CAPTURE_NEXT" = "session" ]; then
+        SESSION_ID="$arg"
+        CAPTURE_NEXT=""
+        continue
+    fi
+    case "$arg" in
+        --session-id)
+            CAPTURE_NEXT="session"
+            ;;
+        --resume)
+            RESUME=true
+            # For resume, session ID is the next arg
+            CAPTURE_NEXT="session"
+            ;;
+    esac
+done
+
+# If no session ID, generate one
+if [ -z "$SESSION_ID" ]; then
+    SESSION_ID="max-turns-session-$$"
+fi
+
+# Track call count using counter file
+COUNTER_FILE="${MOCK_MAX_TURNS_COUNTER:-/tmp/mock-claude-max-turns-counter}"
+
+# Read current count
+if [ -f "$COUNTER_FILE" ]; then
+    COUNT=$(cat "$COUNTER_FILE")
+else
+    COUNT=0
+fi
+
+# Increment and write
+COUNT=$((COUNT + 1))
+echo "$COUNT" > "$COUNTER_FILE"
+
+# How many times to return max_turns error before success
+# Default: 2 (so 3rd call succeeds)
+FAIL_COUNT="${MOCK_MAX_TURNS_FAIL_COUNT:-2}"
+
+if [ "$COUNT" -le "$FAIL_COUNT" ]; then
+    # Return error_max_turns - note this still has exit_code 0 like real Claude
+    echo "{\"type\":\"result\",\"subtype\":\"error_max_turns\",\"session_id\":\"$SESSION_ID\",\"result\":\"Hit max turns limit (call $COUNT)\",\"exit_code\":0,\"usage\":{\"input_tokens\":1000,\"output_tokens\":500}}"
+else
+    # Return success
+    echo "{\"type\":\"result\",\"subtype\":\"success\",\"session_id\":\"$SESSION_ID\",\"result\":\"Task completed after $COUNT attempts\",\"exit_code\":0,\"usage\":{\"input_tokens\":500,\"output_tokens\":250}}"
+fi

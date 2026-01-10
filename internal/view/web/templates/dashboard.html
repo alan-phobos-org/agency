@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Agency Dashboard</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta17/dist/css/tabler.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
     .status-badge { font-size: 0.75rem; }
     #submitResult { display: none; }
@@ -15,6 +16,19 @@
     .table-component .session-id { font-family: monospace; font-size: 0.85rem; }
     .table-component .btn-sm { padding: 0.2rem 0.5rem; font-size: 0.75rem; }
     .empty-message { color: var(--tblr-muted); font-style: italic; padding: 1rem; }
+    .session-row { cursor: pointer; }
+    .session-row:hover { background-color: var(--tblr-bg-surface-secondary); }
+    .session-row.selected { background-color: var(--tblr-primary-lt); }
+    .task-item { padding: 0.75rem 1rem; border-bottom: 1px solid var(--tblr-border-color); }
+    .task-item:last-child { border-bottom: none; }
+    .task-output { max-height: 300px; overflow: auto; font-size: 0.85rem; background: var(--tblr-bg-surface); border: 1px solid var(--tblr-border-color); padding: 0.75rem; border-radius: 4px; margin-top: 0.5rem; }
+    .task-output pre { background: var(--tblr-bg-surface-dark); padding: 0.5rem; border-radius: 4px; overflow-x: auto; }
+    .task-output code { font-size: 0.8rem; }
+    .task-output p { margin-bottom: 0.5rem; }
+    .task-output p:last-child { margin-bottom: 0; }
+    .task-output ul, .task-output ol { margin-bottom: 0.5rem; padding-left: 1.5rem; }
+    .task-prompt { font-size: 0.85rem; color: var(--tblr-muted); margin-top: 0.25rem; }
+    .task-prompt-content { background: var(--tblr-bg-surface); border: 1px solid var(--tblr-border-color); padding: 0.5rem; border-radius: 4px; margin-top: 0.25rem; }
   </style>
 </head>
 <body class="theme-light">
@@ -42,6 +56,12 @@
               <form id="taskForm">
                 <div class="row">
                   <div class="col-md-4 mb-3">
+                    <label class="form-label">Context</label>
+                    <select class="form-select" id="contextSelect">
+                      <option value="manual">Manual</option>
+                    </select>
+                  </div>
+                  <div class="col-md-4 mb-3">
                     <label class="form-label">Agent</label>
                     <select class="form-select" id="agentSelect" required>
                       <option value="">Select an idle agent...</option>
@@ -53,19 +73,32 @@
                       <option value="">New session</option>
                     </select>
                   </div>
-                  <div class="col-md-2 mb-3">
-                    <label class="form-label">Timeout (s)</label>
-                    <input type="number" class="form-control" id="timeout" value="1800" min="1">
+                </div>
+                <div id="manualOptions">
+                  <div class="row">
+                    <div class="col-md-2 mb-3">
+                      <label class="form-label">Timeout (s)</label>
+                      <input type="number" class="form-control" id="timeout" value="1800" min="1">
+                    </div>
+                    <div class="col-md-2 mb-3">
+                      <label class="form-label">Model</label>
+                      <select class="form-select" id="model">
+                        <option value="opus" selected>Opus</option>
+                        <option value="sonnet">Sonnet</option>
+                        <option value="haiku">Haiku</option>
+                      </select>
+                    </div>
+                    <div class="col-md-8 mb-3 d-flex align-items-end">
+                      <label class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" id="thinking" checked>
+                        <span class="form-check-label">Extended thinking</span>
+                      </label>
+                    </div>
                   </div>
-                  <div class="col-md-2 mb-3">
-                    <label class="form-label">Model</label>
-                    <select class="form-select" id="model">
-                      <option value="">Auto</option>
-                      <option value="opus">Opus</option>
-                      <option value="sonnet">Sonnet</option>
-                      <option value="haiku">Haiku</option>
-                    </select>
-                  </div>
+                </div>
+                <div id="contextInfo" class="mb-3 alert alert-info" style="display: none;">
+                  <strong id="contextName"></strong>: <span id="contextDescription"></span>
+                  <div class="small text-muted mt-1" id="contextSettings"></div>
                 </div>
                 <div class="mb-3">
                   <label class="form-label">Prompt</label>
@@ -77,6 +110,19 @@
                 </button>
               </form>
               <div id="submitResult" class="mt-3 alert"></div>
+            </div>
+          </div>
+
+          <!-- Session Detail (shown when a session is selected) -->
+          <div class="card mb-3" id="sessionDetail" style="display: none;">
+            <div class="card-header">
+              <h3 class="card-title">Session <span id="sessionDetailId" class="text-muted"></span></h3>
+              <div class="card-actions">
+                <button class="btn btn-sm btn-ghost-secondary" onclick="closeSessionDetail()">✕</button>
+              </div>
+            </div>
+            <div class="card-body p-0">
+              <div id="sessionDetailContent"></div>
             </div>
           </div>
 
@@ -158,15 +204,6 @@
             </div>
           </div>
 
-          <!-- Active Task Monitor -->
-          <div class="card" id="taskMonitor" style="display: none;">
-            <div class="card-header">
-              <h3 class="card-title">Task Monitor</h3>
-            </div>
-            <div class="card-body">
-              <div id="taskDetails"></div>
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -184,6 +221,12 @@
     // Sessions storage - fetched from server for global access
     let sessions = {};
     let sessionOrder = []; // Maintain server's sort order (newest first)
+
+    // Contexts storage
+    let contexts = [];
+
+    // Selected session for detail view
+    let selectedSession = null;
 
     // ETag for caching
     let dashboardETag = null;
@@ -243,6 +286,76 @@
       }
       return resp.json();
     }
+
+    // Fetch and populate contexts
+    async function loadContexts() {
+      try {
+        contexts = await api('/api/contexts');
+        const contextSelect = document.getElementById('contextSelect');
+        contextSelect.innerHTML = contexts.map(ctx =>
+          `<option value="${ctx.id}">${ctx.name}</option>`
+        ).join('');
+        // Select first non-manual context by default if available
+        const firstNonManual = contexts.find(c => c.id !== 'manual');
+        if (firstNonManual) {
+          contextSelect.value = firstNonManual.id;
+        }
+        // Trigger change to update UI
+        updateContextUI();
+      } catch (err) {
+        console.error('Failed to load contexts:', err);
+      }
+    }
+
+    // Update UI based on selected context
+    function updateContextUI() {
+      const contextId = document.getElementById('contextSelect').value;
+      const ctx = contexts.find(c => c.id === contextId);
+      const manualOptions = document.getElementById('manualOptions');
+      const contextInfo = document.getElementById('contextInfo');
+
+      if (contextId === 'manual' || !ctx) {
+        manualOptions.style.display = 'block';
+        contextInfo.style.display = 'none';
+      } else {
+        manualOptions.style.display = 'none';
+        contextInfo.style.display = 'block';
+        document.getElementById('contextName').textContent = ctx.name;
+        document.getElementById('contextDescription').textContent = ctx.description || '';
+
+        // Show context settings
+        const settings = [];
+        if (ctx.model) settings.push(`Model: ${ctx.model}`);
+        if (ctx.timeout_seconds) settings.push(`Timeout: ${ctx.timeout_seconds}s`);
+        if (ctx.thinking !== undefined) settings.push(`Thinking: ${ctx.thinking ? 'on' : 'off'}`);
+        document.getElementById('contextSettings').textContent = settings.join(' | ');
+      }
+    }
+
+    // Get current context settings
+    function getContextSettings() {
+      const contextId = document.getElementById('contextSelect').value;
+      const ctx = contexts.find(c => c.id === contextId);
+
+      if (contextId === 'manual' || !ctx) {
+        return {
+          model: document.getElementById('model').value,
+          timeout_seconds: parseInt(document.getElementById('timeout').value) || 1800,
+          thinking: document.getElementById('thinking').checked,
+          prompt_prefix: ''
+        };
+      }
+
+      return {
+        model: ctx.model || 'opus',
+        timeout_seconds: ctx.timeout_seconds || 1800,
+        thinking: ctx.thinking !== undefined ? ctx.thinking : true,
+        prompt_prefix: ctx.prompt_prefix || ''
+      };
+    }
+
+    // Context change handler
+    document.getElementById('contextSelect').addEventListener('change', updateContextUI);
 
     // Fetch dashboard data with ETag support
     async function fetchDashboard() {
@@ -316,15 +429,16 @@
       const lastState = lastTask ? lastTask.state : 'unknown';
       const lastPrompt = lastTask ? escapeHtml((lastTask.prompt || '').slice(0, 50)) : '—';
       const fullPrompt = lastTask ? escapeHtml(lastTask.prompt || '') : '';
+      const isSelected = selectedSession === sessionId ? 'selected' : '';
 
       return `
-        <tr>
+        <tr class="session-row ${isSelected}" onclick="openSessionDetail('${sessionId}')" data-session="${sessionId}">
           <td><span class="badge ${stateColors[lastState] || 'bg-secondary'} status-badge" title="${lastState}">${stateIcon(lastState)}</span></td>
           <td class="session-id">${sessionId.slice(0, 8)}...</td>
           <td class="text-muted small">${session.agentUrl}</td>
           <td class="text-center">${taskCount}</td>
           <td class="small task-col" title="${fullPrompt}">${lastPrompt}${(lastTask?.prompt || '').length > 50 ? '...' : ''}</td>
-          <td><button class="btn btn-sm btn-outline-primary" onclick="continueSession('${sessionId}')">Continue</button></td>
+          <td><button class="btn btn-sm btn-outline-primary" onclick="event.stopPropagation(); continueSession('${sessionId}')">Continue</button></td>
         </tr>`;
     }
 
@@ -362,6 +476,127 @@
       document.getElementById('sessionSelect').value = sessionId;
       document.getElementById('agentSelect').value = session.agentUrl;
       document.getElementById('prompt').focus();
+    }
+
+    // Open session detail view
+    async function openSessionDetail(sessionId) {
+      const session = sessions[sessionId];
+      if (!session) return;
+
+      selectedSession = sessionId;
+      updateSessionsUI(); // Update selection highlighting
+
+      const detailDiv = document.getElementById('sessionDetail');
+      const detailId = document.getElementById('sessionDetailId');
+      const content = document.getElementById('sessionDetailContent');
+
+      detailId.textContent = sessionId.slice(0, 8) + '...';
+      content.innerHTML = '<div class="p-3 text-muted">Loading history...</div>';
+      detailDiv.style.display = 'block';
+
+      // Fetch history for each task from the agent
+      const tasks = session.tasks || [];
+      if (tasks.length === 0) {
+        content.innerHTML = '<div class="p-3 text-muted">No tasks in this session</div>';
+        return;
+      }
+
+      const historyItems = [];
+      const terminalStates = ['completed', 'failed', 'cancelled'];
+      for (const task of tasks) {
+        // Only fetch history for completed tasks - in-progress tasks won't have history yet
+        if (terminalStates.includes(task.state)) {
+          try {
+            const history = await fetchTaskHistory(session.agentUrl, task.taskId);
+            historyItems.push({ ...task, history });
+          } catch (err) {
+            historyItems.push({ ...task, history: null, error: err.message });
+          }
+        } else {
+          // For in-progress tasks, just use the local session data
+          historyItems.push({ ...task, history: null });
+        }
+      }
+
+      renderSessionDetail(historyItems);
+    }
+
+    // Fetch task history via proxy (avoids mixed content issues)
+    async function fetchTaskHistory(agentUrl, taskId) {
+      return api(`/api/history/${taskId}?agent_url=${encodeURIComponent(agentUrl)}`);
+    }
+
+    // Render markdown safely
+    function renderMarkdown(text) {
+      if (!text) return '';
+      try {
+        return marked.parse(text);
+      } catch (e) {
+        return escapeHtml(text);
+      }
+    }
+
+    // Render session detail content
+    function renderSessionDetail(tasks) {
+      const content = document.getElementById('sessionDetailContent');
+      const stateColors = {
+        'completed': 'bg-green',
+        'failed': 'bg-red',
+        'working': 'bg-yellow',
+        'queued': 'bg-secondary',
+        'cancelled': 'bg-orange'
+      };
+
+      const html = tasks.map((task, i) => {
+        const state = task.history?.state || task.state || 'unknown';
+        // Prefer session's stored prompt (no context prefix) over history prompt
+        const prompt = task.prompt || task.history?.prompt || '';
+        const output = task.history?.output || '';
+        const error = task.history?.error?.message || task.error || '';
+        const duration = task.history?.duration_seconds;
+        const steps = task.history?.steps || [];
+
+        let outputHtml = '';
+        if (output) {
+          outputHtml = `<div class="task-output">${renderMarkdown(output)}</div>`;
+        } else if (steps.length > 0) {
+          // Show steps outline if no full output
+          const stepsText = steps.map(s => {
+            const preview = s.output_preview || s.input_preview || s.type;
+            return s.tool ? `[${s.tool}] ${preview}` : preview;
+          }).join('\n');
+          outputHtml = `<div class="task-output"><pre>${escapeHtml(stepsText)}</pre></div>`;
+        }
+
+        // Render prompt with markdown
+        const promptHtml = prompt
+          ? `<div class="task-prompt">Prompt:</div><div class="task-prompt-content">${renderMarkdown(prompt)}</div>`
+          : '';
+
+        return `
+          <div class="task-item">
+            <div class="d-flex align-items-center justify-content-between">
+              <div>
+                <span class="badge ${stateColors[state] || 'bg-secondary'} status-badge me-2">${stateIcon(state)}</span>
+                <strong class="small">${task.taskId}</strong>
+                ${duration ? `<span class="text-muted small ms-2">${duration.toFixed(1)}s</span>` : ''}
+              </div>
+              <span class="text-muted small">#${i + 1}</span>
+            </div>
+            ${promptHtml}
+            ${error ? `<div class="alert alert-danger mt-2 mb-0 p-2 small">${escapeHtml(error)}</div>` : ''}
+            ${outputHtml}
+          </div>`;
+      }).join('');
+
+      content.innerHTML = html || '<div class="p-3 text-muted">No tasks</div>';
+    }
+
+    // Close session detail view
+    function closeSessionDetail() {
+      selectedSession = null;
+      document.getElementById('sessionDetail').style.display = 'none';
+      updateSessionsUI();
     }
 
     // Update dashboard
@@ -414,12 +649,16 @@
         // Update agent select dropdown
         const agentSelect = document.getElementById('agentSelect');
         const currentValue = agentSelect.value;
+        const idleAgents = agents.filter(a => a.state === 'idle');
         agentSelect.innerHTML = '<option value="">Select an idle agent...</option>' +
-          agents.filter(a => a.state === 'idle').map(a =>
+          idleAgents.map(a =>
             `<option value="${a.url}">${a.url} (${a.state})</option>`
           ).join('');
         if (currentValue && agents.some(a => a.url === currentValue)) {
           agentSelect.value = currentValue;
+        } else if (idleAgents.length === 1) {
+          // Auto-select if there's only one idle agent
+          agentSelect.value = idleAgents[0].url;
         }
 
         // Poll active task if any
@@ -441,31 +680,6 @@
       try {
         const status = await api(`/api/task/${activeTask.taskId}?agent_url=${encodeURIComponent(activeTask.agentUrl)}`);
 
-        const monitor = document.getElementById('taskMonitor');
-        const details = document.getElementById('taskDetails');
-
-        const stateColors = {
-          'queued': 'bg-secondary',
-          'working': 'bg-yellow',
-          'completed': 'bg-green',
-          'failed': 'bg-red',
-          'cancelled': 'bg-orange'
-        };
-
-        details.innerHTML = `
-          <div class="mb-2">
-            <span class="badge ${stateColors[status.state] || 'bg-secondary'}" title="${status.state}">${stateIcon(status.state)}</span>
-            <strong class="ms-2">${status.task_id}</strong>
-          </div>
-          <div class="small text-muted mb-2">
-            Agent: ${activeTask.agentUrl}<br>
-            Duration: ${status.duration_seconds ? status.duration_seconds.toFixed(1) + 's' : 'running...'}
-          </div>
-          ${status.output ? `<pre class="bg-dark text-light p-3 rounded" style="max-height: 300px; overflow: auto;">${escapeHtml(status.output)}</pre>` : ''}
-          ${status.error ? `<div class="alert alert-danger">${escapeHtml(status.error.message)}</div>` : ''}
-        `;
-        monitor.style.display = 'block';
-
         // Update session state if completed
         if (['completed', 'failed', 'cancelled'].includes(status.state)) {
           if (activeTask.sessionId) {
@@ -478,6 +692,10 @@
               if (taskEntry) {
                 taskEntry.state = status.state;
               }
+            }
+            // Refresh session detail if this session is selected
+            if (selectedSession === activeTask.sessionId) {
+              openSessionDetail(activeTask.sessionId);
             }
           }
           activeTask = null;
@@ -502,24 +720,29 @@
 
       try {
         const agentUrl = document.getElementById('agentSelect').value;
-        const prompt = document.getElementById('prompt').value;
+        const userPrompt = document.getElementById('prompt').value;
         const sessionId = document.getElementById('sessionSelect').value;
+
+        // Get settings from context or manual inputs
+        const settings = getContextSettings();
+
+        // Build prompt with optional context prefix
+        const fullPrompt = settings.prompt_prefix
+          ? settings.prompt_prefix + userPrompt
+          : userPrompt;
 
         const body = {
           agent_url: agentUrl,
-          prompt: prompt
+          prompt: fullPrompt,
+          model: settings.model,
+          timeout_seconds: settings.timeout_seconds,
+          thinking: settings.thinking
         };
 
         // Include session_id if continuing an existing session
         if (sessionId) {
           body.session_id = sessionId;
         }
-
-        const timeout = parseInt(document.getElementById('timeout').value);
-        if (timeout > 0) body.timeout_seconds = timeout;
-
-        const model = document.getElementById('model').value;
-        if (model) body.model = model;
 
         const resp = await api('/api/task', {
           method: 'POST',
@@ -532,12 +755,13 @@
         // Track session on server
         const sid = resp.session_id;
         if (sid) {
-          await saveSessionTask(sid, agentUrl, resp.task_id, resp.status || 'working', prompt);
+          await saveSessionTask(sid, agentUrl, resp.task_id, resp.status || 'working', userPrompt);
           // Update local cache
           if (!sessions[sid]) {
             sessions[sid] = { agentUrl: agentUrl, tasks: [], createdAt: new Date().toISOString() };
+            sessionOrder.unshift(sid);
           }
-          sessions[sid].tasks.push({ taskId: resp.task_id, state: resp.status || 'working', prompt: prompt });
+          sessions[sid].tasks.push({ taskId: resp.task_id, state: resp.status || 'working', prompt: userPrompt });
         }
 
         // Start monitoring
@@ -547,13 +771,13 @@
         // Clear prompt but keep other fields for follow-ups
         document.getElementById('prompt').value = '';
 
-        // Refresh to show agent as busy
+        // Refresh to show agent as busy and open session detail
         await refresh();
 
-        // IMPORTANT: After refresh, select the session we just used/created
-        // This ensures subsequent tasks go to the same session
+        // Select session and open its detail view
         if (sid) {
           document.getElementById('sessionSelect').value = sid;
+          openSessionDetail(sid);
         }
       } catch (err) {
         result.className = 'mt-3 alert alert-danger show';
@@ -604,6 +828,7 @@
     }
 
     // Start refresh loop
+    loadContexts(); // Load available contexts
     refresh();
     refreshTimer = setInterval(refresh, pollInterval);
   </script>

@@ -68,7 +68,7 @@ fi
 
 # Create remote directory structure
 echo "Creating remote directory..."
-ssh $SSH_OPTS "$REMOTE_HOST" "mkdir -p $REMOTE_DIR/bin $REMOTE_DIR/deployment"
+ssh $SSH_OPTS "$REMOTE_HOST" "mkdir -p $REMOTE_DIR/bin $REMOTE_DIR/deployment $REMOTE_DIR/configs"
 
 # Stop running services before copying (binaries can't be overwritten while running)
 echo "Stopping existing services..."
@@ -85,6 +85,12 @@ scp $SCP_OPTS \
 if [ -f "$PROJECT_ROOT/.env" ]; then
     echo "Copying .env..."
     scp $SCP_OPTS "$PROJECT_ROOT/.env" "$REMOTE_HOST:$REMOTE_DIR/"
+fi
+
+# Copy contexts config if it exists
+if [ -f "$PROJECT_ROOT/configs/contexts.yaml" ]; then
+    echo "Copying contexts config..."
+    scp $SCP_OPTS "$PROJECT_ROOT/configs/contexts.yaml" "$REMOTE_HOST:$REMOTE_DIR/configs/"
 fi
 
 # Copy deployment scripts
@@ -134,8 +140,12 @@ if [ -f "$PID_FILE" ]; then
 fi
 
 # Start web view
+CONTEXTS_ARG=""
+if [ -f "$AGENCY_DIR/configs/contexts.yaml" ]; then
+    CONTEXTS_ARG="-contexts $AGENCY_DIR/configs/contexts.yaml"
+fi
 echo "Starting web view on port $WEB_PORT..."
-"$AGENCY_DIR/bin/ag-view-web" -port "$WEB_PORT" -env "$AGENCY_DIR/.env" > "$AGENCY_DIR/web.log" 2>&1 &
+"$AGENCY_DIR/bin/ag-view-web" -port "$WEB_PORT" -env "$AGENCY_DIR/.env" $CONTEXTS_ARG > "$AGENCY_DIR/web.log" 2>&1 &
 WEB_PID=$!
 
 # Start claude agent

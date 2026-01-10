@@ -30,10 +30,11 @@ type Handlers struct {
 	startTime    time.Time
 	tmpl         *template.Template
 	sessionStore *SessionStore
+	contexts     *ContextsConfig
 }
 
 // NewHandlers creates handlers with dependencies
-func NewHandlers(discovery *Discovery, version string) (*Handlers, error) {
+func NewHandlers(discovery *Discovery, version string, contexts *ContextsConfig) (*Handlers, error) {
 	tmpl, err := template.ParseFS(templatesFS, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parsing templates: %w", err)
@@ -45,6 +46,7 @@ func NewHandlers(discovery *Discovery, version string) (*Handlers, error) {
 		startTime:    time.Now(),
 		tmpl:         tmpl,
 		sessionStore: NewSessionStore(),
+		contexts:     contexts,
 	}, nil
 }
 
@@ -97,6 +99,7 @@ type TaskSubmitRequest struct {
 	TimeoutSeconds int               `json:"timeout_seconds,omitempty"`
 	SessionID      string            `json:"session_id,omitempty"` // Continue existing session
 	Env            map[string]string `json:"env,omitempty"`
+	Thinking       *bool             `json:"thinking,omitempty"` // Enable extended thinking (default: true)
 }
 
 // TaskSubmitResponse is returned after successful task submission
@@ -150,6 +153,9 @@ func (h *Handlers) HandleTaskSubmit(w http.ResponseWriter, r *http.Request) {
 	if len(req.Env) > 0 {
 		agentReq["env"] = req.Env
 	}
+	if req.Thinking != nil {
+		agentReq["thinking"] = *req.Thinking
+	}
 
 	// Forward to agent
 	body, _ := json.Marshal(agentReq)
@@ -199,6 +205,29 @@ func (h *Handlers) HandleTaskStatus(w http.ResponseWriter, r *http.Request, task
 	// Forward to agent
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Get(agentURL + "/task/" + taskID)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "agent_error", "Failed to contact agent: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	// Forward response as-is
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
+}
+
+// HandleTaskHistory proxies task history request to the agent
+func (h *Handlers) HandleTaskHistory(w http.ResponseWriter, r *http.Request, taskID string) {
+	agentURL := r.URL.Query().Get("agent_url")
+	if agentURL == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "agent_url query parameter is required")
+		return
+	}
+
+	// Forward to agent
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(agentURL + "/history/" + taskID)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "agent_error", "Failed to contact agent: "+err.Error())
 		return
@@ -317,4 +346,9 @@ func (h *Handlers) HandleDashboardData(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("ETag", etag)
 	w.WriteHeader(http.StatusOK)
 	w.Write(jsonData)
+}
+
+// HandleContexts returns available contexts
+func (h *Handlers) HandleContexts(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, h.contexts.GetAllContexts())
 }

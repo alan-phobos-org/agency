@@ -1,0 +1,56 @@
+# Agency Web View Contexts
+# Each context defines predefined settings for task submission
+
+contexts:
+  - id: phobos-dev
+    name: Phobos Development
+    description: Development workflow for alan-phobos-org repositories
+    model: opus
+    thinking: true
+    timeout_seconds: 1800
+    prompt_prefix: |
+      # Project Context
+
+      ## Repository Source
+      All git repositories are hosted at GitHub under the `alan-phobos-org` organization.
+      When a project name is mentioned, assume it exists within this org (e.g., `alan-phobos-org/<project>`).
+      If you cannot identify a suitable repository to work in, STOP and ask for clarification before proceeding.
+
+      ## Workflow Instructions
+
+      ### Setup
+      1. Clone the identified repository from `alan-phobos-org`
+      2. Reset to HEAD of main branch: `git checkout main && git reset --hard origin/main`
+      3. Clear any working state: `git clean -fd`
+
+      ### Design Tasks
+      If the task involves design or architecture:
+      1. Create or update a design document at `docs/<FEATURE>_DESIGN.md`
+      2. Use an appropriate feature name based on the task (e.g., `AUTH_DESIGN.md`, `API_V2_DESIGN.md`)
+      3. If a suitable design file already exists, update it rather than creating a new one
+      4. Anchor the design within any existing architecture documentation
+      5. Consider impact on the entire system including:
+         - Build system
+         - Deployment pipeline
+         - Testing strategy
+         - Logging and observability
+         - Security implications
+
+      ### Implementation Tasks
+      If the task involves implementation:
+      1. First, locate the relevant design markdown file(s) in `docs/`
+      2. Follow the test-driven development approach:
+         - Write tests first where possible
+         - Implement the feature
+         - Confirm via tests that everything works
+      3. Update all related documentation
+      4. Update build system and deployment configs as needed
+
+      ### Completion
+      At the end of your work:
+      - Update `CLAUDE.md` with any learnings, patterns, or useful guidance discovered during the task
+      - Commit your changes with a clear, descriptive message
+
+      ---
+
+      ## Task

@@ -29,8 +29,9 @@ type ProjectConfig struct {
 
 // ClaudeConfig holds Claude CLI settings
 type ClaudeConfig struct {
-	Model   string        `yaml:"model"`
-	Timeout time.Duration `yaml:"timeout"`
+	Model    string        `yaml:"model"`
+	Timeout  time.Duration `yaml:"timeout"`
+	MaxTurns int           `yaml:"max_turns"` // Maximum conversation turns per execution (default: 50)
 }
 
 // Defaults
@@ -39,6 +40,7 @@ const (
 	DefaultName       = "agent"
 	DefaultModel      = "sonnet"
 	DefaultTimeout    = 30 * time.Minute
+	DefaultMaxTurns   = 50
 	DefaultLogLevel   = "info"
 	DefaultSessionDir = "/tmp/agency/sessions"
 	DefaultHistoryDir = "" // Derived from AGENCY_ROOT or ~/.agency/history/<name>
@@ -52,8 +54,9 @@ func Parse(data []byte) (*Config, error) {
 		LogLevel:   DefaultLogLevel,
 		SessionDir: DefaultSessionDir,
 		Claude: ClaudeConfig{
-			Model:   DefaultModel,
-			Timeout: DefaultTimeout,
+			Model:    DefaultModel,
+			Timeout:  DefaultTimeout,
+			MaxTurns: DefaultMaxTurns,
 		},
 	}
 
@@ -97,6 +100,10 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("timeout must be at least 1 second, got %v", c.Claude.Timeout)
 	}
 
+	if c.Claude.MaxTurns < 1 {
+		return fmt.Errorf("max_turns must be at least 1, got %d", c.Claude.MaxTurns)
+	}
+
 	return nil
 }
 
@@ -109,8 +116,9 @@ func Default() *Config {
 		SessionDir: DefaultSessionDir,
 		HistoryDir: DefaultHistoryPath(DefaultName),
 		Claude: ClaudeConfig{
-			Model:   DefaultModel,
-			Timeout: DefaultTimeout,
+			Model:    DefaultModel,
+			Timeout:  DefaultTimeout,
+			MaxTurns: DefaultMaxTurns,
 		},
 	}
 }

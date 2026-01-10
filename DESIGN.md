@@ -2406,3 +2406,15 @@ fi
 3. **macOS support** - Implement sandbox-exec, unit tests
 4. **Agent integration** - Add SandboxConfig, integrate into executeTask()
 5. **Hardening** - Escape-attempt tests, real Claude testing
+
+---
+
+## Appendix F: Backlog
+
+### QR Code for Device Pairing
+
+Add optional QR code display when generating pairing codes. The QR encodes the
+pairing URL (e.g., `https://host:port/pair?code=ABCD1234`) for convenient mobile
+device onboarding.
+
+Lower priority—current manual code entry is functional.

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -92,6 +93,9 @@ func TestCreateTaskSuccess(t *testing.T) {
 	require.Contains(t, w.Body.String(), "task_id")
 	require.Contains(t, w.Body.String(), "session_id")
 	require.Contains(t, w.Body.String(), "working")
+
+	// Wait for background task to complete to avoid TempDir cleanup race
+	time.Sleep(100 * time.Millisecond)
 }
 
 func TestCreateTaskCreatesSessionDir(t *testing.T) {
@@ -274,6 +278,18 @@ func TestBuildClaudeArgs(t *testing.T) {
 				require.NotContains(t, args, "--session-id")
 			},
 		},
+		{
+			name: "max-turns from config",
+			task: &Task{
+				Model:  "sonnet",
+				Prompt: "test prompt",
+			},
+			verify: func(t *testing.T, args []string) {
+				require.Contains(t, args, "--max-turns")
+				idx := indexOf(args, "--max-turns")
+				require.Equal(t, "50", args[idx+1]) // Default value
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -345,4 +361,205 @@ func TestPrepromptDefaultEmbedded(t *testing.T) {
 	// Should use embedded default
 	require.Contains(t, a.preprompt, "# Agent Instructions")
 	require.Contains(t, a.preprompt, "Git Commits")
+}
+
+func TestCreateTaskThinkingDefault(t *testing.T) {
+	// Cannot use t.Parallel() with t.Setenv()
+	t.Setenv("CLAUDE_BIN", "echo")
+
+	tmpDir := t.TempDir()
+	cfg := config.Default()
+	cfg.SessionDir = filepath.Join(tmpDir, "sessions")
+	cfg.HistoryDir = filepath.Join(tmpDir, "history")
+	a := New(cfg, "test")
+
+	// Submit task without thinking field - should default to true
+	body := `{"prompt": "test prompt"}`
+	req := httptest.NewRequest("POST", "/task", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	a.Router().ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	// Parse response to get task ID
+	var resp struct {
+		TaskID string `json:"task_id"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+
+	// Wait for task to complete
+	time.Sleep(100 * time.Millisecond)
+
+	// Look up task from tasks map (persists after completion)
+	a.mu.RLock()
+	task, ok := a.tasks[resp.TaskID]
+	a.mu.RUnlock()
+	require.True(t, ok, "task should exist in tasks map")
+	require.True(t, task.Thinking, "thinking should default to true")
+}
+
+func TestCreateTaskThinkingExplicit(t *testing.T) {
+	// Cannot use t.Parallel() with t.Setenv()
+	t.Setenv("CLAUDE_BIN", "echo")
+
+	tests := []struct {
+		name     string
+		body     string
+		expected bool
+	}{
+		{
+			name:     "thinking explicitly true",
+			body:     `{"prompt": "test", "thinking": true}`,
+			expected: true,
+		},
+		{
+			name:     "thinking explicitly false",
+			body:     `{"prompt": "test", "thinking": false}`,
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			cfg := config.Default()
+			cfg.SessionDir = filepath.Join(tmpDir, "sessions")
+			cfg.HistoryDir = filepath.Join(tmpDir, "history")
+			a := New(cfg, "test")
+
+			req := httptest.NewRequest("POST", "/task", strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+
+			a.Router().ServeHTTP(w, req)
+
+			require.Equal(t, http.StatusCreated, w.Code)
+
+			// Parse response to get task ID
+			var resp struct {
+				TaskID string `json:"task_id"`
+			}
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+
+			// Wait for task to complete
+			time.Sleep(100 * time.Millisecond)
+
+			// Look up task from tasks map (persists after completion)
+			a.mu.RLock()
+			task, ok := a.tasks[resp.TaskID]
+			a.mu.RUnlock()
+			require.True(t, ok, "task should exist in tasks map")
+			require.Equal(t, tt.expected, task.Thinking)
+		})
+	}
+}
+
+func TestBuildClaudeArgsCustomMaxTurns(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.Default()
+	cfg.Claude.MaxTurns = 100 // Custom value
+	a := New(cfg, "test")
+
+	task := &Task{
+		Model:  "sonnet",
+		Prompt: "test prompt",
+	}
+
+	args := a.buildClaudeArgs(task)
+	require.Contains(t, args, "--max-turns")
+	idx := indexOf(args, "--max-turns")
+	require.Equal(t, "100", args[idx+1])
+}
+
+func TestMaxTurnsAutoResume(t *testing.T) {
+	// Cannot use t.Parallel() with t.Setenv()
+	mockPath, err := filepath.Abs("../../testdata/mock-claude-max-turns")
+	require.NoError(t, err)
+	t.Setenv("CLAUDE_BIN", mockPath)
+
+	// Use temp file for counter to avoid interference between tests
+	counterFile := filepath.Join(t.TempDir(), "counter")
+	t.Setenv("MOCK_MAX_TURNS_COUNTER", counterFile)
+	// Fail twice, succeed on 3rd attempt
+	t.Setenv("MOCK_MAX_TURNS_FAIL_COUNT", "2")
+
+	tmpDir := t.TempDir()
+	cfg := config.Default()
+	cfg.SessionDir = filepath.Join(tmpDir, "sessions")
+	cfg.HistoryDir = filepath.Join(tmpDir, "history")
+	a := New(cfg, "test")
+
+	// Submit task
+	body := `{"prompt": "test max turns"}`
+	req := httptest.NewRequest("POST", "/task", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	a.Router().ServeHTTP(w, req)
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	var resp struct {
+		TaskID string `json:"task_id"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+
+	// Wait for task to complete (with retries, needs more time)
+	time.Sleep(500 * time.Millisecond)
+
+	// Verify task completed successfully after auto-resume
+	a.mu.RLock()
+	task, ok := a.tasks[resp.TaskID]
+	a.mu.RUnlock()
+	require.True(t, ok, "task should exist")
+	require.Equal(t, TaskStateCompleted, task.State, "task should complete after auto-resume")
+	require.Contains(t, task.Output, "completed after 3 attempts")
+}
+
+func TestMaxTurnsExhausted(t *testing.T) {
+	// Cannot use t.Parallel() with t.Setenv()
+	mockPath, err := filepath.Abs("../../testdata/mock-claude-max-turns")
+	require.NoError(t, err)
+	t.Setenv("CLAUDE_BIN", mockPath)
+
+	// Use temp file for counter
+	counterFile := filepath.Join(t.TempDir(), "counter")
+	t.Setenv("MOCK_MAX_TURNS_COUNTER", counterFile)
+	// Fail 5 times - more than the 2 auto-resumes allowed
+	t.Setenv("MOCK_MAX_TURNS_FAIL_COUNT", "5")
+
+	tmpDir := t.TempDir()
+	cfg := config.Default()
+	cfg.SessionDir = filepath.Join(tmpDir, "sessions")
+	cfg.HistoryDir = filepath.Join(tmpDir, "history")
+	a := New(cfg, "test")
+
+	// Submit task
+	body := `{"prompt": "test max turns exhausted"}`
+	req := httptest.NewRequest("POST", "/task", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	a.Router().ServeHTTP(w, req)
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	var resp struct {
+		TaskID string `json:"task_id"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+
+	// Wait for task to complete
+	time.Sleep(500 * time.Millisecond)
+
+	// Verify task failed with max_turns error
+	a.mu.RLock()
+	task, ok := a.tasks[resp.TaskID]
+	a.mu.RUnlock()
+	require.True(t, ok, "task should exist")
+	require.Equal(t, TaskStateFailed, task.State, "task should fail after exhausting retries")
+	require.NotNil(t, task.Error)
+	require.Equal(t, "max_turns", task.Error.Type)
+	require.Contains(t, task.Error.Message, "maximum turns limit")
 }

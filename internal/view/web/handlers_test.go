@@ -15,7 +15,7 @@ func TestHandleStatus(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test-version")
+	h, err := NewHandlers(d, "test-version", nil)
 	require.NoError(t, err)
 
 	req := httptest.NewRequest("GET", "/status", nil)
@@ -54,7 +54,7 @@ func TestHandleAgents(t *testing.T) {
 	d := NewDiscovery(DiscoveryConfig{PortStart: port, PortEnd: port})
 	d.scan()
 
-	h, err := NewHandlers(d, "test")
+	h, err := NewHandlers(d, "test", nil)
 	require.NoError(t, err)
 
 	req := httptest.NewRequest("GET", "/api/agents", nil)
@@ -75,7 +75,7 @@ func TestHandleAgentsEmpty(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test")
+	h, err := NewHandlers(d, "test", nil)
 	require.NoError(t, err)
 
 	req := httptest.NewRequest("GET", "/api/agents", nil)
@@ -109,7 +109,7 @@ func TestHandleDirectors(t *testing.T) {
 	d := NewDiscovery(DiscoveryConfig{PortStart: port, PortEnd: port})
 	d.scan()
 
-	h, err := NewHandlers(d, "test")
+	h, err := NewHandlers(d, "test", nil)
 	require.NoError(t, err)
 
 	req := httptest.NewRequest("GET", "/api/directors", nil)
@@ -130,7 +130,7 @@ func TestHandleTaskSubmitValidation(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test")
+	h, err := NewHandlers(d, "test", nil)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -172,7 +172,7 @@ func TestHandleTaskSubmitAgentNotFound(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test")
+	h, err := NewHandlers(d, "test", nil)
 	require.NoError(t, err)
 
 	body := `{"agent_url": "http://localhost:59999", "prompt": "test"}`
@@ -209,7 +209,7 @@ func TestHandleTaskSubmitAgentBusy(t *testing.T) {
 	}
 	d.mu.Unlock()
 
-	h, err := NewHandlers(d, "test")
+	h, err := NewHandlers(d, "test", nil)
 	require.NoError(t, err)
 
 	body := `{"agent_url": "` + agent.URL + `", "prompt": "test"}`
@@ -253,7 +253,7 @@ func TestHandleTaskSubmitSuccess(t *testing.T) {
 	}
 	d.mu.Unlock()
 
-	h, err := NewHandlers(d, "test")
+	h, err := NewHandlers(d, "test", nil)
 	require.NoError(t, err)
 
 	body := `{"agent_url": "` + agent.URL + `", "prompt": "test prompt"}`
@@ -276,7 +276,7 @@ func TestHandleTaskStatusMissingAgentURL(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test")
+	h, err := NewHandlers(d, "test", nil)
 	require.NoError(t, err)
 
 	req := httptest.NewRequest("GET", "/api/task/task-123", nil)
@@ -304,7 +304,7 @@ func TestHandleTaskStatusForwarding(t *testing.T) {
 	defer agent.Close()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test")
+	h, err := NewHandlers(d, "test", nil)
 	require.NoError(t, err)
 
 	req := httptest.NewRequest("GET", "/api/task/task-123?agent_url="+agent.URL, nil)
@@ -324,7 +324,7 @@ func TestHandleDashboard(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test")
+	h, err := NewHandlers(d, "test", nil)
 	require.NoError(t, err)
 
 	req := httptest.NewRequest("GET", "/", nil)
@@ -342,7 +342,7 @@ func TestNewHandlersTemplateLoading(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "v1.2.3")
+	h, err := NewHandlers(d, "v1.2.3", nil)
 	require.NoError(t, err)
 	require.NotNil(t, h)
 	require.Equal(t, "v1.2.3", h.version)
@@ -353,7 +353,7 @@ func TestHandleStatusUptime(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test")
+	h, err := NewHandlers(d, "test", nil)
 	require.NoError(t, err)
 
 	// Wait a bit to get measurable uptime
@@ -403,7 +403,7 @@ func TestHandleDashboardData(t *testing.T) {
 	d := NewDiscovery(DiscoveryConfig{PortStart: agentPort, PortEnd: directorPort})
 	d.scan()
 
-	h, err := NewHandlers(d, "test")
+	h, err := NewHandlers(d, "test", nil)
 	require.NoError(t, err)
 
 	// Add some sessions
@@ -431,7 +431,7 @@ func TestHandleDashboardDataEmpty(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test")
+	h, err := NewHandlers(d, "test", nil)
 	require.NoError(t, err)
 
 	req := httptest.NewRequest("GET", "/api/dashboard", nil)
@@ -454,7 +454,7 @@ func TestHandleDashboardDataETag(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test")
+	h, err := NewHandlers(d, "test", nil)
 	require.NoError(t, err)
 
 	// First request - should return data and ETag
@@ -482,7 +482,7 @@ func TestHandleDashboardDataETagChangesOnUpdate(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test")
+	h, err := NewHandlers(d, "test", nil)
 	require.NoError(t, err)
 
 	// First request
@@ -515,7 +515,7 @@ func TestHandleDashboardDataETagMismatch(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test")
+	h, err := NewHandlers(d, "test", nil)
 	require.NoError(t, err)
 
 	// Request with wrong ETag should return 200 with data
@@ -532,7 +532,7 @@ func TestHandleDashboardDataSessionsSorted(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h, err := NewHandlers(d, "test")
+	h, err := NewHandlers(d, "test", nil)
 	require.NoError(t, err)
 
 	// Add sessions with different timestamps
@@ -550,4 +550,133 @@ func TestHandleDashboardDataSessionsSorted(t *testing.T) {
 	require.Len(t, data.Sessions, 2)
 	require.Equal(t, "sess-new", data.Sessions[0].ID, "Newest session should be first")
 	require.Equal(t, "sess-old", data.Sessions[1].ID, "Older session should be second")
+}
+
+func TestHandleContextsNoContexts(t *testing.T) {
+	t.Parallel()
+
+	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
+	h, err := NewHandlers(d, "test", nil)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("GET", "/api/contexts", nil)
+	rec := httptest.NewRecorder()
+	h.HandleContexts(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var contexts []Context
+	err = json.Unmarshal(rec.Body.Bytes(), &contexts)
+	require.NoError(t, err)
+
+	// Should have just manual context
+	require.Len(t, contexts, 1)
+	require.Equal(t, "manual", contexts[0].ID)
+	require.Equal(t, "Manual", contexts[0].Name)
+}
+
+func TestHandleDashboardContainsSessionDetail(t *testing.T) {
+	t.Parallel()
+
+	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
+	h, err := NewHandlers(d, "test", nil)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("GET", "/", nil)
+	rec := httptest.NewRecorder()
+
+	h.HandleDashboard(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+
+	// Verify session detail section exists
+	require.Contains(t, body, `id="sessionDetail"`, "Should have session detail div")
+	require.Contains(t, body, `id="sessionDetailId"`, "Should have session detail ID span")
+	require.Contains(t, body, `id="sessionDetailContent"`, "Should have session detail content div")
+
+	// Verify session row click functionality
+	require.Contains(t, body, "openSessionDetail", "Should have openSessionDetail function")
+	require.Contains(t, body, "closeSessionDetail", "Should have closeSessionDetail function")
+	require.Contains(t, body, "fetchTaskHistory", "Should have fetchTaskHistory function")
+	require.Contains(t, body, "renderSessionDetail", "Should have renderSessionDetail function")
+
+	// Verify session rows are clickable
+	require.Contains(t, body, "session-row", "Should have session-row class")
+	require.Contains(t, body, "selectedSession", "Should track selected session")
+}
+
+func TestHandleDashboardSessionDetailCSS(t *testing.T) {
+	t.Parallel()
+
+	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
+	h, err := NewHandlers(d, "test", nil)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("GET", "/", nil)
+	rec := httptest.NewRecorder()
+
+	h.HandleDashboard(rec, req)
+
+	body := rec.Body.String()
+
+	// Verify CSS classes for session detail
+	require.Contains(t, body, ".session-row", "Should have session-row CSS")
+	require.Contains(t, body, ".task-item", "Should have task-item CSS")
+	require.Contains(t, body, ".task-output", "Should have task-output CSS")
+	require.Contains(t, body, ".task-prompt", "Should have task-prompt CSS")
+}
+
+func TestHandleContextsWithContexts(t *testing.T) {
+	t.Parallel()
+
+	thinking := true
+	cfg := &ContextsConfig{
+		Contexts: []Context{
+			{
+				ID:             "dev",
+				Name:           "Development",
+				Description:    "Dev workflow",
+				Model:          "opus",
+				Thinking:       &thinking,
+				TimeoutSeconds: 1800,
+				PromptPrefix:   "Dev prefix",
+			},
+			{
+				ID:          "quick",
+				Name:        "Quick Task",
+				Description: "Fast responses",
+				Model:       "haiku",
+			},
+		},
+	}
+
+	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
+	h, err := NewHandlers(d, "test", cfg)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("GET", "/api/contexts", nil)
+	rec := httptest.NewRecorder()
+	h.HandleContexts(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var contexts []Context
+	err = json.Unmarshal(rec.Body.Bytes(), &contexts)
+	require.NoError(t, err)
+
+	// Should have manual + 2 configured contexts
+	require.Len(t, contexts, 3)
+	require.Equal(t, "manual", contexts[0].ID)
+	require.Equal(t, "dev", contexts[1].ID)
+	require.Equal(t, "quick", contexts[2].ID)
+
+	// Verify dev context fields
+	require.Equal(t, "Development", contexts[1].Name)
+	require.Equal(t, "Dev workflow", contexts[1].Description)
+	require.Equal(t, "opus", contexts[1].Model)
+	require.NotNil(t, contexts[1].Thinking)
+	require.True(t, *contexts[1].Thinking)
+	require.Equal(t, 1800, contexts[1].TimeoutSeconds)
+	require.Equal(t, "Dev prefix", contexts[1].PromptPrefix)
 }

@@ -22,6 +22,7 @@ type Config struct {
 	RefreshInterval time.Duration
 	TLS             TLSConfig
 	AccessLogPath   string // Path for access log file (empty = no logging)
+	ContextsPath    string // Path to contexts YAML file (optional)
 }
 
 // Director is the web director server
@@ -59,7 +60,18 @@ func New(cfg *Config, version string) (*Director, error) {
 		SelfPort:        cfg.Port,
 	})
 
-	handlers, err := NewHandlers(discovery, version)
+	// Load contexts if path specified
+	var contexts *ContextsConfig
+	if cfg.ContextsPath != "" {
+		var err error
+		contexts, err = LoadContexts(cfg.ContextsPath)
+		if err != nil {
+			return nil, fmt.Errorf("loading contexts: %w", err)
+		}
+		fmt.Fprintf(os.Stderr, "Loaded %d contexts from %s\n", len(contexts.Contexts), cfg.ContextsPath)
+	}
+
+	handlers, err := NewHandlers(discovery, version, contexts)
 	if err != nil {
 		return nil, err
 	}
@@ -115,10 +127,15 @@ func (d *Director) Router() chi.Router {
 		r.Get("/dashboard", d.handlers.HandleDashboardData) // Consolidated endpoint with ETag
 		r.Get("/agents", d.handlers.HandleAgents)
 		r.Get("/directors", d.handlers.HandleDirectors)
+		r.Get("/contexts", d.handlers.HandleContexts) // Available task contexts
 		r.Post("/task", d.handlers.HandleTaskSubmit)
 		r.Get("/task/{id}", func(w http.ResponseWriter, r *http.Request) {
 			taskID := chi.URLParam(r, "id")
 			d.handlers.HandleTaskStatus(w, r, taskID)
+		})
+		r.Get("/history/{id}", func(w http.ResponseWriter, r *http.Request) {
+			taskID := chi.URLParam(r, "id")
+			d.handlers.HandleTaskHistory(w, r, taskID)
 		})
 		// Session endpoints for global session tracking
 		r.Get("/sessions", d.handlers.HandleSessions)

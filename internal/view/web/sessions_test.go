@@ -146,7 +146,7 @@ func TestHandleSessions(t *testing.T) {
 	t.Parallel()
 
 	discovery := NewDiscovery(DiscoveryConfig{PortStart: 9900, PortEnd: 9900})
-	handlers, err := NewHandlers(discovery, "test")
+	handlers, err := NewHandlers(discovery, "test", nil)
 	require.NoError(t, err)
 
 	// Add some sessions
@@ -170,7 +170,7 @@ func TestHandleSessionsEmpty(t *testing.T) {
 	t.Parallel()
 
 	discovery := NewDiscovery(DiscoveryConfig{PortStart: 9900, PortEnd: 9900})
-	handlers, err := NewHandlers(discovery, "test")
+	handlers, err := NewHandlers(discovery, "test", nil)
 	require.NoError(t, err)
 
 	req := httptest.NewRequest("GET", "/api/sessions", nil)
@@ -190,7 +190,7 @@ func TestHandleAddSessionTask(t *testing.T) {
 	t.Parallel()
 
 	discovery := NewDiscovery(DiscoveryConfig{PortStart: 9900, PortEnd: 9900})
-	handlers, err := NewHandlers(discovery, "test")
+	handlers, err := NewHandlers(discovery, "test", nil)
 	require.NoError(t, err)
 
 	body := `{
@@ -221,7 +221,7 @@ func TestHandleAddSessionTaskValidation(t *testing.T) {
 	t.Parallel()
 
 	discovery := NewDiscovery(DiscoveryConfig{PortStart: 9900, PortEnd: 9900})
-	handlers, err := NewHandlers(discovery, "test")
+	handlers, err := NewHandlers(discovery, "test", nil)
 	require.NoError(t, err)
 
 	// Missing session_id
@@ -255,7 +255,7 @@ func TestHandleUpdateSessionTask(t *testing.T) {
 	t.Parallel()
 
 	discovery := NewDiscovery(DiscoveryConfig{PortStart: 9900, PortEnd: 9900})
-	handlers, err := NewHandlers(discovery, "test")
+	handlers, err := NewHandlers(discovery, "test", nil)
 	require.NoError(t, err)
 
 	// Create a session with a task
@@ -279,7 +279,7 @@ func TestHandleUpdateSessionTaskNotFound(t *testing.T) {
 	t.Parallel()
 
 	discovery := NewDiscovery(DiscoveryConfig{PortStart: 9900, PortEnd: 9900})
-	handlers, err := NewHandlers(discovery, "test")
+	handlers, err := NewHandlers(discovery, "test", nil)
 	require.NoError(t, err)
 
 	body := `{"state": "completed"}`

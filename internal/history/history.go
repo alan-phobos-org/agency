@@ -168,7 +168,7 @@ func (s *Store) Get(taskID string) (*Entry, error) {
 
 	entry, ok := s.entries[taskID]
 	if !ok {
-		return nil, fmt.Errorf("task %s not found in history", taskID)
+		return nil, fmt.Errorf("%s not found in history", taskID)
 	}
 	return entry, nil
 }
@@ -182,7 +182,7 @@ func (s *Store) GetDebugLog(taskID string) ([]byte, error) {
 	data, err := os.ReadFile(debugPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("debug log for task %s not found", taskID)
+			return nil, fmt.Errorf("debug log for %s not found", taskID)
 		}
 		return nil, fmt.Errorf("reading debug log: %w", err)
 	}

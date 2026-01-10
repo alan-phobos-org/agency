@@ -43,7 +43,7 @@ fi
 
 # Start web view
 echo "Starting web view on port $WEB_PORT..."
-"$PROJECT_ROOT/bin/ag-view-web" -port "$WEB_PORT" -env "$PROJECT_ROOT/.env" > "$PID_DIR/view.log" 2>&1 &
+"$PROJECT_ROOT/bin/ag-view-web" -port "$WEB_PORT" -env "$PROJECT_ROOT/.env" -contexts "$PROJECT_ROOT/configs/contexts.yaml" > "$PID_DIR/view.log" 2>&1 &
 VIEW_PID=$!
 
 # Start claude agent

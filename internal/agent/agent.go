@@ -62,11 +62,13 @@ type Task struct {
 	ResumeSession   bool                `json:"-"` // True if continuing an existing session
 	WorkDir         string              `json:"-"` // Working directory for task execution
 	Project         *api.ProjectContext `json:"-"` // Project context for prompt prepending
+	Thinking        bool                `json:"-"` // Enable extended thinking mode
 	TokenUsage      *TokenUsage         `json:"token_usage,omitempty"`
 	DurationSeconds float64             `json:"duration_seconds,omitempty"`
 
-	cmd    *exec.Cmd
-	cancel context.CancelFunc
+	maxTurnsResumes int // Number of auto-resumes due to max_turns limit
+	cmd             *exec.Cmd
+	cancel          context.CancelFunc
 }
 
 // TaskError represents an error during task execution
@@ -89,6 +91,7 @@ type TaskRequest struct {
 	SessionID      string              `json:"session_id,omitempty"`
 	Project        *api.ProjectContext `json:"project,omitempty"`
 	Env            map[string]string   `json:"env,omitempty"`
+	Thinking       *bool               `json:"thinking,omitempty"` // Enable extended thinking (default: true)
 }
 
 // StatusResponse represents the /status response
@@ -282,6 +285,12 @@ func (a *Agent) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		sessionID = uuid.New().String()
 	}
 
+	// Default thinking to true if not specified
+	thinking := true
+	if req.Thinking != nil {
+		thinking = *req.Thinking
+	}
+
 	task := &Task{
 		ID:            "task-" + uuid.New().String()[:8],
 		State:         TaskStateQueued,
@@ -291,6 +300,7 @@ func (a *Agent) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		ResumeSession: resumeSession,
 		WorkDir:       sessionID,
 		Project:       req.Project,
+		Thinking:      thinking,
 	}
 
 	if task.Model == "" {
@@ -306,14 +316,18 @@ func (a *Agent) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	a.tasks[task.ID] = task
 	a.currentTask = task
 	a.state = StateWorking
+
+	// Copy fields needed for response before releasing lock
+	taskID := task.ID
+	respSessionID := task.SessionID
 	a.mu.Unlock()
 
 	// Start task execution in background
 	go a.executeTask(task, req.Env)
 
 	api.WriteJSON(w, http.StatusCreated, map[string]interface{}{
-		"task_id":    task.ID,
-		"session_id": task.SessionID,
+		"task_id":    taskID,
+		"session_id": respSessionID,
 		"status":     "working",
 	})
 }
@@ -445,6 +459,7 @@ func (a *Agent) handleShutdown(w http.ResponseWriter, r *http.Request) {
 //  5. Updates task state and clears agent's current task when done
 //
 // The env parameter allows passing additional environment variables to Claude.
+// Auto-resumes up to 2 times if Claude hits the max_turns limit.
 func (a *Agent) executeTask(task *Task, env map[string]string) {
 	ctx, cancel := context.WithTimeout(context.Background(), task.Timeout)
 	task.cancel = cancel
@@ -482,103 +497,139 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 		claudeBin = "claude"
 	}
 
-	args := a.buildClaudeArgs(task)
+	const maxAutoResumes = 2
+	var lastOutput []byte
 
-	cmd := exec.CommandContext(ctx, claudeBin, args...)
-	cmd.Dir = workDir
+	// Execution loop: runs once normally, up to 2 more times for max_turns auto-resume
+	for {
+		args := a.buildClaudeArgs(task)
 
-	// Inherit current environment and add task-specific vars
-	cmd.Env = os.Environ()
-	for k, v := range env {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
-	}
+		cmd := exec.CommandContext(ctx, claudeBin, args...)
+		cmd.Dir = workDir
 
-	task.cmd = cmd
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-	completedAt := time.Now()
-	task.CompletedAt = &completedAt
-	task.DurationSeconds = completedAt.Sub(*task.StartedAt).Seconds()
-
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	// Handle cancellation: context was canceled and task was marked cancelled
-	if ctx.Err() == context.Canceled && task.State == TaskStateCancelled {
-		a.state = StateIdle
-		a.currentTask = nil
-		return
-	}
-
-	// Handle timeout: context deadline exceeded
-	if ctx.Err() == context.DeadlineExceeded {
-		task.State = TaskStateFailed
-		task.Error = &TaskError{
-			Type:    "timeout",
-			Message: fmt.Sprintf("Task exceeded timeout of %v", task.Timeout),
+		// Inherit current environment and add task-specific vars
+		cmd.Env = os.Environ()
+		for k, v := range env {
+			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 		}
-		a.state = StateIdle
-		a.currentTask = nil
-		return
-	}
 
-	// Parse Claude's JSON output; fall back to raw stdout if not valid JSON
-	var claudeResp struct {
-		SessionID string `json:"session_id"`
-		Result    string `json:"result"`
-		ExitCode  int    `json:"exit_code"`
-		Usage     struct {
-			InputTokens  int `json:"input_tokens"`
-			OutputTokens int `json:"output_tokens"`
-		} `json:"usage"`
-	}
+		task.cmd = cmd
 
-	if jsonErr := json.Unmarshal(stdout.Bytes(), &claudeResp); jsonErr == nil {
-		// Only update session_id if Claude returns a non-empty value
-		if claudeResp.SessionID != "" {
-			task.SessionID = claudeResp.SessionID
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+
+		err := cmd.Run()
+		lastOutput = stdout.Bytes()
+		completedAt := time.Now()
+		task.CompletedAt = &completedAt
+		task.DurationSeconds = completedAt.Sub(*task.StartedAt).Seconds()
+
+		a.mu.Lock()
+
+		// Handle cancellation: context was canceled and task was marked cancelled
+		if ctx.Err() == context.Canceled && task.State == TaskStateCancelled {
+			a.state = StateIdle
+			a.currentTask = nil
+			a.mu.Unlock()
+			return
 		}
-		task.Output = claudeResp.Result
-		task.TokenUsage = &TokenUsage{
-			Input:  claudeResp.Usage.InputTokens,
-			Output: claudeResp.Usage.OutputTokens,
-		}
-		exitCode := claudeResp.ExitCode
-		task.ExitCode = &exitCode
-	} else {
-		// Not valid JSON - use raw output (e.g., from mock Claude in tests)
-		task.Output = stdout.String()
-	}
 
-	// Determine final state based on command execution result
-	if err != nil {
-		task.State = TaskStateFailed
-		exitCode := 1
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			if status, ok := exitErr.Sys().(syscall.WaitStatus); ok {
-				exitCode = status.ExitStatus()
+		// Handle timeout: context deadline exceeded
+		if ctx.Err() == context.DeadlineExceeded {
+			task.State = TaskStateFailed
+			task.Error = &TaskError{
+				Type:    "timeout",
+				Message: fmt.Sprintf("Task exceeded timeout of %v", task.Timeout),
 			}
+			a.state = StateIdle
+			a.currentTask = nil
+			a.mu.Unlock()
+			return
 		}
-		task.ExitCode = &exitCode
-		task.Error = &TaskError{
-			Type:    "claude_error",
-			Message: stderr.String(),
+
+		// Parse Claude's JSON output; fall back to raw stdout if not valid JSON
+		var claudeResp struct {
+			Type      string `json:"type"`
+			Subtype   string `json:"subtype"`
+			SessionID string `json:"session_id"`
+			Result    string `json:"result"`
+			ExitCode  int    `json:"exit_code"`
+			Usage     struct {
+				InputTokens  int `json:"input_tokens"`
+				OutputTokens int `json:"output_tokens"`
+			} `json:"usage"`
 		}
-	} else {
-		task.State = TaskStateCompleted
-		exitCode := 0
-		task.ExitCode = &exitCode
+
+		if jsonErr := json.Unmarshal(stdout.Bytes(), &claudeResp); jsonErr == nil {
+			// Only update session_id if Claude returns a non-empty value
+			if claudeResp.SessionID != "" {
+				task.SessionID = claudeResp.SessionID
+			}
+			task.Output = claudeResp.Result
+			task.TokenUsage = &TokenUsage{
+				Input:  claudeResp.Usage.InputTokens,
+				Output: claudeResp.Usage.OutputTokens,
+			}
+			exitCode := claudeResp.ExitCode
+			task.ExitCode = &exitCode
+
+			// Check for max_turns limit and auto-resume if possible
+			if claudeResp.Subtype == "error_max_turns" && task.maxTurnsResumes < maxAutoResumes {
+				task.maxTurnsResumes++
+				task.ResumeSession = true
+				fmt.Fprintf(os.Stderr, "[agent] Task %s hit max_turns limit, auto-resuming (attempt %d/%d)\n",
+					task.ID, task.maxTurnsResumes+1, maxAutoResumes+1)
+				a.mu.Unlock()
+				continue // Retry with resume
+			}
+
+			// If max_turns exhausted after all retries, fail with clear error
+			if claudeResp.Subtype == "error_max_turns" {
+				task.State = TaskStateFailed
+				task.Error = &TaskError{
+					Type: "max_turns",
+					Message: fmt.Sprintf("Task exceeded maximum turns limit (%d turns x %d attempts). Consider breaking the task into smaller steps.",
+						a.config.Claude.MaxTurns, maxAutoResumes+1),
+				}
+				a.saveTaskHistory(task, lastOutput)
+				a.state = StateIdle
+				a.currentTask = nil
+				a.mu.Unlock()
+				return
+			}
+		} else {
+			// Not valid JSON - use raw output (e.g., from mock Claude in tests)
+			task.Output = stdout.String()
+		}
+
+		// Determine final state based on command execution result
+		if err != nil {
+			task.State = TaskStateFailed
+			exitCode := 1
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				if status, ok := exitErr.Sys().(syscall.WaitStatus); ok {
+					exitCode = status.ExitStatus()
+				}
+			}
+			task.ExitCode = &exitCode
+			task.Error = &TaskError{
+				Type:    "claude_error",
+				Message: stderr.String(),
+			}
+		} else {
+			task.State = TaskStateCompleted
+			exitCode := 0
+			task.ExitCode = &exitCode
+		}
+
+		// Save to history and complete
+		a.saveTaskHistory(task, lastOutput)
+		a.state = StateIdle
+		a.currentTask = nil
+		a.mu.Unlock()
+		return
 	}
-
-	// Save to history
-	a.saveTaskHistory(task, stdout.Bytes())
-
-	a.state = StateIdle
-	a.currentTask = nil
 }
 
 // buildClaudeArgs constructs the command-line arguments for the Claude CLI.
@@ -590,8 +641,11 @@ func (a *Agent) buildClaudeArgs(task *Task) []string {
 		"--dangerously-skip-permissions",
 		"--model", task.Model,
 		"--output-format", "json",
-		"--max-turns", "50",
+		"--max-turns", strconv.Itoa(a.config.Claude.MaxTurns),
 	}
+
+	// Note: Extended thinking is enabled by default in Claude CLI for compatible models.
+	// There is no CLI flag to control it; it's determined by the model's capabilities.
 
 	// Add session handling for conversation continuity
 	// For new sessions: pass --session-id to create session with our UUID

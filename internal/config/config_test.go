@@ -29,8 +29,9 @@ func TestParse(t *testing.T) {
 				SessionDir: DefaultSessionDir,
 				HistoryDir: expectedHistoryDir,
 				Claude: ClaudeConfig{
-					Model:   DefaultModel,
-					Timeout: DefaultTimeout,
+					Model:    DefaultModel,
+					Timeout:  DefaultTimeout,
+					MaxTurns: DefaultMaxTurns,
 				},
 			},
 		},
@@ -50,8 +51,9 @@ claude:
 				SessionDir: DefaultSessionDir,
 				HistoryDir: expectedHistoryDir,
 				Claude: ClaudeConfig{
-					Model:   "opus",
-					Timeout: time.Hour,
+					Model:    "opus",
+					Timeout:  time.Hour,
+					MaxTurns: DefaultMaxTurns,
 				},
 			},
 		},
@@ -82,6 +84,15 @@ claude:
   timeout: 100ms
 `,
 			wantErr: "timeout must be at least 1 second",
+		},
+		{
+			name: "invalid max_turns",
+			yaml: `
+port: 9000
+claude:
+  max_turns: 0
+`,
+			wantErr: "max_turns must be at least 1",
 		},
 	}
 
@@ -114,4 +125,5 @@ func TestDefault(t *testing.T) {
 	require.Equal(t, DefaultHistoryPath(DefaultName), cfg.HistoryDir)
 	require.Equal(t, DefaultModel, cfg.Claude.Model)
 	require.Equal(t, DefaultTimeout, cfg.Claude.Timeout)
+	require.Equal(t, DefaultMaxTurns, cfg.Claude.MaxTurns)
 }

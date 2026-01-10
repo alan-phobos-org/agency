@@ -40,7 +40,11 @@ case "${1:-help}" in
     clean)
         rm -rf bin/ coverage.out
         ;;
+    deploy-local)
+        $0 build
+        exec ./deployment/agency.sh
+        ;;
     *)
-        echo "Usage: $0 {build|test|test-all|test-int|test-sys|lint|check|clean}"
+        echo "Usage: $0 {build|test|test-all|test-int|test-sys|lint|check|clean|deploy-local}"
         ;;
 esac

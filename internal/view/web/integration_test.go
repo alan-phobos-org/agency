@@ -1231,6 +1231,177 @@ func TestIntegrationSessionAPI(t *testing.T) {
 	})
 }
 
+// TestIntegrationSessionDetailHistoryFetch tests that session detail can fetch task history from agent
+func TestIntegrationSessionDetailHistoryFetch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	// Create mock agent with history endpoint
+	mockAgent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/status":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"type":       "agent",
+				"interfaces": []string{"statusable", "taskable"},
+				"version":    "mock-agent-v1",
+				"state":      "idle",
+			})
+		case r.URL.Path == "/task" && r.Method == "POST":
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"task_id":    "task-history-123",
+				"session_id": "session-history-test",
+				"status":     "queued",
+			})
+		case strings.HasPrefix(r.URL.Path, "/history/"):
+			taskID := strings.TrimPrefix(r.URL.Path, "/history/")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"task_id":          taskID,
+				"state":            "completed",
+				"prompt":           "Test prompt for history",
+				"output":           "Task completed successfully with output",
+				"duration_seconds": 2.5,
+				"outline": []map[string]interface{}{
+					{"type": "tool_use", "preview": "Read file.go"},
+					{"type": "tool_result", "preview": "File contents..."},
+				},
+			})
+		case strings.HasPrefix(r.URL.Path, "/task/"):
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"task_id": strings.TrimPrefix(r.URL.Path, "/task/"),
+				"state":   "completed",
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer mockAgent.Close()
+
+	tmpDir := t.TempDir()
+	cfg := &Config{
+		Port:            0,
+		Bind:            "127.0.0.1",
+		Token:           "secret-token",
+		PortStart:       59030,
+		PortEnd:         59030,
+		RefreshInterval: time.Hour,
+		TLS: TLSConfig{
+			CertFile:     filepath.Join(tmpDir, "cert.pem"),
+			KeyFile:      filepath.Join(tmpDir, "key.pem"),
+			AutoGenerate: true,
+		},
+	}
+
+	d, err := New(cfg, "test-session-detail")
+	require.NoError(t, err)
+
+	// Register mock agent
+	d.discovery.mu.Lock()
+	d.discovery.components[mockAgent.URL] = &ComponentStatus{
+		URL:   mockAgent.URL,
+		Type:  "agent",
+		State: "idle",
+	}
+	d.discovery.mu.Unlock()
+
+	ts := httptest.NewServer(d.Router())
+	defer ts.Close()
+
+	client := ts.Client()
+
+	authRequest := func(method, path string, body string) (*http.Response, error) {
+		var req *http.Request
+		if body != "" {
+			req, _ = http.NewRequest(method, ts.URL+path, strings.NewReader(body))
+		} else {
+			req, _ = http.NewRequest(method, ts.URL+path, nil)
+		}
+		req.Header.Set("Authorization", "Bearer secret-token")
+		req.Header.Set("Content-Type", "application/json")
+		return client.Do(req)
+	}
+
+	t.Run("session detail can access agent history endpoint", func(t *testing.T) {
+		// Add a session with a task
+		sessionBody := fmt.Sprintf(`{
+			"session_id": "session-history-test",
+			"agent_url": %q,
+			"task_id": "task-history-123",
+			"state": "completed",
+			"prompt": "Test prompt"
+		}`, mockAgent.URL)
+		resp, err := authRequest("POST", "/api/sessions", sessionBody)
+		require.NoError(t, err)
+		resp.Body.Close()
+		require.Equal(t, http.StatusCreated, resp.StatusCode)
+
+		// Verify session exists in dashboard data
+		resp2, err := authRequest("GET", "/api/dashboard", "")
+		require.NoError(t, err)
+		defer resp2.Body.Close()
+
+		var data DashboardData
+		json.NewDecoder(resp2.Body).Decode(&data)
+
+		require.Len(t, data.Sessions, 1)
+		require.Equal(t, "session-history-test", data.Sessions[0].ID)
+		require.Equal(t, mockAgent.URL, data.Sessions[0].AgentURL)
+		require.Len(t, data.Sessions[0].Tasks, 1)
+	})
+
+	t.Run("agent history endpoint is accessible", func(t *testing.T) {
+		// Directly fetch from agent's history endpoint (simulating what JS does)
+		resp, err := http.Get(mockAgent.URL + "/history/task-history-123")
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var history map[string]interface{}
+		json.NewDecoder(resp.Body).Decode(&history)
+
+		require.Equal(t, "task-history-123", history["task_id"])
+		require.Equal(t, "completed", history["state"])
+		require.Equal(t, "Test prompt for history", history["prompt"])
+		require.Equal(t, "Task completed successfully with output", history["output"])
+		require.Equal(t, 2.5, history["duration_seconds"])
+	})
+
+	t.Run("multiple tasks in session all have accessible history", func(t *testing.T) {
+		// Add second task to same session
+		sessionBody := fmt.Sprintf(`{
+			"session_id": "session-history-test",
+			"agent_url": %q,
+			"task_id": "task-history-456",
+			"state": "completed",
+			"prompt": "Second task prompt"
+		}`, mockAgent.URL)
+		resp, err := authRequest("POST", "/api/sessions", sessionBody)
+		require.NoError(t, err)
+		resp.Body.Close()
+
+		// Verify both tasks are in session
+		resp2, err := authRequest("GET", "/api/dashboard", "")
+		require.NoError(t, err)
+		defer resp2.Body.Close()
+
+		var data DashboardData
+		json.NewDecoder(resp2.Body).Decode(&data)
+
+		require.Len(t, data.Sessions, 1)
+		require.Len(t, data.Sessions[0].Tasks, 2)
+
+		// Both task histories should be accessible from agent
+		for _, taskID := range []string{"task-history-123", "task-history-456"} {
+			resp, err := http.Get(mockAgent.URL + "/history/" + taskID)
+			require.NoError(t, err)
+			resp.Body.Close()
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+		}
+	})
+}
+
 // TestIntegrationConsolidatedDashboard tests the /api/dashboard endpoint
 func TestIntegrationConsolidatedDashboard(t *testing.T) {
 	if testing.Short() {
