@@ -2,6 +2,14 @@
 
 A modular framework for AI-powered software engineering agents.
 
+## Documentation
+
+- [README.md](README.md) - Project overview and quick start
+- [AGENTS.md](AGENTS.md) - This file: development workflow and reference (for AI agents and contributors)
+- [CHANGELOG.md](CHANGELOG.md) - Release history
+- [docs/PLAN.md](docs/PLAN.md) - Vision, phases, and backlog
+- [docs/DESIGN.md](docs/DESIGN.md) - Architecture and technical design
+
 ## Development Workflow
 
 Before committing, always run:
@@ -27,7 +35,7 @@ To create a release:
 # Step 2: Update CHANGELOG.md with release notes (requires human/LLM)
 # Add a new section: ## [X.Y.Z] - YYYY-MM-DD
 
-# Step 3: Review docs (CLAUDE.md, README.md, docs/) for completed work
+# Step 3: Review docs (AGENTS.md, README.md, docs/) for completed work
 # Remove or mark done any TODO items, planned features now implemented, etc.
 
 # Step 4: Create the release commit and tag
@@ -71,6 +79,13 @@ The `release` target:
 
 ```
 agency/
+├── AGENTS.md             # This file (for AI agents and contributors)
+├── README.md             # Project overview
+├── CHANGELOG.md          # Release history
+├── docs/                 # Documentation
+│   ├── PLAN.md           # Vision, phases, backlog
+│   ├── DESIGN.md         # Architecture and design
+│   └── *.md              # Feature docs
 ├── cmd/
 │   ├── ag-agent-claude/  # Agent binary
 │   ├── ag-cli/           # CLI tool (task, status, discover)
