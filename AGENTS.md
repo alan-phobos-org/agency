@@ -27,10 +27,13 @@ To create a release:
 # Step 2: Update CHANGELOG.md with release notes (requires human/LLM)
 # Add a new section: ## [X.Y.Z] - YYYY-MM-DD
 
-# Step 3: Create the release commit and tag
+# Step 3: Review docs (CLAUDE.md, README.md, docs/) for completed work
+# Remove or mark done any TODO items, planned features now implemented, etc.
+
+# Step 4: Create the release commit and tag
 ./build.sh release X.Y.Z
 
-# Step 4: Push to remote
+# Step 5: Push to remote
 git push origin main vX.Y.Z
 ```
 

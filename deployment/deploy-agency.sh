@@ -63,7 +63,7 @@ done
 
 # Check for .env file
 if [ ! -f "$PROJECT_ROOT/.env" ]; then
-    echo "WARNING: No .env file found. You may need to set AG_WEB_TOKEN on remote."
+    echo "WARNING: No .env file found. You may need to set AG_WEB_PASSWORD on remote."
 fi
 
 # Create remote directory structure

@@ -126,9 +126,6 @@ with cookies due to SameSite. No additional CSRF tokens needed.
 5. Add device management:
    - `GET /api/devices` list and `DELETE /api/devices/:id` revoke.
    - Show device label, last seen, created at.
-6. Remove URL token support:
-   - Remove `AG_WEB_TOKEN` and query parameter auth entirely.
-   - Clean up related code in `auth.go`.
 
 ## Testability
 

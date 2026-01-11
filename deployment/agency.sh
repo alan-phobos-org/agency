@@ -13,12 +13,8 @@ PID_FILE="$PID_DIR/agency.pids"
 WEB_PORT="${AG_WEB_PORT:-8443}"
 AGENT_PORT="${AG_AGENT_PORT:-9000}"
 
-# Load tokens from .env if not set
+# Load env vars from .env if not set
 if [ -f "$PROJECT_ROOT/.env" ]; then
-    if [ -z "${AG_WEB_TOKEN:-}" ]; then
-        AG_WEB_TOKEN=$(grep '^AG_WEB_TOKEN=' "$PROJECT_ROOT/.env" | cut -d= -f2)
-        export AG_WEB_TOKEN
-    fi
     if [ -z "${GITHUB_TOKEN:-}" ]; then
         GITHUB_TOKEN=$(grep '^GITHUB_TOKEN=' "$PROJECT_ROOT/.env" | cut -d= -f2)
         export GITHUB_TOKEN
@@ -101,14 +97,7 @@ echo "  Web View PID: $VIEW_PID"
 echo "  Claude Agent PID: $AGENT_PID"
 echo ""
 
-# Build the dashboard URL with token
-if [ -n "$AG_WEB_TOKEN" ]; then
-    DASHBOARD_URL="https://localhost:$WEB_PORT/?token=$AG_WEB_TOKEN"
-else
-    DASHBOARD_URL="https://localhost:$WEB_PORT/"
-fi
-
-echo "Dashboard: $DASHBOARD_URL"
+echo "Dashboard: https://localhost:$WEB_PORT/"
 echo ""
 echo "Logs:"
 echo "  View:  $PID_DIR/view.log"

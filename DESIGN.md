@@ -651,8 +651,8 @@ tls:
 
 **Environment file (`~/.agency/.env`):**
 ```bash
-# Token for web director authentication
-AG_WEB_TOKEN=a1b2c3d4e5f6...  # Generate with: openssl rand -hex 32
+# Password for web view authentication
+AG_WEB_PASSWORD=your-secure-password
 ```
 
 ### Credential Management
@@ -898,24 +898,19 @@ Token cost is minimal (~100-200 tokens for a git clone). Optimize later only if 
 **Deliverables:**
 - HTTPS web server binding on all interfaces (0.0.0.0)
 - Self-signed TLS certificate generation on first run
-- Token-based authentication (from `.env` file)
+- Password-based authentication with session cookies
+- Device pairing for multi-device access
 - Dashboard showing all agents/directors (via port scan + `/status` polling)
 - Real-time status updates (1-second polling via JavaScript fetch)
 - Task submission form to dispatch work to idle agents
 - Responsive, minimal CSS embedded via `go:embed` (single binary)
 
 **Authentication:**
-- Token via URL query parameter: `?token=<secret>`
-- Token via Authorization header: `Authorization: Bearer <secret>`
-- Token loaded from `.env` file: `AG_WEB_TOKEN=<secret>`
-- All requests without valid token get 401
-- Tokens should be generated securely (e.g., `openssl rand -hex 32`)
-
-**Why token-based auth:**
-- Easier to test programmatically (curl, httptest, browser automation)
-- No session management complexity
-- Works well with bookmarks for quick access
-- Sufficient security for localhost/LAN use with HTTPS
+- Password login via `AG_WEB_PASSWORD` environment variable
+- Session cookies: HttpOnly, Secure, SameSite=Strict
+- Device pairing: generate code from dashboard, enter on new device
+- Rate limiting: 10 failed attempts = 1 hour IP block
+- `/status` endpoint remains unauthenticated (required for discovery)
 
 **TLS Configuration:**
 - Self-signed cert generated to `~/.agency/web-director/cert.pem` and `key.pem`
