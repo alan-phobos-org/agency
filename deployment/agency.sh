@@ -29,8 +29,9 @@ if [ -f "$PROJECT_ROOT/.env" ]; then
     fi
 fi
 
-# Build binaries if needed
-if [ ! -f "$PROJECT_ROOT/bin/ag-view-web" ] || [ ! -f "$PROJECT_ROOT/bin/ag-agent-claude" ]; then
+# Build binaries if needed (verify they exist AND can run)
+if ! "$PROJECT_ROOT/bin/ag-agent-claude" -version >/dev/null 2>&1 || \
+   ! "$PROJECT_ROOT/bin/ag-view-web" -version >/dev/null 2>&1; then
     echo "Building binaries..."
     cd "$PROJECT_ROOT" && ./build.sh build
 fi

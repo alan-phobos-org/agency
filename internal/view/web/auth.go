@@ -2,7 +2,6 @@ package web
 
 import (
 	"context"
-	"crypto/subtle"
 	"fmt"
 	"net/http"
 	"os"
@@ -254,11 +253,6 @@ func SessionMiddlewareWithRateLimiter(store *AuthStore, accessLogger *AccessLogg
 			authFailed()
 		})
 	}
-}
-
-// secureCompare performs a constant-time string comparison
-func secureCompare(a, b string) bool {
-	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
 // SetSessionCookie sets the session cookie on the response.

@@ -18,29 +18,50 @@ All three must pass before committing.
 
 ## Release Process
 
-Checklist for creating a new release:
+To create a release:
 
-1. **Build check**: `./build.sh check` passes (format, lint, tests)
-2. **Full test suite**: `./build.sh test-all` passes
-3. **Local deploy test**: Run `./deployment/agency.sh`, verify startup, then `./deployment/stop-agency.sh`
-4. **Review changes**: `git log --oneline $(git describe --tags --abbrev=0)..HEAD`
-5. **Update CHANGELOG.md**: Document changes per [keepachangelog.com](https://keepachangelog.com/en/1.1.0/)
-6. **Determine version**: Choose semver version based on changes (version auto-derived from git tag at build time)
-7. **Commit changelog**: `git commit -am "Release vX.Y.Z"`
-8. **Tag release**: `git tag -a vX.Y.Z -m "Release vX.Y.Z"`
+```bash
+# Step 1: Run all automated checks and tests
+./build.sh prepare-release
+
+# Step 2: Update CHANGELOG.md with release notes (requires human/LLM)
+# Add a new section: ## [X.Y.Z] - YYYY-MM-DD
+
+# Step 3: Create the release commit and tag
+./build.sh release X.Y.Z
+
+# Step 4: Push to remote
+git push origin main vX.Y.Z
+```
+
+The `prepare-release` target runs:
+1. Format, lint, and unit tests (`check`)
+2. Full test suite including integration tests (`test-all`)
+3. System tests with real binaries (`test-sys`)
+4. Local deployment test (start services, verify health, stop)
+5. Shows git log of changes since last tag
+
+The `release` target:
+1. Validates semver format
+2. Checks CHANGELOG.md has entry for version
+3. Creates release commit (if CHANGELOG.md modified)
+4. Creates annotated tag
 
 ## Build Commands
 
 ```bash
-./build.sh build        # Build all binaries to bin/
-./build.sh test         # Unit tests only (<5s)
-./build.sh test-all     # Unit + component tests
-./build.sh test-int     # Integration tests
-./build.sh test-sys     # System tests (builds + runs real binaries)
-./build.sh lint         # Format and lint
-./build.sh check        # Full pre-commit check
-./build.sh clean        # Remove build artifacts
-./build.sh deploy-local # Build and run local deployment
+./build.sh build           # Build all binaries to bin/
+./build.sh test            # Unit tests only (<5s)
+./build.sh test-all        # Unit + integration tests
+./build.sh test-int        # Integration tests
+./build.sh test-sys        # System tests (builds + runs real binaries)
+./build.sh test-release    # Unit + integration + system tests
+./build.sh lint            # Format and lint
+./build.sh check           # Full pre-commit check
+./build.sh clean           # Remove build artifacts
+./build.sh deploy-local    # Build and run local deployment
+./build.sh prepare-release # Run all release checks and show changes
+./build.sh release X.Y.Z   # Create release commit and tag
 ```
 
 ## Project Structure
@@ -279,6 +300,20 @@ Environment variables:
 - `AG_WEB_PASSWORD`: Auth password (loaded from .env if not set)
 
 Logs written to `deployment/*.log`, PIDs tracked in `deployment/agency.pids`.
+
+## Design Patterns
+
+### Fallback on Resource Lifecycle Transitions
+
+When a resource moves between endpoints during its lifecycle (e.g., active → archived), clients polling the original endpoint will get 404. Proxy layers should implement fallback logic:
+
+1. Try primary endpoint (e.g., `/task/:id` for active tasks)
+2. On 404, check secondary endpoint (e.g., `/history/:id` for completed tasks)
+3. Return data from whichever succeeds
+
+This prevents stale state in clients that poll between lifecycle transitions. The proxy absorbs the complexity so clients don't need to know about resource migration.
+
+Example: `HandleTaskStatus` checks `/history/:id` when agent returns 404 for `/task/:id`.
 
 ## Known Limitations
 

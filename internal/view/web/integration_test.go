@@ -1,3 +1,5 @@
+//go:build integration
+
 package web
 
 import (
@@ -1603,4 +1605,188 @@ func TestIntegrationConsolidatedDashboard(t *testing.T) {
 
 		require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 	})
+}
+
+// TestIntegrationTaskCompletionRaceCondition reproduces a bug where a task that
+// completes on the agent (moving from /task/:id to /history/:id) leaves the
+// web view's session store in a stale "working" state.
+//
+// The scenario:
+// 1. Task is submitted, session store records state="working"
+// 2. Agent completes task, moves it from /task/:id to /history/:id
+// 3. Web view polls /task/:id, gets 404 (not found)
+// 4. Bug: session store state remains "working" instead of being updated
+//
+// The fix should: when /task/:id returns 404, check /history/:id to get
+// the actual terminal state and update the session store.
+func TestIntegrationTaskCompletionRaceCondition(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	// Track how many times each endpoint is called
+	var taskPollCount int
+	var historyPollCount int
+	var mu sync.Mutex
+
+	// Create mock agent that simulates task completion:
+	// - /task/:id returns 404 (task moved to history)
+	// - /history/:id returns completed state
+	mockAgent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		switch {
+		case r.URL.Path == "/status":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"type":       "agent",
+				"interfaces": []string{"statusable", "taskable"},
+				"version":    "mock-agent-v1",
+				"state":      "idle",
+			})
+		case strings.HasPrefix(r.URL.Path, "/task/"):
+			// Simulate task that has completed and moved to history
+			taskPollCount++
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error":   "not_found",
+				"message": "Task not found",
+			})
+		case strings.HasPrefix(r.URL.Path, "/history/"):
+			// Task exists in history with completed state
+			historyPollCount++
+			taskID := strings.TrimPrefix(r.URL.Path, "/history/")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"task_id":          taskID,
+				"state":            "completed",
+				"prompt":           "Test prompt",
+				"output":           "Task completed successfully",
+				"duration_seconds": 5.0,
+				"exit_code":        0,
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer mockAgent.Close()
+
+	tmpDir := t.TempDir()
+
+	authStorePath := filepath.Join(tmpDir, "auth-sessions.json")
+	authStore, err := NewAuthStore(authStorePath, "secret-token")
+	require.NoError(t, err)
+
+	cfg := &Config{
+		Port:            0,
+		Bind:            "127.0.0.1",
+		AuthStore:       authStore,
+		PortStart:       59040,
+		PortEnd:         59040,
+		RefreshInterval: time.Hour,
+		TLS: TLSConfig{
+			CertFile:     filepath.Join(tmpDir, "cert.pem"),
+			KeyFile:      filepath.Join(tmpDir, "key.pem"),
+			AutoGenerate: true,
+		},
+	}
+
+	d, err := New(cfg, "test-race-condition")
+	require.NoError(t, err)
+
+	// Register mock agent
+	d.discovery.mu.Lock()
+	d.discovery.components[mockAgent.URL] = &ComponentStatus{
+		URL:   mockAgent.URL,
+		Type:  "agent",
+		State: "idle",
+	}
+	d.discovery.mu.Unlock()
+
+	ts := httptest.NewServer(d.Router())
+	defer ts.Close()
+
+	client := ts.Client()
+
+	authRequest := func(method, path string, body string) (*http.Response, error) {
+		var req *http.Request
+		if body != "" {
+			req, _ = http.NewRequest(method, ts.URL+path, strings.NewReader(body))
+		} else {
+			req, _ = http.NewRequest(method, ts.URL+path, nil)
+		}
+		req.Header.Set("Authorization", "Bearer secret-token")
+		req.Header.Set("Content-Type", "application/json")
+		return client.Do(req)
+	}
+
+	// Step 1: Add a session with a task in "working" state
+	// This simulates the UI having started a task
+	sessionBody := fmt.Sprintf(`{
+		"session_id": "race-test-session",
+		"agent_url": %q,
+		"task_id": "task-race-123",
+		"state": "working",
+		"prompt": "Test task that will complete"
+	}`, mockAgent.URL)
+
+	resp, err := authRequest("POST", "/api/sessions", sessionBody)
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+
+	// Verify session has task in "working" state
+	resp, err = authRequest("GET", "/api/sessions", "")
+	require.NoError(t, err)
+	var sessions []*Session
+	json.NewDecoder(resp.Body).Decode(&sessions)
+	resp.Body.Close()
+
+	require.Len(t, sessions, 1)
+	require.Equal(t, "race-test-session", sessions[0].ID)
+	require.Len(t, sessions[0].Tasks, 1)
+	require.Equal(t, "working", sessions[0].Tasks[0].State, "Initial state should be working")
+
+	// Step 2: Poll the task status endpoint
+	// The agent returns 404 for /task/:id because the task moved to history.
+	// The web view should fall back to /history/:id and return that data.
+	taskURL := fmt.Sprintf("/api/task/task-race-123?agent_url=%s", mockAgent.URL)
+	resp, err = authRequest("GET", taskURL, "")
+	require.NoError(t, err)
+
+	// The web view should return 200 with history data (not 404)
+	require.Equal(t, http.StatusOK, resp.StatusCode,
+		"Web view should return history data when agent /task/:id returns 404")
+
+	var taskStatus map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&taskStatus)
+	resp.Body.Close()
+
+	// Verify the returned state is from history
+	require.Equal(t, "completed", taskStatus["state"],
+		"Task status should show completed state from history")
+
+	// Verify both endpoints were polled (task first, then history fallback)
+	mu.Lock()
+	require.Equal(t, 1, taskPollCount, "Task endpoint should have been polled")
+	require.Equal(t, 1, historyPollCount, "History endpoint should have been polled as fallback")
+	mu.Unlock()
+
+	// Step 3: Simulate what the client does - update session state based on response
+	// In the real UI, pollTask() calls updateSessionTaskState() when it sees a terminal state
+	updateBody := `{"state": "completed"}`
+	resp, err = authRequest("PUT", "/api/sessions/race-test-session/tasks/task-race-123", updateBody)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	resp.Body.Close()
+
+	// Step 4: Verify session state is now updated
+	resp, err = authRequest("GET", "/api/sessions", "")
+	require.NoError(t, err)
+	json.NewDecoder(resp.Body).Decode(&sessions)
+	resp.Body.Close()
+
+	require.Len(t, sessions, 1)
+	require.Len(t, sessions[0].Tasks, 1)
+	require.Equal(t, "completed", sessions[0].Tasks[0].State,
+		"Session task state should be 'completed' after client update")
 }

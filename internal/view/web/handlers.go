@@ -200,7 +200,9 @@ func (h *Handlers) HandleTaskSubmit(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// HandleTaskStatus proxies task status request to the agent
+// HandleTaskStatus proxies task status request to the agent.
+// If the agent returns 404 (task completed and moved to history),
+// falls back to checking /history/:id to get the terminal state.
 func (h *Handlers) HandleTaskStatus(w http.ResponseWriter, r *http.Request, taskID string) {
 	agentURL := r.URL.Query().Get("agent_url")
 	if agentURL == "" {
@@ -208,14 +210,48 @@ func (h *Handlers) HandleTaskStatus(w http.ResponseWriter, r *http.Request, task
 		return
 	}
 
-	// Forward to agent
 	client := &http.Client{Timeout: 5 * time.Second}
+
+	// Try the active task endpoint first
 	resp, err := client.Get(agentURL + "/task/" + taskID)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "agent_error", "Failed to contact agent: "+err.Error())
 		return
 	}
 	defer resp.Body.Close()
+
+	// If task not found, check history for terminal state
+	if resp.StatusCode == http.StatusNotFound {
+		historyResp, err := client.Get(agentURL + "/history/" + taskID)
+		if err != nil {
+			// History check failed, return original 404
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error":   "not_found",
+				"message": "Task not found",
+			})
+			return
+		}
+		defer historyResp.Body.Close()
+
+		if historyResp.StatusCode == http.StatusOK {
+			// Task found in history - return its state
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			io.Copy(w, historyResp.Body)
+			return
+		}
+
+		// Task not in history either, return 404
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "not_found",
+			"message": "Task not found",
+		})
+		return
+	}
 
 	// Forward response as-is
 	w.Header().Set("Content-Type", "application/json")

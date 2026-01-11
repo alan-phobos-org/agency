@@ -361,9 +361,10 @@ func (m *MockAgent) Start(t *testing.T) {
 
 ```bash
 ./build.sh test          # Unit tests only (<5s)
-./build.sh test-all      # Unit + component (<15s)
-./build.sh test-int      # Integration tests (<60s)
-./build.sh test-system   # Full system tests (requires VM)
+./build.sh test-all      # Unit + integration tests
+./build.sh test-int      # Integration tests
+./build.sh test-sys      # System tests (builds + runs real binaries)
+./build.sh test-release  # Unit + integration + system tests
 ```
 
 ### What Claude Needs to Run Tests
@@ -385,49 +386,37 @@ For Claude to effectively run and debug tests:
 Single entry point for all build operations:
 
 ```bash
-#!/bin/bash
-set -euo pipefail
-
-VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
-LDFLAGS="-X main.version=$VERSION"
-
-case "${1:-help}" in
-    build)
-        echo "Building agency $VERSION..."
-        go build -ldflags "$LDFLAGS" -o bin/agency ./cmd/agency
-        go build -ldflags "$LDFLAGS" -o bin/ag-agent-claude ./cmd/ag-agent-claude
-        go build -ldflags "$LDFLAGS" -o bin/ag-director-cli ./cmd/ag-director-cli
-        go build -ldflags "$LDFLAGS" -o bin/ag-director-web ./cmd/ag-director-web
-        ;;
-    test)
-        echo "Running unit tests..."
-        go test -race -short ./...
-        ;;
-    test-all)
-        echo "Running all tests..."
-        go test -race ./...
-        ;;
-    test-int)
-        echo "Running integration tests..."
-        go test -race -tags=integration ./...
-        ;;
-    lint)
-        echo "Running linters..."
-        gofmt -l -w .
-        staticcheck ./...
-        ;;
-    check)
-        # Full pre-commit check
-        $0 lint && $0 test
-        ;;
-    clean)
-        rm -rf bin/ coverage.out
-        ;;
-    *)
-        echo "Usage: $0 {build|test|test-all|test-int|lint|check|clean}"
-        ;;
-esac
+./build.sh build           # Build all binaries to bin/
+./build.sh test            # Unit tests only (<5s)
+./build.sh test-all        # Unit + integration tests
+./build.sh test-int        # Integration tests
+./build.sh test-sys        # System tests (builds + runs real binaries)
+./build.sh test-release    # Unit + integration + system tests
+./build.sh lint            # Format and lint
+./build.sh check           # Full pre-commit check
+./build.sh clean           # Remove build artifacts
+./build.sh deploy-local    # Build and run local deployment
+./build.sh prepare-release # Run all release checks and show changes
+./build.sh release X.Y.Z   # Create release commit and tag
 ```
+
+### Release Process
+
+```bash
+# Step 1: Run all automated checks and tests
+./build.sh prepare-release
+
+# Step 2: Update CHANGELOG.md with release notes (requires human/LLM)
+# Add a new section: ## [X.Y.Z] - YYYY-MM-DD
+
+# Step 3: Create the release commit and tag
+./build.sh release X.Y.Z
+
+# Step 4: Push to remote
+git push origin main vX.Y.Z
+```
+
+The `prepare-release` target runs format/lint/unit tests, full test suite, system tests, local deployment verification, and shows the git log of changes since the last tag.
 
 ### Version from Git Tags
 

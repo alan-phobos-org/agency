@@ -26,6 +26,11 @@ import (
 func buildBinaries(t *testing.T) string {
 	t.Helper()
 
+	if binDir := os.Getenv("AGENCY_BIN_DIR"); binDir != "" {
+		verifyBinaries(t, binDir)
+		return binDir
+	}
+
 	projectRoot, err := filepath.Abs("../../")
 	require.NoError(t, err)
 
@@ -37,14 +42,19 @@ func buildBinaries(t *testing.T) string {
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, "Failed to build binaries: %s", output)
 
-	// Verify binaries exist
+	verifyBinaries(t, binDir)
+
+	return binDir
+}
+
+func verifyBinaries(t *testing.T, binDir string) {
+	t.Helper()
+
 	for _, bin := range []string{"ag-agent-claude", "ag-cli", "ag-view-web"} {
 		binPath := filepath.Join(binDir, bin)
 		_, err := os.Stat(binPath)
 		require.NoError(t, err, "Binary not found: %s", binPath)
 	}
-
-	return binDir
 }
 
 // startAgent starts the ag-agent-claude binary as a subprocess
@@ -53,6 +63,7 @@ func startAgent(t *testing.T, binDir string, port int) *exec.Cmd {
 
 	agentBin := filepath.Join(binDir, "ag-agent-claude")
 	cmd := exec.Command(agentBin, "-port", fmt.Sprintf("%d", port))
+	cmd.Env = append(os.Environ(), "AGENCY_ROOT="+t.TempDir())
 	cmd.Stdout = os.Stderr // Forward to test output
 	cmd.Stderr = os.Stderr
 
@@ -386,7 +397,7 @@ func startWebView(t *testing.T, binDir string, port, agentPort int, token string
 		"-port-end", fmt.Sprintf("%d", agentPort),
 	)
 	cmd.Env = append(os.Environ(),
-		"AG_WEB_TOKEN="+token,
+		"AG_WEB_PASSWORD="+token,
 		"AGENCY_ROOT="+tmpDir,
 	)
 	cmd.Stdout = os.Stderr
@@ -780,4 +791,101 @@ func waitForTaskCompletion(t *testing.T, agentURL, taskID string, timeout time.D
 		time.Sleep(100 * time.Millisecond)
 	}
 	t.Fatalf("Task %s did not complete within %v", taskID, timeout)
+}
+
+// TestSystemVersionEmbedding verifies that version is correctly embedded in binaries
+// and reported by the status endpoint. This catches issues where:
+// - Version isn't embedded during cross-compilation
+// - Wrong architecture binaries are left in bin/ after deploy
+// - Status endpoint doesn't report the embedded version
+func TestSystemVersionEmbedding(t *testing.T) {
+	projectRoot, err := filepath.Abs("../../")
+	require.NoError(t, err)
+
+	// Step 1: Get expected version from git describe (same as build.sh)
+	cmd := exec.Command("git", "describe", "--tags", "--always", "--dirty")
+	cmd.Dir = projectRoot
+	gitOutput, err := cmd.Output()
+	require.NoError(t, err, "git describe failed - not in a git repo?")
+	expectedVersion := strings.TrimSpace(string(gitOutput))
+	t.Logf("Expected version from git: %s", expectedVersion)
+
+	// Step 2: Build binaries (this should embed the version)
+	binDir := buildBinaries(t)
+
+	// Step 3: Verify binary can run and reports correct version via -version flag
+	agentBin := filepath.Join(binDir, "ag-agent-claude")
+	cmd = exec.Command(agentBin, "-version")
+	versionOutput, err := cmd.Output()
+	require.NoError(t, err, "Binary failed to run -version (wrong architecture?)")
+	binaryVersion := strings.TrimSpace(string(versionOutput))
+	t.Logf("Binary -version output: %s", binaryVersion)
+
+	require.Equal(t, expectedVersion, binaryVersion,
+		"Version from -version flag doesn't match git describe. Binary may have stale version or wrong ldflags.")
+
+	// Step 4: Start agent and verify /status reports same version
+	port := testutil.AllocateTestPort(t)
+	agentURL := fmt.Sprintf("http://localhost:%d", port)
+	agentCmd := startAgent(t, binDir, port)
+
+	defer func() {
+		if agentCmd.Process != nil {
+			agentCmd.Process.Signal(syscall.SIGTERM)
+			agentCmd.Wait()
+		}
+	}()
+
+	testutil.WaitForHealthy(t, agentURL+"/status", 10*time.Second)
+
+	// Query status endpoint
+	resp, err := http.Get(agentURL + "/status")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	var status struct {
+		Version string `json:"version"`
+	}
+	err = json.NewDecoder(resp.Body).Decode(&status)
+	require.NoError(t, err)
+	t.Logf("Status endpoint version: %s", status.Version)
+
+	require.Equal(t, expectedVersion, status.Version,
+		"Version from /status doesn't match git describe. Agent may be running old binary or version not passed correctly.")
+}
+
+// TestSystemBinaryArchitecture verifies binaries match host architecture.
+// This catches the bug where deploy-agency.sh leaves Linux binaries in bin/
+// which then causes local agency.sh or system tests to fail silently.
+func TestSystemBinaryArchitecture(t *testing.T) {
+	projectRoot, err := filepath.Abs("../../")
+	require.NoError(t, err)
+
+	binDir := filepath.Join(projectRoot, "bin")
+
+	// Check if binaries exist before building
+	agentBin := filepath.Join(binDir, "ag-agent-claude")
+	if _, err := os.Stat(agentBin); err == nil {
+		// Binary exists - verify it can actually execute on this system
+		cmd := exec.Command(agentBin, "-version")
+		_, err := cmd.Output()
+		if err != nil {
+			t.Logf("Existing binary failed to run: %v", err)
+			t.Logf("This likely means bin/ contains cross-compiled binaries (e.g., Linux binaries on macOS)")
+			t.Logf("Run './build.sh build' to rebuild native binaries")
+
+			// Now rebuild and verify the new binaries work
+			t.Log("Rebuilding binaries for native architecture...")
+		}
+	}
+
+	// Build native binaries
+	binDir = buildBinaries(t)
+	agentBin = filepath.Join(binDir, "ag-agent-claude")
+
+	// Verify the rebuilt binary can execute
+	cmd := exec.Command(agentBin, "-version")
+	output, err := cmd.Output()
+	require.NoError(t, err, "Rebuilt binary failed to run - build.sh may have wrong GOOS/GOARCH")
+	t.Logf("Binary version: %s", strings.TrimSpace(string(output)))
 }

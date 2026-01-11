@@ -24,6 +24,11 @@ import (
 func buildBinaries(t *testing.T) string {
 	t.Helper()
 
+	if binDir := os.Getenv("AGENCY_BIN_DIR"); binDir != "" {
+		verifyBinaries(t, binDir)
+		return binDir
+	}
+
 	projectRoot, err := filepath.Abs("../../../")
 	require.NoError(t, err)
 
@@ -34,7 +39,19 @@ func buildBinaries(t *testing.T) string {
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, "Failed to build binaries: %s", output)
 
+	verifyBinaries(t, binDir)
+
 	return binDir
+}
+
+func verifyBinaries(t *testing.T, binDir string) {
+	t.Helper()
+
+	for _, bin := range []string{"ag-agent-claude", "ag-cli", "ag-view-web"} {
+		binPath := filepath.Join(binDir, bin)
+		_, err := os.Stat(binPath)
+		require.NoError(t, err, "Binary not found: %s", binPath)
+	}
 }
 
 // startWebView starts the web view binary
@@ -57,7 +74,10 @@ func startWebViewWithContexts(t *testing.T, binDir string, port int, token strin
 	}
 
 	cmd := exec.Command(webBin, args...)
-	cmd.Env = append(os.Environ(), fmt.Sprintf("AG_WEB_PASSWORD=%s", token))
+	cmd.Env = append(os.Environ(),
+		fmt.Sprintf("AG_WEB_PASSWORD=%s", token),
+		"AGENCY_ROOT="+t.TempDir(),
+	)
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 
@@ -73,6 +93,7 @@ func startAgent(t *testing.T, binDir string, port int) *exec.Cmd {
 
 	agentBin := filepath.Join(binDir, "ag-agent-claude")
 	cmd := exec.Command(agentBin, "-port", fmt.Sprintf("%d", port))
+	cmd.Env = append(os.Environ(), "AGENCY_ROOT="+t.TempDir())
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 
