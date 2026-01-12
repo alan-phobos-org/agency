@@ -66,7 +66,7 @@ Clean interface-based architecture with explicit component types.
 Observability, security isolation, and multi-instance support.
 
 #### 2.0 Cleanup
-- Rename packages to remove github.com/anthropics
+- ~~Rename packages to remove github.com/anthropics~~ (Done: now `phobos.org.uk/agency`)
 - Tidy deployment scripts for local and remote
 
 #### 2.1 Observability

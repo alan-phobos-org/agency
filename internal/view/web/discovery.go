@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/anthropics/agency/internal/api"
+	"phobos.org.uk/agency/internal/api"
 )
 
 // ComponentStatus represents the status of a discovered component

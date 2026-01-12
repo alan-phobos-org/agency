@@ -18,8 +18,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anthropics/agency/internal/testutil"
 	"github.com/stretchr/testify/require"
+	"phobos.org.uk/agency/internal/testutil"
 )
 
 // buildBinaries builds the agent and director binaries and returns the path to the bin directory

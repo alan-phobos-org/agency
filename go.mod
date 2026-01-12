@@ -1,4 +1,4 @@
-module github.com/anthropics/agency
+module phobos.org.uk/agency
 
 go 1.24.0
 

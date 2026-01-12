@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anthropics/agency/internal/config"
 	"github.com/stretchr/testify/require"
+	"phobos.org.uk/agency/internal/config"
 )
 
 func TestStatusEndpoint(t *testing.T) {

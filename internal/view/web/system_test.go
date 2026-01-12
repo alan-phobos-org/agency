@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anthropics/agency/internal/testutil"
 	"github.com/stretchr/testify/require"
+	"phobos.org.uk/agency/internal/testutil"
 )
 
 // buildBinaries builds all binaries and returns the bin directory

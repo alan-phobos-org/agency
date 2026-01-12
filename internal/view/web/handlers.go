@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/anthropics/agency/internal/api"
+	"phobos.org.uk/agency/internal/api"
 )
 
 var (

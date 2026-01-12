@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/anthropics/agency/internal/agent"
-	"github.com/anthropics/agency/internal/config"
+	"phobos.org.uk/agency/internal/agent"
+	"phobos.org.uk/agency/internal/config"
 )
 
 var version = "dev"

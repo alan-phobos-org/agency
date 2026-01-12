@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anthropics/agency/internal/config"
-	"github.com/anthropics/agency/internal/director/cli"
-	"github.com/anthropics/agency/internal/testutil"
 	"github.com/gavv/httpexpect/v2"
 	"github.com/stretchr/testify/require"
+	"phobos.org.uk/agency/internal/config"
+	"phobos.org.uk/agency/internal/director/cli"
+	"phobos.org.uk/agency/internal/testutil"
 )
 
 func TestIntegrationAgentDirectorFlow(t *testing.T) {

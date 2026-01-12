@@ -15,12 +15,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/anthropics/agency/internal/api"
-	"github.com/anthropics/agency/internal/config"
-	"github.com/anthropics/agency/internal/history"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
+	"phobos.org.uk/agency/internal/api"
+	"phobos.org.uk/agency/internal/config"
+	"phobos.org.uk/agency/internal/history"
 )
 
 //go:embed claude.md
