@@ -65,9 +65,8 @@ Clean interface-based architecture with explicit component types.
 
 Observability, security isolation, and multi-instance support.
 
-#### 2.0 Cleanup
+#### 2.0 Cleanup - COMPLETE
 - ~~Rename packages to remove github.com/anthropics~~ (Done: now `phobos.org.uk/agency`)
-- Tidy deployment scripts for local and remote
 
 #### 2.1 Observability
 - Structured logging (JSON) with levels
@@ -76,20 +75,16 @@ Observability, security isolation, and multi-instance support.
 - Health checks and graceful shutdown
 - Fleet management CLI (`agency shutdown --all`)
 
-#### 2.2 Agent Sandbox Isolation
-- `internal/sandbox/` package
+#### 2.2 Security
+- Agent auth (bind localhost, add token)
+- Session ID path traversal validation
+- SSRF protection in web proxy
+- Referrer leakage prevention
+- Rate limiting improvements
+- Sandbox isolation: `internal/sandbox/` package
 - bubblewrap (Linux) and sandbox-exec (macOS)
 - Configurable read-only/read-write paths
 - Fail-closed policy (no fallback to unsandboxed)
-
-#### 2.3 Multi-Instance Architecture
-- Support dev/prod instances on same host
-- Per-invocation sandbox (no coordination needed)
-
-#### 2.4 Task Flow Improvements
-- Session continuation support
-- `POST /task/:id/continue` for follow-up context
-- `POST /task/:id/end` for explicit session ending
 
 ### Phase 3: ag-director-claude MVP - PLANNED
 
@@ -107,7 +102,16 @@ AI-driven "manager agent" that delegates to other agents.
 - Writing code directly (delegates)
 - Running automated test suites (implementer's job)
 
-### Phase 4: GitHub Director - PLANNED
+### Phase 4: Scheduler Director - PLANNED
+
+Cron-based task scheduling.
+
+- Cron expression parsing
+- Task queue with workspace locking
+- REST API for schedule management
+- History for scheduled executions
+
+### Phase 5: GitHub Director - PLANNED
 
 Feature parity with h2ai v1 GitHub integration.
 
@@ -117,15 +121,6 @@ Feature parity with h2ai v1 GitHub integration.
 - Status issue updates
 - Failure tracking with backoff
 
-### Phase 5: Scheduler Director - PLANNED
-
-Cron-based task scheduling.
-
-- Cron expression parsing
-- Task queue with workspace locking
-- REST API for schedule management
-- History for scheduled executions
-
 ### Phase 6+: Extensions - FUTURE
 
 - GitLab director
@@ -134,20 +129,11 @@ Cron-based task scheduling.
 
 ## Backlog
 
-### QR Code for Device Pairing
+### Remote Deployment & Multi-Instance
 
-Add optional QR code display when generating pairing codes. The QR encodes the pairing URL for convenient mobile device onboarding.
-
-Lower priority - current manual code entry is functional.
-
-### Security Fixes
-
-See [security-audit.md](security-audit.md) for findings and proposed fixes:
-1. Agent auth (bind localhost, add token)
-2. Session ID path traversal validation
-3. SSRF protection in web proxy
-4. Referrer leakage prevention
-5. Rate limiting improvements
+- Add `deploy-remote` build target with staging/prod mechanisms
+- Support dev/prod instances on same host
+- Per-invocation sandbox (no coordination needed)
 
 ## Related Documents
 
