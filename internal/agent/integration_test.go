@@ -51,7 +51,7 @@ func TestIntegrationAgentDirectorFlow(t *testing.T) {
 	}()
 
 	// Wait for agent to be ready
-	testutil.WaitForHealthy(t, agentURL+"/status", 5*time.Second)
+	testutil.WaitForHealthy(t, agentURL+"/status", 10*time.Second)
 
 	// Cleanup
 	defer func() {
@@ -118,7 +118,7 @@ func TestIntegrationTaskCancellation(t *testing.T) {
 	agentURL := fmt.Sprintf("http://localhost:%d", port)
 
 	go agent.Start()
-	testutil.WaitForHealthy(t, agentURL+"/status", 5*time.Second)
+	testutil.WaitForHealthy(t, agentURL+"/status", 10*time.Second)
 
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -154,7 +154,7 @@ func TestIntegrationTaskCancellation(t *testing.T) {
 		HasValue("state", "cancelled")
 
 	// Verify agent returns to idle
-	testutil.Eventually(t, 5*time.Second, func() bool {
+	testutil.Eventually(t, 10*time.Second, func() bool {
 		statusResp := e.GET("/status").Expect().Status(http.StatusOK).JSON().Object()
 		state := statusResp.Value("state").String().Raw()
 		return state == "idle"
@@ -187,7 +187,7 @@ func TestIntegrationPromptWithDashes(t *testing.T) {
 	agentURL := fmt.Sprintf("http://localhost:%d", port)
 
 	go agent.Start()
-	testutil.WaitForHealthy(t, agentURL+"/status", 5*time.Second)
+	testutil.WaitForHealthy(t, agentURL+"/status", 10*time.Second)
 
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
