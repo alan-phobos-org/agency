@@ -461,16 +461,16 @@ func (a *Agent) handleShutdown(w http.ResponseWriter, r *http.Request) {
 // The env parameter allows passing additional environment variables to Claude.
 // Auto-resumes up to 2 times if Claude hits the max_turns limit.
 func (a *Agent) executeTask(task *Task, env map[string]string) {
+	// All task field access must happen under the lock to avoid races with Shutdown()
+	a.mu.Lock()
 	ctx, cancel := context.WithTimeout(context.Background(), task.Timeout)
 	task.cancel = cancel
-	defer cancel()
-
 	now := time.Now()
 	task.StartedAt = &now
-
-	a.mu.Lock()
 	task.State = TaskStateWorking
 	a.mu.Unlock()
+
+	defer cancel()
 
 	// Create working directory: <session_dir>/<work_dir>/
 	// For new sessions, clean any existing directory first
