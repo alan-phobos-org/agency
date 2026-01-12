@@ -59,3 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Build system with format, lint, and test targets
 - Unit, integration, component, and system tests
 - Race condition detection in tests
+
+[Unreleased]: https://github.com/alan-phobos-org/agency/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/alan-phobos-org/agency/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/alan-phobos-org/agency/releases/tag/v1.0.0
