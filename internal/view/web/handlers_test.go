@@ -400,8 +400,11 @@ func TestHandleDashboardData(t *testing.T) {
 	agentPort := extractPort(t, agent.URL)
 	directorPort := extractPort(t, director.URL)
 
-	d := NewDiscovery(DiscoveryConfig{PortStart: agentPort, PortEnd: directorPort})
-	d.scan()
+	// Instead of scanning a port range (which may include other processes),
+	// directly check the specific ports we created
+	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
+	d.checkPort(agentPort)
+	d.checkPort(directorPort)
 
 	h := newTestHandlers(t, d, "test", nil)
 
