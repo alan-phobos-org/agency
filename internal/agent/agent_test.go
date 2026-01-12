@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -145,6 +146,7 @@ func TestAgentBusy(t *testing.T) {
 	cfg := config.Default()
 	cfg.SessionDir = t.TempDir()
 	a := New(cfg, "test")
+	defer a.Shutdown(context.Background())
 
 	// Submit first task
 	body := `{"prompt": "test"}`

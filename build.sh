@@ -36,6 +36,19 @@ case "${1:-help}" in
         go test -race -tags=integration ./...
         AGENCY_BIN_DIR="$(pwd)/bin" go test -race -tags=system ./...
         ;;
+    dist)
+        echo "Running full test suite before dist..."
+        $0 lint
+        $0 test-release
+        echo "Building distribution package..."
+        rm -rf dist/
+        mkdir -p dist/bin dist/deployment dist/configs
+        cp bin/ag-agent-claude bin/ag-view-web bin/ag-cli dist/bin/
+        cp deployment/agency.sh deployment/stop-agency.sh deployment/deploy-agency.sh dist/deployment/
+        cp configs/contexts.yaml dist/configs/
+        tar -czf dist/agency-$VERSION.tar.gz -C dist bin deployment configs
+        echo "Created dist/agency-$VERSION.tar.gz"
+        ;;
     lint)
         echo "Running linters..."
         gofmt -l -w .
@@ -46,11 +59,12 @@ case "${1:-help}" in
         $0 lint && $0 test
         ;;
     clean)
-        rm -rf bin/ coverage.out
+        rm -rf bin/ dist/ coverage.out
         ;;
     deploy-local)
-        $0 build
-        exec ./deployment/agency.sh
+        $0 dist
+        echo "Deploying..."
+        exec ./dist/deployment/agency.sh
         ;;
     prepare-release)
         # Run all checks and tests required before release
@@ -211,7 +225,32 @@ case "${1:-help}" in
         echo "  1. Review: git log -1 && git show $TAG"
         echo "  2. Push:   git push origin main $TAG"
         ;;
-    *)
-        echo "Usage: $0 {build|test|test-all|test-int|test-sys|test-release|lint|check|clean|deploy-local|prepare-release|release}"
+    help|*)
+        echo "Usage: $0 <target>"
+        echo ""
+        echo "Build targets:"
+        echo "  build           Build all binaries (ag-agent-claude, ag-view-web, ag-cli) to bin/"
+        echo "  dist            Create distribution tarball with binaries, deployment scripts, and configs"
+        echo "  clean           Remove bin/, dist/, and coverage.out"
+        echo ""
+        echo "Test targets:"
+        echo "  test            Run unit tests only (fast, uses -short flag)"
+        echo "  test-all        Run unit tests + integration tests"
+        echo "  test-int        Run integration tests only (requires -tags=integration)"
+        echo "  test-sys        Run system tests (builds first, requires running binaries)"
+        echo "  test-release    Run full test suite: unit + integration + system tests"
+        echo ""
+        echo "Code quality:"
+        echo "  lint            Run gofmt and staticcheck"
+        echo "  check           Run lint + unit tests (pre-commit check)"
+        echo ""
+        echo "Deployment:"
+        echo "  deploy-local    Run full test suite, build dist, and deploy locally"
+        echo ""
+        echo "Release workflow:"
+        echo "  prepare-release Run all checks, tests, and show changes since last release"
+        echo "  release <ver>   Create release commit and tag (e.g., ./build.sh release 1.2.0)"
+        echo ""
+        echo "Current version: $VERSION"
         ;;
 esac
