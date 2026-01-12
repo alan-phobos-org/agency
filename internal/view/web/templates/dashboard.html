@@ -765,7 +765,12 @@
       if (!activeTask) return;
 
       try {
-        const status = await api(`/api/task/${activeTask.taskId}?agent_url=${encodeURIComponent(activeTask.agentUrl)}`);
+        // Include session_id so server can auto-update session store if task completed
+        let url = `/api/task/${activeTask.taskId}?agent_url=${encodeURIComponent(activeTask.agentUrl)}`;
+        if (activeTask.sessionId) {
+          url += `&session_id=${encodeURIComponent(activeTask.sessionId)}`;
+        }
+        const status = await api(url);
 
         // Update session state if completed
         if (['completed', 'failed', 'cancelled'].includes(status.state)) {

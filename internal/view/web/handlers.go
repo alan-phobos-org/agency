@@ -203,12 +203,16 @@ func (h *Handlers) HandleTaskSubmit(w http.ResponseWriter, r *http.Request) {
 // HandleTaskStatus proxies task status request to the agent.
 // If the agent returns 404 (task completed and moved to history),
 // falls back to checking /history/:id to get the terminal state.
+// If session_id is provided and a terminal state is found in history,
+// automatically updates the session store to fix race condition where
+// client closes before updating state.
 func (h *Handlers) HandleTaskStatus(w http.ResponseWriter, r *http.Request, taskID string) {
 	agentURL := r.URL.Query().Get("agent_url")
 	if agentURL == "" {
 		writeError(w, http.StatusBadRequest, "validation_error", "agent_url query parameter is required")
 		return
 	}
+	sessionID := r.URL.Query().Get("session_id") // Optional: for auto-updating session state
 
 	client := &http.Client{Timeout: 5 * time.Second}
 
@@ -236,10 +240,28 @@ func (h *Handlers) HandleTaskStatus(w http.ResponseWriter, r *http.Request, task
 		defer historyResp.Body.Close()
 
 		if historyResp.StatusCode == http.StatusOK {
+			// Read history response to parse state and return
+			body, err := io.ReadAll(historyResp.Body)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "read_error", "Failed to read history response")
+				return
+			}
+
+			// Auto-update session store if session_id provided
+			if sessionID != "" {
+				var historyData struct {
+					State string `json:"state"`
+				}
+				if json.Unmarshal(body, &historyData) == nil && historyData.State != "" {
+					// Update session store with terminal state from history
+					h.sessionStore.UpdateTaskState(sessionID, taskID, historyData.State)
+				}
+			}
+
 			// Task found in history - return its state
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			io.Copy(w, historyResp.Body)
+			w.Write(body)
 			return
 		}
 

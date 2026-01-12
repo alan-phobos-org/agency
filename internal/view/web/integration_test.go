@@ -1790,3 +1790,260 @@ func TestIntegrationTaskCompletionRaceCondition(t *testing.T) {
 	require.Equal(t, "completed", sessions[0].Tasks[0].State,
 		"Session task state should be 'completed' after client update")
 }
+
+// TestIntegrationTaskCompletionAutoUpdate verifies that when session_id is
+// passed to the task status endpoint, the server automatically updates the
+// session store when it discovers a task has moved to history. This fixes
+// the race condition where a client might close before updating state.
+func TestIntegrationTaskCompletionAutoUpdate(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	// Create mock agent that simulates task completion
+	mockAgent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/status":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"type":       "agent",
+				"interfaces": []string{"statusable", "taskable"},
+				"version":    "mock-agent-v1",
+				"state":      "idle",
+			})
+		case strings.HasPrefix(r.URL.Path, "/task/"):
+			// Task completed and moved to history
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error":   "not_found",
+				"message": "Task not found",
+			})
+		case strings.HasPrefix(r.URL.Path, "/history/"):
+			// Task exists in history with completed state
+			taskID := strings.TrimPrefix(r.URL.Path, "/history/")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"task_id":          taskID,
+				"state":            "completed",
+				"prompt":           "Test prompt",
+				"output":           "Task completed successfully",
+				"duration_seconds": 5.0,
+				"exit_code":        0,
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer mockAgent.Close()
+
+	tmpDir := t.TempDir()
+
+	authStorePath := filepath.Join(tmpDir, "auth-sessions.json")
+	authStore, err := NewAuthStore(authStorePath, "secret-token")
+	require.NoError(t, err)
+
+	cfg := &Config{
+		Port:            0,
+		Bind:            "127.0.0.1",
+		AuthStore:       authStore,
+		PortStart:       59050,
+		PortEnd:         59050,
+		RefreshInterval: time.Hour,
+		TLS: TLSConfig{
+			CertFile:     filepath.Join(tmpDir, "cert.pem"),
+			KeyFile:      filepath.Join(tmpDir, "key.pem"),
+			AutoGenerate: true,
+		},
+	}
+
+	d, err := New(cfg, "test-auto-update")
+	require.NoError(t, err)
+
+	// Register mock agent
+	d.discovery.mu.Lock()
+	d.discovery.components[mockAgent.URL] = &ComponentStatus{
+		URL:   mockAgent.URL,
+		Type:  "agent",
+		State: "idle",
+	}
+	d.discovery.mu.Unlock()
+
+	ts := httptest.NewServer(d.Router())
+	defer ts.Close()
+
+	client := ts.Client()
+
+	authRequest := func(method, path string, body string) (*http.Response, error) {
+		var req *http.Request
+		if body != "" {
+			req, _ = http.NewRequest(method, ts.URL+path, strings.NewReader(body))
+		} else {
+			req, _ = http.NewRequest(method, ts.URL+path, nil)
+		}
+		req.Header.Set("Authorization", "Bearer secret-token")
+		req.Header.Set("Content-Type", "application/json")
+		return client.Do(req)
+	}
+
+	// Step 1: Add a session with a task in "working" state
+	sessionBody := fmt.Sprintf(`{
+		"session_id": "auto-update-session",
+		"agent_url": %q,
+		"task_id": "task-auto-456",
+		"state": "working",
+		"prompt": "Test task for auto-update"
+	}`, mockAgent.URL)
+
+	resp, err := authRequest("POST", "/api/sessions", sessionBody)
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+
+	// Verify session has task in "working" state
+	resp, err = authRequest("GET", "/api/sessions", "")
+	require.NoError(t, err)
+	var sessions []*Session
+	json.NewDecoder(resp.Body).Decode(&sessions)
+	resp.Body.Close()
+
+	require.Len(t, sessions, 1)
+	require.Equal(t, "working", sessions[0].Tasks[0].State, "Initial state should be working")
+
+	// Step 2: Poll task status WITH session_id parameter
+	// This should trigger server-side auto-update of session store
+	taskURL := fmt.Sprintf("/api/task/task-auto-456?agent_url=%s&session_id=auto-update-session", mockAgent.URL)
+	resp, err = authRequest("GET", taskURL, "")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var taskStatus map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&taskStatus)
+	resp.Body.Close()
+	require.Equal(t, "completed", taskStatus["state"])
+
+	// Step 3: Verify session state was AUTO-UPDATED by the server
+	// WITHOUT requiring an explicit PUT from the client
+	resp, err = authRequest("GET", "/api/sessions", "")
+	require.NoError(t, err)
+	json.NewDecoder(resp.Body).Decode(&sessions)
+	resp.Body.Close()
+
+	require.Len(t, sessions, 1)
+	require.Len(t, sessions[0].Tasks, 1)
+	require.Equal(t, "completed", sessions[0].Tasks[0].State,
+		"Session task state should be auto-updated to 'completed' by server")
+}
+
+// TestIntegrationTaskStatusWithoutSessionID verifies that the auto-update
+// is skipped when session_id is not provided (backwards compatibility).
+func TestIntegrationTaskStatusWithoutSessionID(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	// Create mock agent
+	mockAgent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/status":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"type":       "agent",
+				"interfaces": []string{"statusable", "taskable"},
+				"version":    "mock-agent-v1",
+				"state":      "idle",
+			})
+		case strings.HasPrefix(r.URL.Path, "/task/"):
+			w.WriteHeader(http.StatusNotFound)
+		case strings.HasPrefix(r.URL.Path, "/history/"):
+			taskID := strings.TrimPrefix(r.URL.Path, "/history/")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"task_id": taskID,
+				"state":   "failed",
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer mockAgent.Close()
+
+	tmpDir := t.TempDir()
+
+	authStorePath := filepath.Join(tmpDir, "auth-sessions.json")
+	authStore, err := NewAuthStore(authStorePath, "secret-token")
+	require.NoError(t, err)
+
+	cfg := &Config{
+		Port:            0,
+		Bind:            "127.0.0.1",
+		AuthStore:       authStore,
+		PortStart:       59060,
+		PortEnd:         59060,
+		RefreshInterval: time.Hour,
+		TLS: TLSConfig{
+			CertFile:     filepath.Join(tmpDir, "cert.pem"),
+			KeyFile:      filepath.Join(tmpDir, "key.pem"),
+			AutoGenerate: true,
+		},
+	}
+
+	d, err := New(cfg, "test-no-session-id")
+	require.NoError(t, err)
+
+	d.discovery.mu.Lock()
+	d.discovery.components[mockAgent.URL] = &ComponentStatus{
+		URL:   mockAgent.URL,
+		Type:  "agent",
+		State: "idle",
+	}
+	d.discovery.mu.Unlock()
+
+	ts := httptest.NewServer(d.Router())
+	defer ts.Close()
+
+	client := ts.Client()
+
+	authRequest := func(method, path string, body string) (*http.Response, error) {
+		var req *http.Request
+		if body != "" {
+			req, _ = http.NewRequest(method, ts.URL+path, strings.NewReader(body))
+		} else {
+			req, _ = http.NewRequest(method, ts.URL+path, nil)
+		}
+		req.Header.Set("Authorization", "Bearer secret-token")
+		req.Header.Set("Content-Type", "application/json")
+		return client.Do(req)
+	}
+
+	// Add session with task in working state
+	sessionBody := fmt.Sprintf(`{
+		"session_id": "no-autoupdate-session",
+		"agent_url": %q,
+		"task_id": "task-noauto-789",
+		"state": "working",
+		"prompt": "Test task"
+	}`, mockAgent.URL)
+
+	resp, err := authRequest("POST", "/api/sessions", sessionBody)
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+
+	// Poll WITHOUT session_id - should return history state but NOT update session
+	taskURL := fmt.Sprintf("/api/task/task-noauto-789?agent_url=%s", mockAgent.URL)
+	resp, err = authRequest("GET", taskURL, "")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var taskStatus map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&taskStatus)
+	resp.Body.Close()
+	require.Equal(t, "failed", taskStatus["state"])
+
+	// Verify session state is still "working" (not auto-updated)
+	resp, err = authRequest("GET", "/api/sessions", "")
+	require.NoError(t, err)
+	var sessions []*Session
+	json.NewDecoder(resp.Body).Decode(&sessions)
+	resp.Body.Close()
+
+	require.Len(t, sessions, 1)
+	require.Equal(t, "working", sessions[0].Tasks[0].State,
+		"Session should remain 'working' when session_id not provided")
+}
