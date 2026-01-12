@@ -3,13 +3,35 @@ set -euo pipefail
 
 VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS="-X main.version=$VERSION"
+BINARIES=(ag-agent-claude ag-view-web ag-cli)
+
+# Helper functions
+build_all() {
+    echo "Building agency $VERSION..."
+    for bin in "${BINARIES[@]}"; do
+        go build -ldflags "$LDFLAGS" -o "bin/$bin" "./cmd/$bin"
+    done
+}
+
+run_tests() {
+    local tags="${1:-}"
+    local flags="-race"
+    [[ -n "$tags" ]] && flags+=" -tags=$tags"
+    go test $flags ./...
+}
+
+check_service() {
+    local url="$1" name="$2"
+    if ! curl -sf -k "$url" > /dev/null; then
+        echo "ERROR: $name not responding"
+        ./deployment/stop-agency.sh
+        exit 1
+    fi
+}
 
 case "${1:-help}" in
     build)
-        echo "Building agency $VERSION..."
-        go build -ldflags "$LDFLAGS" -o bin/ag-agent-claude ./cmd/ag-agent-claude
-        go build -ldflags "$LDFLAGS" -o bin/ag-view-web ./cmd/ag-view-web
-        go build -ldflags "$LDFLAGS" -o bin/ag-cli ./cmd/ag-cli
+        build_all
         ;;
     test)
         echo "Running unit tests..."
@@ -17,24 +39,24 @@ case "${1:-help}" in
         ;;
     test-all)
         echo "Running unit + integration tests..."
-        go test -race ./...
-        go test -race -tags=integration ./...
+        run_tests
+        run_tests integration
         ;;
     test-int)
         echo "Running integration tests..."
-        go test -race -tags=integration ./...
+        run_tests integration
         ;;
     test-sys)
         echo "Running system tests..."
-        $0 build
-        AGENCY_BIN_DIR="$(pwd)/bin" go test -race -tags=system ./...
+        build_all
+        AGENCY_BIN_DIR="$(pwd)/bin" run_tests system
         ;;
     test-release)
         echo "Running full release test suite..."
-        $0 build
-        go test -race ./...
-        go test -race -tags=integration ./...
-        AGENCY_BIN_DIR="$(pwd)/bin" go test -race -tags=system ./...
+        build_all
+        run_tests
+        run_tests integration
+        AGENCY_BIN_DIR="$(pwd)/bin" run_tests system
         ;;
     dist)
         echo "Running full test suite before dist..."
@@ -43,10 +65,10 @@ case "${1:-help}" in
         echo "Building distribution package..."
         rm -rf dist/
         mkdir -p dist/bin dist/deployment dist/configs
-        cp bin/ag-agent-claude bin/ag-view-web bin/ag-cli dist/bin/
+        cp "${BINARIES[@]/#/bin/}" dist/bin/
         cp deployment/agency.sh deployment/stop-agency.sh deployment/deploy-agency.sh dist/deployment/
         cp configs/contexts.yaml dist/configs/
-        tar -czf dist/agency-$VERSION.tar.gz -C dist bin deployment configs
+        tar -czf "dist/agency-$VERSION.tar.gz" -C dist bin deployment configs
         echo "Created dist/agency-$VERSION.tar.gz"
         ;;
     lint)
@@ -55,7 +77,6 @@ case "${1:-help}" in
         staticcheck ./... 2>/dev/null || echo "staticcheck not installed, skipping"
         ;;
     check)
-        # Full pre-commit check
         $0 lint && $0 test
         ;;
     clean)
@@ -67,60 +88,38 @@ case "${1:-help}" in
         exec ./dist/deployment/agency.sh
         ;;
     prepare-release)
-        # Run all checks and tests required before release
         echo "=== Preparing release ==="
         echo ""
 
-        # Step 1: Build check (format, lint, unit tests)
         echo "Step 1/5: Running build check..."
         $0 check
         echo "✓ Build check passed"
         echo ""
 
-        # Step 2: Full test suite
         echo "Step 2/5: Running full test suite..."
         $0 test-all
         echo "✓ Full test suite passed"
         echo ""
 
-        # Step 3: System tests
         echo "Step 3/5: Running system tests..."
         $0 test-sys
         echo "✓ System tests passed"
         echo ""
 
-        # Step 4: Local deploy test
         echo "Step 4/5: Testing local deployment..."
-        $0 build
-
-        # Start services
+        build_all
         ./deployment/agency.sh
-
-        # Give extra time for full startup
         sleep 2
 
-        # Verify both services respond
         AGENT_PORT="${AG_AGENT_PORT:-9000}"
         WEB_PORT="${AG_WEB_PORT:-8443}"
+        check_service "http://localhost:$AGENT_PORT/status" "Agent"
+        check_service "https://localhost:$WEB_PORT/status" "Web view"
 
-        if ! curl -sf "http://localhost:$AGENT_PORT/status" > /dev/null; then
-            echo "ERROR: Agent not responding"
-            ./deployment/stop-agency.sh
-            exit 1
-        fi
-
-        if ! curl -sf -k "https://localhost:$WEB_PORT/status" > /dev/null; then
-            echo "ERROR: Web view not responding"
-            ./deployment/stop-agency.sh
-            exit 1
-        fi
-
-        # Stop services
         ./deployment/stop-agency.sh
         echo "✓ Local deploy test passed"
         echo ""
 
-        # Step 5: Show changes since last tag
         echo "Step 5/5: Changes since last release..."
         echo ""
         LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
@@ -150,16 +149,13 @@ case "${1:-help}" in
         echo "Example: ./build.sh release 1.1.0"
         ;;
     release)
-        # Create a release commit and tag
         RELEASE_VERSION="${2:-}"
-
         if [ -z "$RELEASE_VERSION" ]; then
             echo "Usage: $0 release <version>"
             echo "Example: $0 release 1.1.0"
             exit 1
         fi
 
-        # Validate version format (semver)
         if ! echo "$RELEASE_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "ERROR: Invalid version format. Use semantic versioning (e.g., 1.2.3)"
             exit 1
@@ -167,13 +163,11 @@ case "${1:-help}" in
 
         TAG="v$RELEASE_VERSION"
 
-        # Check if tag already exists
         if git rev-parse "$TAG" >/dev/null 2>&1; then
             echo "ERROR: Tag $TAG already exists"
             exit 1
         fi
 
-        # Check for uncommitted changes (excluding CHANGELOG.md which we expect to be modified)
         if ! git diff --quiet HEAD -- . ':!CHANGELOG.md'; then
             echo "ERROR: Uncommitted changes exist (other than CHANGELOG.md)"
             echo "Please commit or stash changes before releasing"
@@ -181,32 +175,26 @@ case "${1:-help}" in
             exit 1
         fi
 
-        # Check that CHANGELOG.md has an entry for this version
         if ! grep -q "## \[$RELEASE_VERSION\]" CHANGELOG.md; then
             echo "ERROR: CHANGELOG.md does not contain entry for version $RELEASE_VERSION"
             echo "Please add a '## [$RELEASE_VERSION]' section to CHANGELOG.md"
             exit 1
         fi
 
-        # Check if CHANGELOG.md is modified (it should be, with the new version)
         if git diff --quiet HEAD -- CHANGELOG.md; then
             echo "WARNING: CHANGELOG.md has no uncommitted changes"
             echo "Did you forget to update the changelog?"
             read -p "Continue anyway? [y/N] " -n 1 -r
             echo
-            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-                exit 1
-            fi
+            [[ ! $REPLY =~ ^[Yy]$ ]] && exit 1
         fi
 
         echo "Creating release $TAG..."
 
-        # Stage and commit CHANGELOG.md if modified
         if ! git diff --quiet HEAD -- CHANGELOG.md; then
             git add CHANGELOG.md
         fi
 
-        # Create release commit (if there are staged changes)
         if ! git diff --cached --quiet; then
             git commit -m "Release $TAG"
             echo "✓ Created release commit"
@@ -214,7 +202,6 @@ case "${1:-help}" in
             echo "No changes to commit"
         fi
 
-        # Create annotated tag
         git tag -a "$TAG" -m "Release $TAG"
         echo "✓ Created tag $TAG"
 
@@ -229,15 +216,15 @@ case "${1:-help}" in
         echo "Usage: $0 <target>"
         echo ""
         echo "Build targets:"
-        echo "  build           Build all binaries (ag-agent-claude, ag-view-web, ag-cli) to bin/"
+        echo "  build           Build all binaries (${BINARIES[*]}) to bin/"
         echo "  dist            Create distribution tarball with binaries, deployment scripts, and configs"
         echo "  clean           Remove bin/, dist/, and coverage.out"
         echo ""
         echo "Test targets:"
         echo "  test            Run unit tests only (fast, uses -short flag)"
         echo "  test-all        Run unit tests + integration tests"
-        echo "  test-int        Run integration tests only (requires -tags=integration)"
-        echo "  test-sys        Run system tests (builds first, requires running binaries)"
+        echo "  test-int        Run integration tests only"
+        echo "  test-sys        Run system tests (builds first)"
         echo "  test-release    Run full test suite: unit + integration + system tests"
         echo ""
         echo "Code quality:"
