@@ -27,10 +27,12 @@ jobs:
       - Remove dead code and unused imports
       - Fix obvious code style issues
       - Remove commented-out code blocks
+      - Look for ways to refactor out any duplication
+      - Look for any inconsistencies or logic errors
 
       ### 2. Testing
       - Run the test suite and fix any failing tests
-      - Add tests for uncovered edge cases if time permits
+      - Add tests for uncovered edge cases
       - Ensure CI would pass
 
       ### 3. Bug Fixing
@@ -42,6 +44,11 @@ jobs:
       - Ensure doc comments match current behavior
       - Update CHANGELOG with any notable fixes
 
+      ### 5. Report Project Health
+      - Summarise the state of the project as you found it
+      - Include what you then discovered/did
+      - Finish with anything you couldn't do/next steps
+
       ## Workflow
 
       For each repository:
@@ -52,10 +59,8 @@ jobs:
       5. Commit changes with descriptive messages
       6. Move to next repository
 
-      If any repository takes too long or has complex issues,
-      make a note and move on to the next one.
-
       ## Important Notes
       - Do not make breaking changes
       - Keep commits small and focused
       - If unsure about a change, skip it
+      
