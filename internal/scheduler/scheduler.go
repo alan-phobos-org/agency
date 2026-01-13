@@ -32,6 +32,7 @@ type Scheduler struct {
 type jobState struct {
 	Job        *Job
 	Cron       *CronExpr
+	mu         sync.RWMutex
 	NextRun    time.Time
 	LastRun    time.Time
 	LastStatus string // "submitted", "skipped_busy", "skipped_error"
@@ -146,7 +147,11 @@ func (s *Scheduler) checkAndRunJobs(now time.Time) {
 	s.mu.RUnlock()
 
 	for _, js := range jobs {
-		if now.After(js.NextRun) || now.Equal(js.NextRun) {
+		js.mu.RLock()
+		nextRun := js.NextRun
+		js.mu.RUnlock()
+
+		if now.After(nextRun) || now.Equal(nextRun) {
 			s.runJob(js)
 		}
 	}
@@ -208,8 +213,8 @@ func (s *Scheduler) runJob(js *jobState) {
 
 // updateJobState updates job state after execution
 func (s *Scheduler) updateJobState(js *jobState, status, taskID string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	js.mu.Lock()
+	defer js.mu.Unlock()
 
 	now := time.Now()
 	js.LastRun = now
@@ -221,10 +226,12 @@ func (s *Scheduler) updateJobState(js *jobState, status, taskID string) {
 // handleStatus returns scheduler status
 func (s *Scheduler) handleStatus(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
+	jobs := s.jobs
+	s.mu.RUnlock()
 
-	jobStatuses := make([]JobStatus, len(s.jobs))
-	for i, js := range s.jobs {
+	jobStatuses := make([]JobStatus, len(jobs))
+	for i, js := range jobs {
+		js.mu.RLock()
 		jobStatuses[i] = JobStatus{
 			Name:       js.Job.Name,
 			Schedule:   js.Job.Schedule,
@@ -233,6 +240,7 @@ func (s *Scheduler) handleStatus(w http.ResponseWriter, r *http.Request) {
 			LastStatus: js.LastStatus,
 			LastTaskID: js.LastTaskID,
 		}
+		js.mu.RUnlock()
 	}
 
 	resp := map[string]interface{}{
