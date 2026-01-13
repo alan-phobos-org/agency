@@ -1,5 +1,5 @@
 #!/bin/bash
-# Stop agency: terminates web director and claude agent
+# Stop agency: terminates web view, claude agent, and scheduler
 
 set -euo pipefail
 

@@ -3,7 +3,7 @@
 # Usage: deploy-agency.sh <hostname> [port]
 #
 # Builds binaries for Linux, copies them to the remote host along with .env,
-# and starts the agency services.
+# configs, and starts the agency services (web view, agent, and scheduler).
 
 set -euo pipefail
 
@@ -20,10 +20,12 @@ if [ $# -lt 1 ]; then
     echo "  ssh-key    Path to SSH private key (optional)"
     echo ""
     echo "Environment variables:"
-    echo "  AG_WEB_PORT    Web director port on remote (default: 8443)"
-    echo "  AG_AGENT_PORT  Agent port on remote (default: 9000)"
-    echo "  REMOTE_DIR     Installation directory (default: ~/agency)"
-    echo "  SSH_KEY        Path to SSH private key (alternative to argument)"
+    echo "  AG_WEB_PORT        Web view port on remote (default: 8443)"
+    echo "  AG_AGENT_PORT      Agent port on remote (default: 9000)"
+    echo "  AG_SCHEDULER_PORT  Scheduler port on remote (default: 9100)"
+    echo "  AG_SCHEDULER_CONFIG Path to scheduler config (default: configs/scheduler.yaml)"
+    echo "  REMOTE_DIR         Installation directory (default: ~/agency)"
+    echo "  SSH_KEY            Path to SSH private key (alternative to argument)"
     exit 1
 fi
 
@@ -41,6 +43,8 @@ fi
 REMOTE_DIR="${REMOTE_DIR:-~/agency}"
 WEB_PORT="${AG_WEB_PORT:-8443}"
 AGENT_PORT="${AG_AGENT_PORT:-9000}"
+SCHEDULER_PORT="${AG_SCHEDULER_PORT:-9100}"
+SCHEDULER_CONFIG="${AG_SCHEDULER_CONFIG:-$PROJECT_ROOT/configs/scheduler.yaml}"
 
 echo "=== Agency Remote Deployment ==="
 echo "Host: $REMOTE_HOST"
@@ -54,7 +58,7 @@ cd "$PROJECT_ROOT"
 GOOS=linux GOARCH=amd64 ./build.sh build
 
 # Verify binaries exist
-for bin in ag-view-web ag-agent-claude; do
+for bin in ag-view-web ag-agent-claude ag-scheduler; do
     if [ ! -f "$PROJECT_ROOT/bin/$bin" ]; then
         echo "ERROR: Binary $bin not found"
         exit 1
@@ -79,6 +83,7 @@ echo "Copying binaries..."
 scp $SCP_OPTS \
     "$PROJECT_ROOT/bin/ag-view-web" \
     "$PROJECT_ROOT/bin/ag-agent-claude" \
+    "$PROJECT_ROOT/bin/ag-scheduler" \
     "$REMOTE_HOST:$REMOTE_DIR/bin/"
 
 # Copy .env if it exists
@@ -87,10 +92,15 @@ if [ -f "$PROJECT_ROOT/.env" ]; then
     scp $SCP_OPTS "$PROJECT_ROOT/.env" "$REMOTE_HOST:$REMOTE_DIR/"
 fi
 
-# Copy contexts config if it exists
+# Copy configs if they exist
 if [ -f "$PROJECT_ROOT/configs/contexts.yaml" ]; then
     echo "Copying contexts config..."
     scp $SCP_OPTS "$PROJECT_ROOT/configs/contexts.yaml" "$REMOTE_HOST:$REMOTE_DIR/configs/"
+fi
+
+if [ -n "$SCHEDULER_CONFIG" ] && [ -f "$SCHEDULER_CONFIG" ]; then
+    echo "Copying scheduler config..."
+    scp $SCP_OPTS "$SCHEDULER_CONFIG" "$REMOTE_HOST:$REMOTE_DIR/configs/scheduler.yaml"
 fi
 
 # Copy deployment scripts
@@ -112,6 +122,8 @@ PID_FILE="$AGENCY_DIR/agency.pids"
 
 WEB_PORT="${AG_WEB_PORT:-8443}"
 AGENT_PORT="${AG_AGENT_PORT:-9000}"
+SCHEDULER_PORT="${AG_SCHEDULER_PORT:-9100}"
+SCHEDULER_CONFIG="$AGENCY_DIR/configs/scheduler.yaml"
 
 # Load env vars from .env if not set
 if [ -f "$AGENCY_DIR/.env" ]; then
@@ -153,9 +165,20 @@ echo "Starting claude agent on port $AGENT_PORT..."
 "$AGENCY_DIR/bin/ag-agent-claude" -port "$AGENT_PORT" > "$AGENCY_DIR/agent.log" 2>&1 &
 AGENT_PID=$!
 
+# Start scheduler (optional)
+SCHEDULER_PID=""
+if [ -f "$SCHEDULER_CONFIG" ]; then
+    echo "Starting scheduler on port $SCHEDULER_PORT..."
+    "$AGENCY_DIR/bin/ag-scheduler" -config "$SCHEDULER_CONFIG" -port "$SCHEDULER_PORT" > "$AGENCY_DIR/scheduler.log" 2>&1 &
+    SCHEDULER_PID=$!
+fi
+
 # Save PIDs
 echo "$WEB_PID" > "$PID_FILE"
 echo "$AGENT_PID" >> "$PID_FILE"
+if [ -n "$SCHEDULER_PID" ]; then
+    echo "$SCHEDULER_PID" >> "$PID_FILE"
+fi
 
 # Wait for services
 sleep 2
@@ -170,6 +193,15 @@ fi
 if ! kill -0 "$AGENT_PID" 2>/dev/null; then
     echo "ERROR: Agent failed to start. Check agent.log"
     kill "$WEB_PID" 2>/dev/null || true
+    [ -n "$SCHEDULER_PID" ] && kill "$SCHEDULER_PID" 2>/dev/null || true
+    rm -f "$PID_FILE"
+    exit 1
+fi
+
+if [ -n "$SCHEDULER_PID" ] && ! kill -0 "$SCHEDULER_PID" 2>/dev/null; then
+    echo "ERROR: Scheduler failed to start. Check scheduler.log"
+    kill "$WEB_PID" 2>/dev/null || true
+    kill "$AGENT_PID" 2>/dev/null || true
     rm -f "$PID_FILE"
     exit 1
 fi
@@ -178,6 +210,9 @@ echo ""
 echo "Agency started!"
 echo "  Web View PID: $WEB_PID"
 echo "  Agent PID: $AGENT_PID"
+if [ -n "$SCHEDULER_PID" ]; then
+    echo "  Scheduler PID: $SCHEDULER_PID"
+fi
 echo ""
 echo "Dashboard: https://$(hostname):$WEB_PORT"
 REMOTE_SCRIPT
