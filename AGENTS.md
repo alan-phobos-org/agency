@@ -147,3 +147,29 @@ For detailed endpoint specs, see [docs/REFERENCE.md](docs/REFERENCE.md).
 - Single-task agent (returns 409 if busy)
 - No structured logging (stderr only)
 - Task session data stored in memory (not persisted across web view restarts)
+- Tasks can appear stuck in "working" state - see [docs/TASK_STATE_SYNC_DESIGN.md](docs/TASK_STATE_SYNC_DESIGN.md)
+
+---
+
+## Architecture Patterns [READ IF: debugging state sync issues]
+
+### State Management
+
+The system has three state layers that must stay synchronized:
+
+1. **Agent** (`internal/agent/agent.go`) - Authoritative source, tasks map + history
+2. **Web SessionStore** (`internal/view/web/sessions.go`) - In-memory cache, volatile
+3. **Browser** (`dashboard.html` JavaScript) - UI state, polls via `/api/task`
+
+**Key insight:** Agent is the source of truth. Web and Browser are caches that can get stale.
+
+### Common Pitfalls
+
+1. **Fast task completion** - Task moves to history before first poll
+2. **Missing session_id in polls** - Prevents auto-update of SessionStore
+3. **Tab close during task** - No cleanup, SessionStore stays stale
+4. **Web restart** - SessionStore lost (in-memory only)
+
+### Design Principle
+
+When in doubt, query the Agent. The Web's `/api/task/{id}` handler falls back to `/history/{id}` when task not found - this pattern should be used consistently.
