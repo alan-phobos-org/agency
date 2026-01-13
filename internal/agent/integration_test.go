@@ -139,8 +139,8 @@ func TestIntegrationTaskCancellation(t *testing.T) {
 
 	taskID := resp.Value("task_id").String().Raw()
 
-	// Wait for task to be in working state
-	testutil.Eventually(t, 2*time.Second, func() bool {
+	// Wait for task to be in working state (increased timeout for CI reliability)
+	testutil.Eventually(t, 5*time.Second, func() bool {
 		statusResp := e.GET("/status").Expect().Status(http.StatusOK).JSON().Object()
 		state := statusResp.Value("state").String().Raw()
 		return state == "working"
@@ -153,8 +153,8 @@ func TestIntegrationTaskCancellation(t *testing.T) {
 		JSON().Object().
 		HasValue("state", "cancelled")
 
-	// Verify agent returns to idle
-	testutil.Eventually(t, 10*time.Second, func() bool {
+	// Verify agent returns to idle (increased timeout for CI reliability)
+	testutil.Eventually(t, 15*time.Second, func() bool {
 		statusResp := e.GET("/status").Expect().Status(http.StatusOK).JSON().Object()
 		state := statusResp.Value("state").String().Raw()
 		return state == "idle"

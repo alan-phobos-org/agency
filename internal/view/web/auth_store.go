@@ -240,12 +240,8 @@ func (s *AuthStore) RefreshSession(id string) bool {
 		session.ExpiresAt = now.Add(AuthSessionDuration)
 	}
 
-	// Save asynchronously to avoid blocking requests
-	go func() {
-		s.mu.Lock()
-		s.saveUnlocked()
-		s.mu.Unlock()
-	}()
+	// Save synchronously to ensure cleanup doesn't race with file writes
+	s.saveUnlocked()
 
 	return true
 }
