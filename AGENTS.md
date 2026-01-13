@@ -346,3 +346,43 @@ Agent stores task history at `~/.agency/history/<agent-name>/`:
 - Debug logs: 20 most recent tasks retain full Claude output
 - Persisted to disk, survives agent restarts
 - Configurable via `history_dir` in agent config
+
+## Agent Workflows
+
+### What's Next
+
+When asked "what's next" or similar, run this workflow to provide a concise project status summary:
+
+**1. Working Copy Status**
+```bash
+git status --short
+git diff --stat
+```
+Check for uncommitted changes, staged files, and work in progress.
+
+**2. Remote & CI Status**
+```bash
+git fetch origin
+git log --oneline origin/main..HEAD  # unpushed commits
+git log --oneline HEAD..origin/main  # commits to pull
+gh run list --limit 5                # recent CI runs
+gh release list --limit 3            # recent releases
+```
+Check if local is ahead/behind remote, CI pass/fail status, and latest release version.
+
+**3. Plan Review**
+Read `docs/PLAN.md` and compare against:
+- Current release version (from `git describe --tags` or CHANGELOG.md)
+- Recently completed work (git log since last tag)
+- Next planned milestone or phase
+- Backlog items ready to start
+
+**4. Summary Report**
+Provide a concise summary covering:
+- **Working copy**: clean/dirty, uncommitted changes
+- **Remote sync**: ahead/behind, CI status (passing/failing)
+- **Current version**: latest release tag
+- **Plan status**: current phase completion, next priorities
+- **Suggested next step**: one clear recommendation
+
+Keep the report brief (10-15 lines max). Focus on actionable information.
