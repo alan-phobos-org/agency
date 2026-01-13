@@ -631,7 +631,8 @@
         'failed': 'bg-red',
         'working': 'bg-yellow',
         'queued': 'bg-secondary',
-        'cancelled': 'bg-orange'
+        'cancelled': 'bg-orange',
+        'unknown': 'bg-secondary'
       };
 
       const html = tasks.map((task, i) => {
@@ -795,6 +796,85 @@
         }
       } catch (err) {
         console.error('Task poll failed:', err);
+        // On error, check if task completed and moved to history
+        if (activeTask) {
+          try {
+            const history = await api(`/api/history/${activeTask.taskId}?agent_url=${encodeURIComponent(activeTask.agentUrl)}`);
+            if (history && history.state) {
+              // Task found in history - update state
+              if (activeTask.sessionId) {
+                await updateSessionTaskState(activeTask.sessionId, activeTask.taskId, history.state);
+                if (sessions[activeTask.sessionId]) {
+                  const session = sessions[activeTask.sessionId];
+                  const taskEntry = session.tasks.find(t => t.taskId === activeTask.taskId);
+                  if (taskEntry) {
+                    taskEntry.state = history.state;
+                  }
+                }
+              }
+              activeTask = null;
+              scheduleRefresh();
+            }
+          } catch (historyErr) {
+            // Task not found in history either - may still be running or agent unavailable
+            console.error('History lookup also failed:', historyErr);
+          }
+        }
+      }
+    }
+
+    // Reconcile stale "working" tasks on page load
+    // Checks all tasks marked as "working" against the agent to fix stuck states
+    async function reconcileWorkingSessions() {
+      const reconcilePromises = [];
+
+      for (const sessionId of sessionOrder) {
+        const session = sessions[sessionId];
+        if (!session || !session.tasks) continue;
+
+        for (const task of session.tasks) {
+          if (task.state === 'working') {
+            // Check actual state from agent
+            const promise = (async () => {
+              try {
+                const url = `/api/task/${task.taskId}?agent_url=${encodeURIComponent(session.agentUrl)}&session_id=${encodeURIComponent(sessionId)}`;
+                const status = await api(url);
+                if (status.state !== 'working') {
+                  // State changed - update
+                  await updateSessionTaskState(sessionId, task.taskId, status.state);
+                  task.state = status.state;
+                  return true; // Changed
+                }
+              } catch (err) {
+                // Task not found in active tasks, check history
+                try {
+                  const history = await api(`/api/history/${task.taskId}?agent_url=${encodeURIComponent(session.agentUrl)}`);
+                  if (history && history.state) {
+                    await updateSessionTaskState(sessionId, task.taskId, history.state);
+                    task.state = history.state;
+                    return true; // Changed
+                  }
+                } catch {
+                  // Task not found anywhere - mark as unknown
+                  await updateSessionTaskState(sessionId, task.taskId, 'unknown');
+                  task.state = 'unknown';
+                  return true; // Changed
+                }
+              }
+              return false; // No change
+            })();
+            reconcilePromises.push(promise);
+          }
+        }
+      }
+
+      if (reconcilePromises.length > 0) {
+        const results = await Promise.all(reconcilePromises);
+        const changedCount = results.filter(r => r).length;
+        if (changedCount > 0) {
+          console.log(`Reconciled ${changedCount} stale working task(s)`);
+          updateSessionsUI();
+        }
       }
     }
 
@@ -889,7 +969,8 @@
         'queued': '○',
         'failed': '✕',
         'cancelling': '⊘',
-        'cancelled': '⊘'
+        'cancelled': '⊘',
+        'unknown': '?'
       };
       return icons[state] || '?';
     }
@@ -921,7 +1002,10 @@
 
     // Start refresh loop
     loadContexts(); // Load available contexts
-    refresh();
+    refresh().then(() => {
+      // After initial load, reconcile any stale "working" tasks
+      reconcileWorkingSessions();
+    });
     refreshTimer = setInterval(refresh, pollInterval);
   </script>
 </body>

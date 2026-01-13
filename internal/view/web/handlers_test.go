@@ -621,6 +621,138 @@ func TestHandleDashboardSessionDetailCSS(t *testing.T) {
 	require.Contains(t, body, ".task-prompt", "Should have task-prompt CSS")
 }
 
+func TestHandleDashboardContainsReconciliation(t *testing.T) {
+	t.Parallel()
+
+	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
+	h := newTestHandlers(t, d, "test", nil)
+
+	req := httptest.NewRequest("GET", "/", nil)
+	rec := httptest.NewRecorder()
+
+	h.HandleDashboard(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+
+	// Verify reconciliation function exists
+	require.Contains(t, body, "reconcileWorkingSessions", "Should have reconcileWorkingSessions function")
+
+	// Verify it's called on page load
+	require.Contains(t, body, "refresh().then", "Should chain reconciliation after refresh")
+
+	// Verify unknown state is handled
+	require.Contains(t, body, "'unknown': '?'", "Should handle unknown state icon")
+	require.Contains(t, body, "'unknown': 'bg-secondary'", "Should handle unknown state color")
+
+	// Verify poll error handling includes history fallback
+	require.Contains(t, body, "/api/history/", "Should fall back to history on poll error")
+}
+
+func TestHandleTaskStatusFallbackToHistory(t *testing.T) {
+	t.Parallel()
+
+	// Setup mock agent that returns 404 for /task but has history
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/task/"):
+			// Task not found (moved to history)
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error":   "not_found",
+				"message": "Task not found",
+			})
+		case strings.HasPrefix(r.URL.Path, "/history/"):
+			// Task found in history with completed state
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"task_id": "task-123",
+				"state":   "completed",
+				"output":  "Task finished successfully",
+			})
+		}
+	}))
+	defer agent.Close()
+
+	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
+	h := newTestHandlers(t, d, "test", nil)
+
+	req := httptest.NewRequest("GET", "/api/task/task-123?agent_url="+agent.URL, nil)
+	rec := httptest.NewRecorder()
+
+	h.HandleTaskStatus(rec, req, "task-123")
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(rec.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	require.Equal(t, "completed", resp["state"])
+	require.Equal(t, "Task finished successfully", resp["output"])
+}
+
+func TestHandleTaskStatusFallbackUpdatesSessionStore(t *testing.T) {
+	t.Parallel()
+
+	// Setup mock agent that returns 404 for /task but has history
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/task/"):
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "not_found"})
+		case strings.HasPrefix(r.URL.Path, "/history/"):
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"task_id": "task-456",
+				"state":   "failed",
+			})
+		}
+	}))
+	defer agent.Close()
+
+	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
+	h := newTestHandlers(t, d, "test", nil)
+
+	// Pre-populate session store with task in "working" state
+	h.sessionStore.AddTask("sess-abc", agent.URL, "task-456", "working", "test prompt")
+
+	// Request with session_id should auto-update session store
+	req := httptest.NewRequest("GET", "/api/task/task-456?agent_url="+agent.URL+"&session_id=sess-abc", nil)
+	rec := httptest.NewRecorder()
+
+	h.HandleTaskStatus(rec, req, "task-456")
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	// Verify session store was updated
+	session, ok := h.sessionStore.Get("sess-abc")
+	require.True(t, ok)
+	require.Len(t, session.Tasks, 1)
+	require.Equal(t, "failed", session.Tasks[0].State, "Session store should be updated to failed state")
+}
+
+func TestHandleTaskStatusNotFoundInHistoryEither(t *testing.T) {
+	t.Parallel()
+
+	// Setup mock agent that returns 404 for both /task and /history
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "not_found",
+			"message": "Not found",
+		})
+	}))
+	defer agent.Close()
+
+	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
+	h := newTestHandlers(t, d, "test", nil)
+
+	req := httptest.NewRequest("GET", "/api/task/task-missing?agent_url="+agent.URL, nil)
+	rec := httptest.NewRecorder()
+
+	h.HandleTaskStatus(rec, req, "task-missing")
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
+}
+
 func TestHandleContextsWithContexts(t *testing.T) {
 	t.Parallel()
 

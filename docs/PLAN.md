@@ -129,6 +129,18 @@ Feature parity with h2ai v1 GitHub integration.
 
 ## Backlog
 
+### Task State Synchronization
+
+Tasks can appear stuck in "working" state in the web UI due to distributed state without synchronization. Quick fixes implemented (reconciliation on load, poll error fallback). Full architectural solution needed.
+
+**Options (see [TASK_STATE_SYNC_DESIGN.md](TASK_STATE_SYNC_DESIGN.md)):**
+- **Option A: Stateless Web** - Derive sessions from Agent history
+- **Option B: Agent-Owned Sessions** - Move session tracking to Agent (recommended)
+
+**Blockers:**
+- Decision on multi-agent sessions
+- Decision on session retention policy separate from history
+
 ### Remote Deployment & Multi-Instance
 
 - Add `deploy-remote` build target with staging/prod mechanisms
