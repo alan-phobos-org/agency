@@ -212,6 +212,79 @@ case "${1:-help}" in
         echo "  1. Review: git log -1 && git show $TAG"
         echo "  2. Push:   git push origin main $TAG"
         ;;
+    status)
+        echo "=== Project Status ==="
+        echo ""
+
+        # Version
+        echo "Version: $VERSION"
+        LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "none")
+        echo "Latest release: $LAST_TAG"
+        echo ""
+
+        # Working copy
+        echo "--- Working Copy ---"
+        if git diff --quiet && git diff --cached --quiet; then
+            UNTRACKED=$(git ls-files --others --exclude-standard | wc -l | tr -d ' ')
+            if [ "$UNTRACKED" -eq 0 ]; then
+                echo "Clean"
+            else
+                echo "Clean (${UNTRACKED} untracked files)"
+            fi
+        else
+            echo "Dirty"
+            git status --short | head -10
+            TOTAL=$(git status --short | wc -l | tr -d ' ')
+            [ "$TOTAL" -gt 10 ] && echo "... and $((TOTAL - 10)) more"
+        fi
+        echo ""
+
+        # Remote sync
+        echo "--- Remote Status ---"
+        git fetch origin --quiet 2>/dev/null || echo "Warning: could not fetch origin"
+        LOCAL=$(git rev-parse HEAD 2>/dev/null)
+        REMOTE=$(git rev-parse origin/main 2>/dev/null || echo "unknown")
+        if [ "$LOCAL" = "$REMOTE" ]; then
+            echo "In sync with origin/main"
+        else
+            AHEAD=$(git rev-list --count origin/main..HEAD 2>/dev/null || echo "?")
+            BEHIND=$(git rev-list --count HEAD..origin/main 2>/dev/null || echo "?")
+            [ "$AHEAD" != "0" ] && echo "Ahead of origin/main by $AHEAD commits"
+            [ "$BEHIND" != "0" ] && echo "Behind origin/main by $BEHIND commits"
+        fi
+        echo ""
+
+        # CI status (requires gh CLI)
+        echo "--- CI Status ---"
+        if command -v gh &>/dev/null; then
+            gh run list --limit 3 2>/dev/null || echo "Could not fetch CI status"
+        else
+            echo "gh CLI not installed - skipping CI status"
+        fi
+        echo ""
+
+        # Recent releases
+        echo "--- Recent Releases ---"
+        if command -v gh &>/dev/null; then
+            gh release list --limit 3 2>/dev/null || echo "No releases found"
+        else
+            git tag --sort=-creatordate | head -3 || echo "No tags found"
+        fi
+        echo ""
+
+        # Changes since last release
+        if [ "$LAST_TAG" != "none" ]; then
+            echo "--- Changes Since $LAST_TAG ---"
+            COMMIT_COUNT=$(git rev-list --count "$LAST_TAG"..HEAD 2>/dev/null || echo "0")
+            echo "$COMMIT_COUNT commits"
+            if [ "$COMMIT_COUNT" != "0" ] && [ "$COMMIT_COUNT" -lt 20 ]; then
+                git log --oneline "$LAST_TAG"..HEAD
+            elif [ "$COMMIT_COUNT" -ge 20 ]; then
+                git log --oneline "$LAST_TAG"..HEAD | head -10
+                echo "... and $((COMMIT_COUNT - 10)) more commits"
+            fi
+        fi
+        ;;
     help|*)
         echo "Usage: $0 <target>"
         echo ""
@@ -237,6 +310,9 @@ case "${1:-help}" in
         echo "Release workflow:"
         echo "  prepare-release Run all checks, tests, and show changes since last release"
         echo "  release <ver>   Create release commit and tag (e.g., ./build.sh release 1.2.0)"
+        echo ""
+        echo "Status:"
+        echo "  status          Show project status (working copy, remote, CI, releases)"
         echo ""
         echo "Current version: $VERSION"
         ;;
