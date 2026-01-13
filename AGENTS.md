@@ -2,6 +2,10 @@
 
 A modular framework for AI-powered software engineering agents.
 
+## Vision
+
+Deploying agents should feel like reliable infrastructure, not babysitting experiments. Prioritize operational stability (graceful failures, clear errors, predictable behavior) over feature breadth. The web UI should be immediately usable without docs. Security defaults are paranoid - assume hostile networks. UI responsiveness must never feel sluggish.
+
 ## Documentation
 
 - [README.md](README.md) - Project overview and quick start
