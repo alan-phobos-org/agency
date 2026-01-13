@@ -242,6 +242,15 @@ jobs:
 `,
 			wantErr: "model must be opus, sonnet, or haiku",
 		},
+		{
+			name: "missing prompt",
+			yaml: `
+jobs:
+  - name: test
+    schedule: "0 1 * * *"
+`,
+			wantErr: "prompt is required",
+		},
 	}
 
 	for _, tt := range tests {
@@ -531,4 +540,108 @@ func TestSchedulerShutdown(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("scheduler did not stop")
 	}
+}
+
+func TestSchedulerStartTwice(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{
+		Port:     0,
+		AgentURL: "http://localhost:9000",
+		Jobs: []Job{
+			{
+				Name:     "test-job",
+				Schedule: "0 1 * * *",
+				Prompt:   "Test prompt",
+			},
+		},
+	}
+
+	s := New(cfg, "test")
+
+	// Start in background
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- s.Start()
+	}()
+
+	// Wait for start
+	time.Sleep(100 * time.Millisecond)
+
+	// Try to start again - should error
+	err := s.Start()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "already running")
+
+	// Cleanup
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	s.Shutdown(ctx)
+	<-errCh
+}
+
+func TestConfigLoadFileNotFound(t *testing.T) {
+	t.Parallel()
+
+	_, err := Load("/nonexistent/path/to/config.yaml")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reading config file")
+}
+
+func TestSchedulerJobNoDoubleRun(t *testing.T) {
+	t.Parallel()
+
+	// Create mock agent with delay to simulate slow response
+	var submissions int32
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/task" && r.Method == "POST" {
+			// Simulate slow agent
+			time.Sleep(50 * time.Millisecond)
+			count := submissions
+			submissions++
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(map[string]string{
+				"task_id": "task-" + string(rune('0'+count)),
+			})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer agent.Close()
+
+	cfg := &Config{
+		Port:     0,
+		AgentURL: agent.URL,
+		Jobs: []Job{
+			{
+				Name:     "test-job",
+				Schedule: "* * * * *",
+				Prompt:   "Test prompt",
+			},
+		},
+	}
+
+	s := New(cfg, "test")
+
+	// Initialize job state with NextRun in the past
+	cron, _ := ParseCron(cfg.Jobs[0].Schedule)
+	js := &jobState{
+		Job:     &cfg.Jobs[0],
+		Cron:    cron,
+		NextRun: time.Now().Add(-time.Minute),
+	}
+	s.jobs = []*jobState{js}
+
+	// Call checkAndRunJobs twice in quick succession
+	// The second call should not trigger another run because isRunning is true
+	now := time.Now()
+	go s.checkAndRunJobs(now)
+	time.Sleep(10 * time.Millisecond) // Let first call start
+	s.checkAndRunJobs(now)
+
+	// Wait for job to complete
+	time.Sleep(100 * time.Millisecond)
+
+	// Should only have submitted once despite two checkAndRunJobs calls
+	assert.Equal(t, int32(1), submissions)
 }

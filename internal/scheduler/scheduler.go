@@ -37,6 +37,7 @@ type jobState struct {
 	LastRun    time.Time
 	LastStatus string // "submitted", "skipped_busy", "skipped_error"
 	LastTaskID string
+	isRunning  bool // prevents double-invocation if job execution takes >1s
 }
 
 // JobStatus represents a job in the status response
@@ -73,10 +74,15 @@ func (s *Scheduler) Start() error {
 	for i := range s.config.Jobs {
 		job := &s.config.Jobs[i]
 		cron, _ := ParseCron(job.Schedule) // Already validated
+		nextRun := cron.Next(now)
+		if nextRun.IsZero() {
+			// Defensive: if Next() can't find a match, skip far into the future
+			nextRun = now.Add(24 * time.Hour)
+		}
 		s.jobs[i] = &jobState{
 			Job:     job,
 			Cron:    cron,
-			NextRun: cron.Next(now),
+			NextRun: nextRun,
 		}
 	}
 	// Start HTTP server
@@ -147,12 +153,15 @@ func (s *Scheduler) checkAndRunJobs(now time.Time) {
 	s.mu.RUnlock()
 
 	for _, js := range jobs {
-		js.mu.RLock()
+		js.mu.Lock()
 		nextRun := js.NextRun
-		js.mu.RUnlock()
-
-		if now.After(nextRun) || now.Equal(nextRun) {
+		running := js.isRunning
+		if !running && (now.After(nextRun) || now.Equal(nextRun)) {
+			js.isRunning = true
+			js.mu.Unlock()
 			s.runJob(js)
+		} else {
+			js.mu.Unlock()
 		}
 	}
 }
@@ -220,7 +229,13 @@ func (s *Scheduler) updateJobState(js *jobState, status, taskID string) {
 	js.LastRun = now
 	js.LastStatus = status
 	js.LastTaskID = taskID
-	js.NextRun = js.Cron.Next(now)
+	nextRun := js.Cron.Next(now)
+	if nextRun.IsZero() {
+		// Defensive: if Next() can't find a match, skip far into the future
+		nextRun = now.Add(24 * time.Hour)
+	}
+	js.NextRun = nextRun
+	js.isRunning = false
 }
 
 // handleStatus returns scheduler status
@@ -267,7 +282,8 @@ func (s *Scheduler) handleShutdown(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Force bool `json:"force"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	// Ignore decode errors - Force defaults to false which is safe
+	_ = json.NewDecoder(r.Body).Decode(&req)
 
 	api.WriteJSON(w, http.StatusOK, map[string]string{"status": "shutting_down"})
 
