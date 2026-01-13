@@ -14,6 +14,7 @@ Deploying agents should feel like reliable infrastructure, not babysitting exper
 | [README.md](README.md) | Project overview, quick start | Getting started |
 | [docs/REFERENCE.md](docs/REFERENCE.md) | API specs, endpoints, config | Implementing API changes |
 | [docs/DESIGN.md](docs/DESIGN.md) | Architecture, patterns | Major refactoring |
+| [docs/SCHEDULER_DESIGN.md](docs/SCHEDULER_DESIGN.md) | Scheduler architecture | Modifying scheduler |
 | [docs/PLAN.md](docs/PLAN.md) | Vision, phases, backlog | Planning work |
 | [CHANGELOG.md](CHANGELOG.md) | Release history | Preparing releases |
 
@@ -55,14 +56,16 @@ agency/
 ├── cmd/
 │   ├── ag-agent-claude/  # Agent binary
 │   ├── ag-cli/           # CLI tool (task, status, discover)
+│   ├── ag-scheduler/     # Scheduler binary (cron-style task triggering)
 │   └── ag-view-web/      # Web view binary
-├── configs/              # Configuration files (contexts.yaml)
+├── configs/              # Configuration files (contexts.yaml, scheduler.yaml)
 ├── deployment/           # Local deployment scripts
 ├── internal/
 │   ├── agent/      # Agent logic + REST API handlers
 │   ├── api/        # Shared types and constants
 │   ├── config/     # YAML parsing, validation
 │   ├── history/    # Task history storage and outline extraction
+│   ├── scheduler/  # Scheduler logic, cron parsing, job runner
 │   ├── view/web/   # Web view (dashboard + discovery)
 │   └── testutil/   # Test helpers
 └── testdata/       # Test fixtures and mock Claude scripts
@@ -95,6 +98,7 @@ agency/
 | internal/agent | Unit + Integration + System |
 | internal/config | Unit (validation) |
 | internal/history | Unit (storage, pruning) |
+| internal/scheduler | Unit (cron, config, job submission) |
 | internal/view/web | Unit + Integration + System |
 | cmd/* | None (thin entry points) |
 
@@ -130,6 +134,7 @@ The `release` target: validates semver, checks CHANGELOG.md entry, creates commi
 - **Agent**: Single-task executor with REST API, session support, auto-resume
 - **CLI**: `ag-cli task|status|discover` commands
 - **Web View**: HTTPS dashboard with auth, discovery, task submission, contexts
+- **Scheduler**: Cron-style task triggering (`ag-scheduler -config configs/scheduler.yaml`)
 
 ### Key Behaviors
 

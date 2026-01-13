@@ -1,0 +1,61 @@
+# Agency Scheduler Configuration
+# Runs scheduled maintenance tasks across repositories
+
+port: 9100
+agent_url: http://localhost:9000
+
+jobs:
+  - name: nightly-maintenance
+    schedule: "0 1 * * *"
+    model: opus
+    timeout: 2h
+    prompt: |
+      # Nightly Maintenance Run
+
+      Perform maintenance tasks across the specified repositories.
+      Work through each repository sequentially.
+
+      ## Target Repositories
+      - agency
+      - opengrok-navigator
+      - lldb-objc
+      - cue
+
+      ## Tasks for Each Repository
+
+      ### 1. Code Cleanup
+      - Remove dead code and unused imports
+      - Fix obvious code style issues
+      - Remove commented-out code blocks
+
+      ### 2. Testing
+      - Run the test suite and fix any failing tests
+      - Add tests for uncovered edge cases if time permits
+      - Ensure CI would pass
+
+      ### 3. Bug Fixing
+      - Check for and fix any TODO/FIXME items that are straightforward
+      - Address any obvious bugs discovered during testing
+
+      ### 4. Documentation Updates
+      - Update README if code changes affect usage
+      - Ensure doc comments match current behavior
+      - Update CHANGELOG with any notable fixes
+
+      ## Workflow
+
+      For each repository:
+      1. Clone from alan-phobos-org/<repo>
+      2. Run tests to establish baseline
+      3. Perform maintenance tasks
+      4. Run tests again to verify no regressions
+      5. Commit changes with descriptive messages
+      6. Move to next repository
+
+      If any repository takes too long or has complex issues,
+      make a note and move on to the next one.
+
+      ## Important Notes
+      - Do not make breaking changes
+      - Keep commits small and focused
+      - If unsure about a change, skip it

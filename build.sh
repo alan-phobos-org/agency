@@ -3,7 +3,7 @@ set -euo pipefail
 
 VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS="-X main.version=$VERSION"
-BINARIES=(ag-agent-claude ag-view-web ag-cli)
+BINARIES=(ag-agent-claude ag-view-web ag-cli ag-scheduler)
 
 # Helper functions
 build_all() {
@@ -67,7 +67,7 @@ case "${1:-help}" in
         mkdir -p dist/bin dist/deployment dist/configs
         cp "${BINARIES[@]/#/bin/}" dist/bin/
         cp deployment/agency.sh deployment/stop-agency.sh deployment/deploy-agency.sh dist/deployment/
-        cp configs/contexts.yaml dist/configs/
+        cp configs/contexts.yaml configs/scheduler.yaml dist/configs/
         tar -czf "dist/agency-$VERSION.tar.gz" -C dist bin deployment configs
         echo "Created dist/agency-$VERSION.tar.gz"
         ;;
