@@ -41,12 +41,12 @@ type jobState struct {
 
 // JobStatus represents a job in the status response
 type JobStatus struct {
-	Name       string    `json:"name"`
-	Schedule   string    `json:"schedule"`
-	NextRun    time.Time `json:"next_run"`
-	LastRun    time.Time `json:"last_run,omitempty"`
-	LastStatus string    `json:"last_status,omitempty"`
-	LastTaskID string    `json:"last_task_id,omitempty"`
+	Name       string     `json:"name"`
+	Schedule   string     `json:"schedule"`
+	NextRun    time.Time  `json:"next_run"`
+	LastRun    *time.Time `json:"last_run,omitempty"`
+	LastStatus string     `json:"last_status,omitempty"`
+	LastTaskID string     `json:"last_task_id,omitempty"`
 }
 
 // New creates a new scheduler
@@ -232,14 +232,18 @@ func (s *Scheduler) handleStatus(w http.ResponseWriter, r *http.Request) {
 	jobStatuses := make([]JobStatus, len(jobs))
 	for i, js := range jobs {
 		js.mu.RLock()
-		jobStatuses[i] = JobStatus{
+		status := JobStatus{
 			Name:       js.Job.Name,
 			Schedule:   js.Job.Schedule,
 			NextRun:    js.NextRun,
-			LastRun:    js.LastRun,
 			LastStatus: js.LastStatus,
 			LastTaskID: js.LastTaskID,
 		}
+		if !js.LastRun.IsZero() {
+			lastRun := js.LastRun
+			status.LastRun = &lastRun
+		}
+		jobStatuses[i] = status
 		js.mu.RUnlock()
 	}
 

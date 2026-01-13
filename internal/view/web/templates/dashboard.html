@@ -205,6 +205,31 @@
             </div>
           </div>
 
+          <!-- Scheduler Section -->
+          <div class="card mb-3" id="schedulerSection" style="display: none;">
+            <div class="card-header">
+              <h3 class="card-title">Scheduler</h3>
+              <div class="card-actions">
+                <span class="badge bg-green" id="schedulerStatus">Running</span>
+              </div>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-vcenter table-component" id="schedulerTable">
+                <thead>
+                  <tr>
+                    <th>Job</th>
+                    <th style="width: 120px;">Schedule</th>
+                    <th style="width: 160px;">Next Run</th>
+                    <th style="width: 160px;">Last Run</th>
+                  </tr>
+                </thead>
+                <tbody id="schedulerTableBody">
+                  <tr><td colspan="4" class="empty-message">No jobs configured</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
         </div>
       </div>
     </div>
@@ -503,6 +528,54 @@
         </tr>`;
     }
 
+    // Render scheduler job row
+    function renderSchedulerJobRow(job, agentUrl) {
+      const nextRun = job.next_run ? new Date(job.next_run).toLocaleString() : '—';
+      let lastRunHtml = '—';
+
+      if (job.last_run && job.last_task_id) {
+        const lastRunTime = new Date(job.last_run).toLocaleString();
+        const statusColors = {
+          'submitted': 'text-success',
+          'skipped_busy': 'text-warning',
+          'skipped_error': 'text-danger'
+        };
+        const statusClass = statusColors[job.last_status] || 'text-muted';
+        // Find session containing this task
+        const sessionId = findSessionByTaskId(job.last_task_id);
+        if (sessionId) {
+          lastRunHtml = `<a href="#" class="${statusClass}" onclick="openSessionDetail('${sessionId}'); return false;" title="${job.last_status}">${lastRunTime}</a>`;
+        } else {
+          lastRunHtml = `<span class="${statusClass}" title="${job.last_status}">${lastRunTime}</span>`;
+        }
+      } else if (job.last_run) {
+        lastRunHtml = new Date(job.last_run).toLocaleString();
+      }
+
+      return `
+        <tr>
+          <td class="small">${escapeHtml(job.name)}</td>
+          <td class="text-muted small font-monospace">${escapeHtml(job.schedule)}</td>
+          <td class="small">${nextRun}</td>
+          <td class="small">${lastRunHtml}</td>
+        </tr>`;
+    }
+
+    // Find session containing a task ID
+    function findSessionByTaskId(taskId) {
+      for (const sessionId of sessionOrder) {
+        const session = sessions[sessionId];
+        if (session && session.tasks) {
+          for (const task of session.tasks) {
+            if (task.taskId === taskId) {
+              return sessionId;
+            }
+          }
+        }
+      }
+      return null;
+    }
+
     // Render session table row
     function renderSessionRow(sessionId, session) {
       const taskCount = session.tasks ? session.tasks.length : 0;
@@ -527,6 +600,40 @@
           <td class="small task-col" title="${fullPrompt}">${lastPrompt}${(lastTask?.prompt || '').length > 50 ? '...' : ''}</td>
           <td><button class="btn btn-sm btn-outline-primary" onclick="event.stopPropagation(); continueSession('${sessionId}')">Continue</button></td>
         </tr>`;
+    }
+
+    // Update scheduler display
+    function updateSchedulerUI(helpers) {
+      const schedulerSection = document.getElementById('schedulerSection');
+      const schedulerStatus = document.getElementById('schedulerStatus');
+      const schedulerTableBody = document.getElementById('schedulerTableBody');
+
+      // Find scheduler helper (first one with jobs)
+      const scheduler = helpers.find(h => h.config && h.config.agent_url);
+
+      if (!scheduler) {
+        schedulerSection.style.display = 'none';
+        return;
+      }
+
+      schedulerSection.style.display = 'block';
+
+      // Update status badge
+      if (scheduler.state === 'running') {
+        schedulerStatus.className = 'badge bg-green';
+        schedulerStatus.textContent = 'Running';
+      } else {
+        schedulerStatus.className = 'badge bg-red';
+        schedulerStatus.textContent = scheduler.state || 'Offline';
+      }
+
+      // Render jobs - jobs are in the raw status response, need to access via config or direct property
+      const jobs = scheduler.jobs || [];
+      if (jobs.length > 0) {
+        schedulerTableBody.innerHTML = jobs.map(job => renderSchedulerJobRow(job, scheduler.config.agent_url)).join('');
+      } else {
+        schedulerTableBody.innerHTML = '<tr><td colspan="4" class="empty-message">No jobs configured</td></tr>';
+      }
     }
 
     // Update sessions display
@@ -698,7 +805,10 @@
           return;
         }
 
-        const { agents, directors, sessions: serverSessions } = data;
+        const { agents, directors, helpers, sessions: serverSessions } = data;
+
+        // Update scheduler section
+        updateSchedulerUI(helpers || []);
 
         // Update sessions from server data
         sessions = {};

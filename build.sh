@@ -84,8 +84,28 @@ case "${1:-help}" in
         ;;
     deploy-local)
         $0 dist
+        [ -f .env ] && cp .env dist/
         echo "Deploying..."
         exec ./dist/deployment/agency.sh
+        ;;
+    test-smoke)
+        echo "Running smoke test on non-standard ports..."
+        build_all
+
+        # Use non-standard ports to avoid conflicts
+        export AG_WEB_PORT=18443
+        export AG_AGENT_PORT=19000
+        export AG_SCHEDULER_PORT=19100
+
+        ./deployment/agency.sh
+        sleep 1
+
+        check_service "http://localhost:$AG_AGENT_PORT/status" "Agent"
+        check_service "https://localhost:$AG_WEB_PORT/status" "Web view"
+        check_service "http://localhost:$AG_SCHEDULER_PORT/status" "Scheduler"
+
+        ./deployment/stop-agency.sh
+        echo "✓ Smoke test passed"
         ;;
     prepare-release)
         echo "=== Preparing release ==="
@@ -298,6 +318,7 @@ case "${1:-help}" in
         echo "  test-all        Run unit tests + integration tests"
         echo "  test-int        Run integration tests only"
         echo "  test-sys        Run system tests (builds first)"
+        echo "  test-smoke      Start services on non-standard ports and verify they respond"
         echo "  test-release    Run full test suite: unit + integration + system tests"
         echo ""
         echo "Code quality:"

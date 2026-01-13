@@ -21,8 +21,19 @@ type ComponentStatus struct {
 	UptimeSeconds float64          `json:"uptime_seconds"`
 	CurrentTask   *api.CurrentTask `json:"current_task,omitempty"`
 	Config        interface{}      `json:"config,omitempty"`
+	Jobs          []JobStatus      `json:"jobs,omitempty"` // For scheduler helpers
 	LastSeen      time.Time        `json:"last_seen"`
 	FailCount     int              `json:"-"` // Internal: consecutive failures
+}
+
+// JobStatus represents a scheduled job's status (from scheduler)
+type JobStatus struct {
+	Name       string     `json:"name"`
+	Schedule   string     `json:"schedule"`
+	NextRun    time.Time  `json:"next_run"`
+	LastRun    *time.Time `json:"last_run,omitempty"`
+	LastStatus string     `json:"last_status,omitempty"`
+	LastTaskID string     `json:"last_task_id,omitempty"`
 }
 
 // Discovery handles service discovery via port scanning
@@ -199,6 +210,20 @@ func (d *Discovery) Directors() []*ComponentStatus {
 		}
 	}
 	return directors
+}
+
+// Helpers returns all discovered helpers (schedulers, etc.)
+func (d *Discovery) Helpers() []*ComponentStatus {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	var helpers []*ComponentStatus
+	for _, comp := range d.components {
+		if comp.Type == "helper" {
+			helpers = append(helpers, comp)
+		}
+	}
+	return helpers
 }
 
 // AllComponents returns all discovered components

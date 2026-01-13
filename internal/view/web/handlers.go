@@ -364,6 +364,7 @@ func (h *Handlers) HandleUpdateSessionTask(w http.ResponseWriter, r *http.Reques
 type DashboardData struct {
 	Agents    []*ComponentStatus `json:"agents"`
 	Directors []*ComponentStatus `json:"directors"`
+	Helpers   []*ComponentStatus `json:"helpers"`
 	Sessions  []*Session         `json:"sessions"`
 }
 
@@ -379,6 +380,11 @@ func (h *Handlers) HandleDashboardData(w http.ResponseWriter, r *http.Request) {
 		directors = []*ComponentStatus{}
 	}
 
+	helpers := h.discovery.Helpers()
+	if helpers == nil {
+		helpers = []*ComponentStatus{}
+	}
+
 	sessions := h.sessionStore.GetAll()
 	if sessions == nil {
 		sessions = []*Session{}
@@ -387,6 +393,7 @@ func (h *Handlers) HandleDashboardData(w http.ResponseWriter, r *http.Request) {
 	data := DashboardData{
 		Agents:    agents,
 		Directors: directors,
+		Helpers:   helpers,
 		Sessions:  sessions,
 	}
 
