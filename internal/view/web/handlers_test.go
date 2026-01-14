@@ -337,7 +337,7 @@ func TestHandleDashboard(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Contains(t, rec.Header().Get("Content-Type"), "text/html")
 	require.Contains(t, rec.Body.String(), "Agency Dashboard")
-	require.Contains(t, rec.Body.String(), "tabler") // Tabler CSS reference (lowercase in URL)
+	require.Contains(t, rec.Body.String(), "alpinejs") // Alpine.js reference
 }
 
 func TestNewHandlersTemplateLoading(t *testing.T) {
@@ -585,20 +585,18 @@ func TestHandleDashboardContainsSessionDetail(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	body := rec.Body.String()
 
-	// Verify session detail section exists
-	require.Contains(t, body, `id="sessionDetail"`, "Should have session detail div")
-	require.Contains(t, body, `id="sessionDetailId"`, "Should have session detail ID span")
-	require.Contains(t, body, `id="sessionDetailContent"`, "Should have session detail content div")
+	// Alpine.js dashboard uses x-data for state management
+	require.Contains(t, body, `x-data="dashboard()"`, "Should have Alpine.js dashboard component")
 
-	// Verify session row click functionality
-	require.Contains(t, body, "openSessionDetail", "Should have openSessionDetail function")
-	require.Contains(t, body, "closeSessionDetail", "Should have closeSessionDetail function")
-	require.Contains(t, body, "fetchTaskHistory", "Should have fetchTaskHistory function")
-	require.Contains(t, body, "renderSessionDetail", "Should have renderSessionDetail function")
+	// Verify session card structure (Alpine.js version uses session-card instead of session-row)
+	require.Contains(t, body, "session-card", "Should have session-card class")
+	require.Contains(t, body, "session-body", "Should have session-body for expansion")
+	require.Contains(t, body, "expandedSession", "Should track expanded session")
 
-	// Verify session rows are clickable
-	require.Contains(t, body, "session-row", "Should have session-row class")
-	require.Contains(t, body, "selectedSession", "Should track selected session")
+	// Verify session history functionality
+	require.Contains(t, body, "loadSessionHistory", "Should have loadSessionHistory function")
+	require.Contains(t, body, "sessionHistory", "Should track session history")
+	require.Contains(t, body, "toggleSession", "Should have toggleSession function")
 }
 
 func TestHandleDashboardSessionDetailCSS(t *testing.T) {
@@ -614,11 +612,12 @@ func TestHandleDashboardSessionDetailCSS(t *testing.T) {
 
 	body := rec.Body.String()
 
-	// Verify CSS classes for session detail
-	require.Contains(t, body, ".session-row", "Should have session-row CSS")
-	require.Contains(t, body, ".task-item", "Should have task-item CSS")
-	require.Contains(t, body, ".task-output", "Should have task-output CSS")
-	require.Contains(t, body, ".task-prompt", "Should have task-prompt CSS")
+	// Verify CSS classes for Alpine.js session structure
+	require.Contains(t, body, ".session-card", "Should have session-card CSS")
+	require.Contains(t, body, ".session-header", "Should have session-header CSS")
+	require.Contains(t, body, ".session-body", "Should have session-body CSS")
+	require.Contains(t, body, ".io-block", "Should have io-block CSS for I/O display")
+	require.Contains(t, body, ".io-content", "Should have io-content CSS for output")
 }
 
 func TestHandleDashboardContainsReconciliation(t *testing.T) {
@@ -635,15 +634,16 @@ func TestHandleDashboardContainsReconciliation(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	body := rec.Body.String()
 
-	// Verify reconciliation function exists
-	require.Contains(t, body, "reconcileWorkingSessions", "Should have reconcileWorkingSessions function")
+	// Alpine.js dashboard polls active tasks for live updates
+	require.Contains(t, body, "pollActiveTasks", "Should have pollActiveTasks function")
+	require.Contains(t, body, "pollTaskStatus", "Should have pollTaskStatus function")
 
-	// Verify it's called on page load
-	require.Contains(t, body, "refresh().then", "Should chain reconciliation after refresh")
+	// Verify it's called on page load and refresh
+	require.Contains(t, body, "refresh()", "Should have refresh function")
+	require.Contains(t, body, "startPolling", "Should have startPolling for auto-refresh")
 
-	// Verify unknown state is handled
-	require.Contains(t, body, "'unknown': '?'", "Should handle unknown state icon")
-	require.Contains(t, body, "'unknown': 'bg-secondary'", "Should handle unknown state color")
+	// Verify unknown state is handled in session status classes
+	require.Contains(t, body, "session-status--unknown", "Should handle unknown state")
 
 	// Verify poll error handling includes history fallback
 	require.Contains(t, body, "/api/history/", "Should fall back to history on poll error")

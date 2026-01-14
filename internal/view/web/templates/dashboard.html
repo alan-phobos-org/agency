@@ -1,1122 +1,2307 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Agency Dashboard</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta17/dist/css/tabler.min.css">
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <style>
-    .status-badge { font-size: 0.75rem; }
-    #submitResult { display: none; }
-    #submitResult.show { display: block; }
-    .table-component { margin-bottom: 0; }
-    .table-component td, .table-component th { vertical-align: middle; padding: 0.5rem; }
-    .table-component .task-col { max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .table-component .session-id { font-family: monospace; font-size: 0.85rem; }
-    .table-component .btn-sm { padding: 0.2rem 0.5rem; font-size: 0.75rem; }
-    .empty-message { color: var(--tblr-muted); font-style: italic; padding: 1rem; }
-    .session-row { cursor: pointer; }
-    .session-row:hover { background-color: var(--tblr-bg-surface-secondary); }
-    .session-row.selected { background-color: var(--tblr-primary-lt); }
-    .task-item { padding: 0.75rem 1rem; border-bottom: 1px solid var(--tblr-border-color); }
-    .task-item:last-child { border-bottom: none; }
-    .task-output { max-height: 300px; overflow: auto; font-size: 0.85rem; background: var(--tblr-bg-surface); border: 1px solid var(--tblr-border-color); padding: 0.75rem; border-radius: 4px; margin-top: 0.5rem; }
-    .task-output pre { background: var(--tblr-bg-surface-dark); padding: 0.5rem; border-radius: 4px; overflow-x: auto; }
-    .task-output code { font-size: 0.8rem; }
-    .task-output p { margin-bottom: 0.5rem; }
-    .task-output p:last-child { margin-bottom: 0; }
-    .task-output ul, .task-output ol { margin-bottom: 0.5rem; padding-left: 1.5rem; }
-    .task-prompt { font-size: 0.85rem; color: var(--tblr-muted); margin-top: 0.25rem; }
-    .task-prompt-content { background: var(--tblr-bg-surface); border: 1px solid var(--tblr-border-color); padding: 0.5rem; border-radius: 4px; margin-top: 0.25rem; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Agency Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        /* ========================================
+           Agency Dashboard - Alpine.js SPA
+           Danish Minimalism Dark Mode
+           ======================================== */
+
+        :root {
+            /* Dark mode palette */
+            --bg-base: #0f1117;
+            --bg-surface: #161b22;
+            --bg-elevated: #1c2128;
+            --bg-hover: #262c36;
+            --bg-active: #2d333b;
+
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --text-tertiary: #6e7681;
+
+            --border-default: #30363d;
+            --border-muted: #21262d;
+
+            /* Status colors */
+            --status-success: #3fb950;
+            --status-running: #58a6ff;
+            --status-error: #f85149;
+            --status-pending: #d29922;
+            --status-cancelled: #f0883e;
+
+            --accent: #58a6ff;
+            --accent-muted: rgba(88, 166, 255, 0.15);
+
+            /* Compact spacing */
+            --space-1: 4px;
+            --space-2: 6px;
+            --space-3: 10px;
+            --space-4: 12px;
+            --space-5: 16px;
+            --space-6: 20px;
+
+            /* Typography */
+            --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+
+            /* Border radius */
+            --radius-sm: 4px;
+            --radius-md: 6px;
+
+            /* Safe areas */
+            --safe-top: env(safe-area-inset-top);
+            --safe-bottom: env(safe-area-inset-bottom);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            background: var(--bg-base);
+            color: var(--text-primary);
+            line-height: 1.4;
+            min-height: 100vh;
+            min-height: 100dvh;
+            font-size: 14px;
+        }
+
+        /* Hide content until Alpine is ready */
+        [x-cloak] { display: none !important; }
+
+        /* Compact top bar */
+        .topbar {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: var(--bg-surface);
+            border-bottom: 1px solid var(--border-default);
+            padding: 0 var(--space-3);
+            padding-top: var(--safe-top);
+        }
+
+        .topbar-content {
+            display: flex;
+            align-items: center;
+            height: 40px;
+            gap: var(--space-3);
+        }
+
+        .logo {
+            font-weight: 600;
+            font-size: 0.9375rem;
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+        }
+
+        .logo-icon {
+            width: 22px;
+            height: 22px;
+            background: var(--accent);
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8125rem;
+            color: white;
+        }
+
+        .topbar-actions {
+            margin-left: auto;
+            display: flex;
+            gap: var(--space-2);
+            align-items: center;
+        }
+
+        .topbar-status {
+            display: none;
+            align-items: center;
+            gap: var(--space-2);
+            font-size: 0.6875rem;
+            color: var(--text-tertiary);
+        }
+
+        @media (min-width: 600px) {
+            .topbar-status {
+                display: flex;
+            }
+        }
+
+        .topbar-status-dot {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: var(--status-success);
+        }
+
+        .topbar-status-dot--paused {
+            background: var(--text-tertiary);
+        }
+
+        .topbar-status-dot--polling {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Compact buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: var(--space-2);
+            padding: var(--space-2) var(--space-3);
+            font-size: 0.8125rem;
+            font-weight: 500;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-default);
+            background: var(--bg-elevated);
+            color: var(--text-primary);
+            cursor: pointer;
+            min-height: 30px;
+            transition: all 0.15s ease;
+        }
+
+        .btn:hover {
+            background: var(--bg-hover);
+        }
+
+        .btn:focus {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            opacity: 0.9;
+        }
+
+        .btn-icon {
+            padding: var(--space-1);
+            min-width: 30px;
+        }
+
+        .btn-ghost {
+            background: transparent;
+            border-color: transparent;
+            color: var(--text-secondary);
+        }
+
+        .btn-ghost:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .btn-sm {
+            padding: var(--space-1) var(--space-2);
+            font-size: 0.75rem;
+            min-height: 24px;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Main content - full width, no sidebar */
+        .main {
+            min-height: calc(100vh - 40px);
+            padding-bottom: calc(var(--space-6) + var(--safe-bottom) + 48px);
+        }
+
+        @media (min-width: 768px) {
+            .main {
+                padding-bottom: var(--space-6);
+            }
+        }
+
+        .content {
+            padding: var(--space-3);
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: var(--space-6);
+            color: var(--text-tertiary);
+            font-size: 0.875rem;
+        }
+
+        /* Collapsible Fleet Section */
+        .fleet-section {
+            margin-bottom: var(--space-3);
+        }
+
+        .fleet-trigger {
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+            width: 100%;
+            padding: var(--space-2) var(--space-3);
+            background: var(--bg-surface);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-md);
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .fleet-trigger:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .fleet-trigger:focus {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+        }
+
+        .fleet-trigger-icon {
+            transition: transform 0.2s ease;
+        }
+
+        .fleet-section--open .fleet-trigger-icon {
+            transform: rotate(180deg);
+        }
+
+        .fleet-trigger-label {
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .fleet-trigger-summary {
+            margin-left: auto;
+            display: flex;
+            gap: var(--space-3);
+        }
+
+        .fleet-trigger-stat {
+            display: flex;
+            align-items: center;
+            gap: var(--space-1);
+        }
+
+        .fleet-trigger-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+        }
+
+        .fleet-trigger-dot--idle { background: var(--status-success); }
+        .fleet-trigger-dot--working { background: var(--status-running); animation: pulse 1.5s infinite; }
+
+        .fleet-content {
+            display: none;
+            padding: var(--space-3);
+            padding-top: var(--space-2);
+        }
+
+        .fleet-section--open .fleet-content {
+            display: block;
+        }
+
+        .fleet-category {
+            margin-bottom: var(--space-3);
+        }
+
+        .fleet-category:last-child {
+            margin-bottom: 0;
+        }
+
+        .fleet-category-label {
+            font-size: 0.6875rem;
+            color: var(--text-tertiary);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: var(--space-1);
+        }
+
+        .fleet-grid {
+            display: flex;
+            gap: var(--space-2);
+            flex-wrap: wrap;
+        }
+
+        .fleet-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-2);
+            padding: var(--space-1) var(--space-3);
+            background: var(--bg-surface);
+            border: 1px solid var(--border-default);
+            border-radius: 999px;
+            font-size: 0.75rem;
+        }
+
+        .fleet-chip-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+        }
+
+        .fleet-chip-dot--idle { background: var(--status-success); }
+        .fleet-chip-dot--working { background: var(--status-running); animation: pulse 1.5s infinite; }
+        .fleet-chip-dot--cancelling { background: var(--status-cancelled); }
+
+        .fleet-chip-name {
+            font-weight: 500;
+        }
+
+        .fleet-chip-status {
+            color: var(--text-tertiary);
+        }
+
+        /* Session list - full width */
+        .session-list {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-2);
+        }
+
+        .session-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-md);
+            overflow: hidden;
+            transition: border-color 0.15s ease;
+        }
+
+        .session-card--expanded {
+            border-color: var(--accent);
+        }
+
+        .session-header {
+            padding: var(--space-3);
+            display: flex;
+            align-items: center;
+            gap: var(--space-3);
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.15s ease;
+        }
+
+        .session-header:hover {
+            background: var(--bg-hover);
+        }
+
+        .session-header:focus {
+            outline: 2px solid var(--accent);
+            outline-offset: -2px;
+        }
+
+        .session-status {
+            width: 18px;
+            height: 18px;
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            font-size: 0.6875rem;
+        }
+
+        .session-status--completed {
+            background: rgba(63, 185, 80, 0.15);
+            color: var(--status-success);
+        }
+
+        .session-status--working {
+            background: rgba(88, 166, 255, 0.15);
+            color: var(--status-running);
+        }
+
+        .session-status--failed {
+            background: rgba(248, 81, 73, 0.15);
+            color: var(--status-error);
+        }
+
+        .session-status--cancelled {
+            background: rgba(240, 136, 62, 0.15);
+            color: var(--status-cancelled);
+        }
+
+        .session-status--queued,
+        .session-status--unknown {
+            background: rgba(139, 148, 158, 0.15);
+            color: var(--text-secondary);
+        }
+
+        .session-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .session-summary {
+            font-weight: 500;
+            font-size: 0.875rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .session-meta {
+            display: flex;
+            gap: var(--space-3);
+            font-size: 0.6875rem;
+            color: var(--text-tertiary);
+            margin-top: 1px;
+        }
+
+        .session-agent {
+            font-family: var(--font-mono);
+            color: var(--text-secondary);
+        }
+
+        .session-metrics {
+            display: none;
+            gap: var(--space-4);
+            flex-shrink: 0;
+        }
+
+        @media (min-width: 600px) {
+            .session-metrics {
+                display: flex;
+            }
+        }
+
+        .session-metric {
+            text-align: right;
+            min-width: 45px;
+        }
+
+        .session-metric-label {
+            font-size: 0.625rem;
+            color: var(--text-tertiary);
+        }
+
+        .session-metric-value {
+            font-size: 0.75rem;
+            font-family: var(--font-mono);
+        }
+
+        .session-expand {
+            color: var(--text-tertiary);
+            transition: transform 0.2s ease;
+            flex-shrink: 0;
+            font-size: 0.75rem;
+        }
+
+        .session-card--expanded .session-expand {
+            transform: rotate(180deg);
+        }
+
+        .session-body {
+            display: none;
+            border-top: 1px solid var(--border-muted);
+            background: var(--bg-base);
+        }
+
+        .session-card--expanded .session-body {
+            display: block;
+        }
+
+        /* Compact session tabs */
+        .session-tabs {
+            display: flex;
+            border-bottom: 1px solid var(--border-muted);
+            padding: 0 var(--space-3);
+        }
+
+        .session-tab {
+            padding: var(--space-2) var(--space-3);
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -1px;
+            transition: all 0.15s ease;
+            background: transparent;
+            border-top: none;
+            border-left: none;
+            border-right: none;
+        }
+
+        .session-tab:hover {
+            color: var(--text-primary);
+        }
+
+        .session-tab--active {
+            color: var(--text-primary);
+            border-bottom-color: var(--accent);
+        }
+
+        .session-tab:focus {
+            outline: 2px solid var(--accent);
+            outline-offset: -2px;
+        }
+
+        .session-content {
+            padding: var(--space-3);
+        }
+
+        .session-panel {
+            display: none;
+        }
+
+        .session-panel--active {
+            display: block;
+        }
+
+        /* Compact IO blocks */
+        .io-block {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-sm);
+            margin-bottom: var(--space-3);
+            overflow: hidden;
+        }
+
+        .io-block:last-child {
+            margin-bottom: 0;
+        }
+
+        .io-header {
+            padding: var(--space-1) var(--space-3);
+            background: var(--bg-elevated);
+            border-bottom: 1px solid var(--border-muted);
+            font-size: 0.6875rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .io-header-live {
+            display: flex;
+            align-items: center;
+            gap: var(--space-1);
+            color: var(--status-running);
+            animation: pulse 1s infinite;
+        }
+
+        .io-expand-btn {
+            background: none;
+            border: none;
+            color: var(--text-tertiary);
+            cursor: pointer;
+            font-size: 0.625rem;
+            padding: 2px 4px;
+        }
+
+        .io-expand-btn:hover {
+            color: var(--text-primary);
+        }
+
+        .io-content {
+            padding: var(--space-2) var(--space-3);
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            max-height: 160px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+            line-height: 1.5;
+        }
+
+        .io-content--expanded {
+            max-height: none;
+        }
+
+        .io-content--error {
+            color: var(--status-error);
+        }
+
+        /* Markdown rendering in output */
+        .io-content-md {
+            font-family: var(--font-sans);
+            font-size: 0.8125rem;
+        }
+
+        .io-content-md p {
+            margin-bottom: 0.5em;
+        }
+
+        .io-content-md p:last-child {
+            margin-bottom: 0;
+        }
+
+        .io-content-md pre {
+            background: var(--bg-base);
+            padding: var(--space-2);
+            border-radius: var(--radius-sm);
+            overflow-x: auto;
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            margin: 0.5em 0;
+        }
+
+        .io-content-md code {
+            font-family: var(--font-mono);
+            font-size: 0.85em;
+            background: var(--bg-base);
+            padding: 0.1em 0.3em;
+            border-radius: 3px;
+        }
+
+        .io-content-md pre code {
+            background: none;
+            padding: 0;
+        }
+
+        .io-content-md ul, .io-content-md ol {
+            margin: 0.5em 0;
+            padding-left: 1.5em;
+        }
+
+        .io-content-md strong {
+            font-weight: 600;
+        }
+
+        /* Compact metrics grid */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: var(--space-2);
+        }
+
+        @media (max-width: 500px) {
+            .metrics-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        .metric-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-sm);
+            padding: var(--space-2);
+            text-align: center;
+        }
+
+        .metric-label {
+            font-size: 0.625rem;
+            color: var(--text-tertiary);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .metric-value {
+            font-size: 0.875rem;
+            font-weight: 600;
+            font-family: var(--font-mono);
+        }
+
+        /* Session details */
+        .session-details {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--space-3);
+            margin-bottom: var(--space-3);
+            padding: var(--space-2);
+            background: var(--bg-surface);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-sm);
+            font-size: 0.75rem;
+        }
+
+        .session-detail-item {
+            display: flex;
+            gap: var(--space-1);
+        }
+
+        .session-detail-label {
+            color: var(--text-tertiary);
+        }
+
+        .session-detail-value {
+            color: var(--text-secondary);
+            font-family: var(--font-mono);
+        }
+
+        /* Compact bottom navigation */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--bg-surface);
+            border-top: 1px solid var(--border-default);
+            padding: var(--space-1);
+            padding-bottom: calc(var(--space-1) + var(--safe-bottom));
+            display: flex;
+            justify-content: space-around;
+            z-index: 100;
+        }
+
+        @media (min-width: 768px) {
+            .bottom-nav {
+                display: none;
+            }
+        }
+
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1px;
+            padding: var(--space-1) var(--space-2);
+            color: var(--text-tertiary);
+            text-decoration: none;
+            font-size: 0.5625rem;
+            min-width: 56px;
+            border-radius: var(--radius-sm);
+            transition: all 0.15s ease;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+        }
+
+        .nav-item:hover,
+        .nav-item--active {
+            color: var(--accent);
+            background: var(--accent-muted);
+        }
+
+        .nav-item:focus {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+        }
+
+        .nav-icon {
+            font-size: 1.125rem;
+        }
+
+        /* Modal */
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 200;
+            display: none;
+            align-items: flex-end;
+        }
+
+        @media (min-width: 768px) {
+            .modal-backdrop {
+                align-items: center;
+                justify-content: center;
+            }
+        }
+
+        .modal-backdrop--open {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--bg-surface);
+            border-radius: var(--radius-md) var(--radius-md) 0 0;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        @media (min-width: 768px) {
+            .modal {
+                border-radius: var(--radius-md);
+                max-width: 480px;
+            }
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: var(--space-3);
+            border-bottom: 1px solid var(--border-muted);
+            position: sticky;
+            top: 0;
+            background: var(--bg-surface);
+        }
+
+        .modal-title {
+            font-size: 0.9375rem;
+            font-weight: 600;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-tertiary);
+            font-size: 1.125rem;
+            cursor: pointer;
+            padding: var(--space-1);
+            min-width: 36px;
+            min-height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: var(--radius-sm);
+            transition: all 0.15s ease;
+        }
+
+        .modal-close:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .modal-close:focus {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+        }
+
+        .modal-body {
+            padding: var(--space-3);
+            padding-bottom: calc(var(--space-3) + var(--safe-bottom));
+        }
+
+        /* Compact form */
+        .form-group {
+            margin-bottom: var(--space-3);
+        }
+
+        .form-label {
+            display: block;
+            font-size: 0.75rem;
+            font-weight: 500;
+            margin-bottom: var(--space-1);
+        }
+
+        .form-select,
+        .form-input,
+        .form-textarea {
+            width: 100%;
+            padding: var(--space-2);
+            background: var(--bg-base);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-family: var(--font-sans);
+            font-size: 0.875rem;
+            min-height: 36px;
+            transition: border-color 0.15s ease;
+        }
+
+        .form-select:focus,
+        .form-input:focus,
+        .form-textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .form-textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .form-error {
+            color: var(--status-error);
+            font-size: 0.75rem;
+            margin-top: var(--space-1);
+        }
+
+        /* Collapsible options */
+        .form-options {
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-sm);
+            overflow: hidden;
+        }
+
+        .form-options-trigger {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            padding: var(--space-2);
+            background: var(--bg-elevated);
+            border: none;
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .form-options-trigger:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .form-options-content {
+            display: none;
+            padding: var(--space-2);
+            border-top: 1px solid var(--border-muted);
+            background: var(--bg-base);
+        }
+
+        .form-options--open .form-options-content {
+            display: block;
+        }
+
+        .form-options-icon {
+            transition: transform 0.2s ease;
+            font-size: 0.75rem;
+        }
+
+        .form-options--open .form-options-icon {
+            transform: rotate(180deg);
+        }
+
+        .form-row {
+            display: flex;
+            gap: var(--space-3);
+        }
+
+        .form-row .form-group {
+            flex: 1;
+            margin-bottom: 0;
+        }
+
+        /* Loading indicator */
+        .loading-spinner {
+            width: 10px;
+            height: 10px;
+            border: 1.5px solid var(--border-default);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .btn-refresh svg {
+            transition: transform 0.3s ease;
+        }
+
+        .btn-refresh--loading svg {
+            animation: spin 1s linear infinite;
+        }
+
+        /* Keyboard shortcuts indicator (desktop only) */
+        .kbd {
+            display: none;
+            padding: 2px 6px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-default);
+            border-radius: 3px;
+            font-family: var(--font-mono);
+            font-size: 0.625rem;
+            color: var(--text-tertiary);
+        }
+
+        @media (min-width: 768px) {
+            .kbd {
+                display: inline-block;
+            }
+        }
+
+        /* Visually hidden for screen readers */
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        /* Skip link for accessibility */
+        .skip-link {
+            position: absolute;
+            top: -40px;
+            left: 0;
+            background: var(--accent);
+            color: white;
+            padding: var(--space-2) var(--space-3);
+            z-index: 1000;
+            transition: top 0.3s;
+        }
+
+        .skip-link:focus {
+            top: 0;
+        }
+
+        /* Reduced motion */
+        @media (prefers-reduced-motion: reduce) {
+            *,
+            *::before,
+            *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+
+        /* Settings modal specific */
+        .device-list {
+            margin-top: var(--space-3);
+        }
+
+        .device-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: var(--space-2);
+            background: var(--bg-base);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-sm);
+            margin-bottom: var(--space-2);
+        }
+
+        .device-info {
+            font-size: 0.75rem;
+        }
+
+        .device-name {
+            font-weight: 500;
+            margin-bottom: 2px;
+        }
+
+        .device-meta {
+            color: var(--text-tertiary);
+            font-size: 0.6875rem;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 6px;
+            font-size: 0.625rem;
+            font-weight: 500;
+            border-radius: 3px;
+            margin-left: var(--space-2);
+        }
+
+        .badge-current {
+            background: var(--accent-muted);
+            color: var(--accent);
+        }
+
+        .pairing-code {
+            text-align: center;
+            padding: var(--space-4);
+            background: var(--bg-base);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-sm);
+            margin-top: var(--space-3);
+        }
+
+        .pairing-code-value {
+            font-family: var(--font-mono);
+            font-size: 2rem;
+            font-weight: 600;
+            letter-spacing: 0.2em;
+            color: var(--accent);
+        }
+
+        .pairing-code-expiry {
+            font-size: 0.75rem;
+            color: var(--text-tertiary);
+            margin-top: var(--space-2);
+        }
+    </style>
 </head>
-<body class="theme-light">
-  <div class="page">
-    <header class="navbar navbar-expand-md navbar-light d-print-none">
-      <div class="container-xl">
-        <div class="navbar-nav flex-row order-md-last align-items-center">
-          <span class="badge bg-green-lt me-3">Connected</span>
-          <button class="btn btn-sm btn-ghost-secondary me-2" onclick="showDevicesModal()">Devices</button>
-          <form action="/logout" method="POST" class="d-inline">
-            <button type="submit" class="btn btn-sm btn-ghost-danger">Logout</button>
-          </form>
+<body x-data="dashboard()" x-init="init()" @keydown.window="handleKeydown($event)">
+    <!-- Skip link for accessibility -->
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <!-- Compact top bar -->
+    <header class="topbar">
+        <div class="topbar-content">
+            <div class="logo">
+                <div class="logo-icon" aria-hidden="true">A</div>
+                <span>Agency</span>
+            </div>
+            <div class="topbar-actions">
+                <div class="topbar-status" :title="isPolling ? 'Live updates active' : 'Updates paused'">
+                    <span class="topbar-status-dot" :class="{ 'topbar-status-dot--polling': isPolling, 'topbar-status-dot--paused': !isPolling }"></span>
+                    <span x-text="isPolling ? `Polling ${pollInterval / 1000}s` : 'Paused'"></span>
+                </div>
+                <button class="btn btn-ghost btn-icon btn-refresh" :class="{ 'btn-refresh--loading': isRefreshing }" @click="refresh()" title="Refresh (R)" :disabled="isRefreshing">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                        <path d="M3 3v5h5"></path>
+                    </svg>
+                    <span class="sr-only">Refresh</span>
+                </button>
+                <button class="btn btn-primary" @click="openTaskModal()" title="New Task (N)">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <path d="M12 5v14M5 12h14"></path>
+                    </svg>
+                    <span>New Task</span>
+                </button>
+            </div>
         </div>
-      </div>
     </header>
 
-    <div class="page-wrapper">
-      <div class="page-body">
-        <div class="container-xl">
-          <!-- Task Submission -->
-          <div class="card mb-3">
-            <div class="card-header">
-              <h3 class="card-title">Submit Task</h3>
-            </div>
-            <div class="card-body">
-              <form id="taskForm">
-                <div class="row">
-                  <div class="col-md-4 mb-3">
-                    <label class="form-label">Context</label>
-                    <select class="form-select" id="contextSelect">
-                      <option value="manual">Manual</option>
-                    </select>
-                  </div>
-                  <div class="col-md-4 mb-3">
-                    <label class="form-label">Agent</label>
-                    <select class="form-select" id="agentSelect" required>
-                      <option value="">Select an idle agent...</option>
-                    </select>
-                  </div>
-                  <div class="col-md-4 mb-3">
-                    <label class="form-label">Session</label>
-                    <select class="form-select" id="sessionSelect">
-                      <option value="">New session</option>
-                    </select>
-                  </div>
-                </div>
-                <div id="manualOptions">
-                  <div class="row">
-                    <div class="col-md-2 mb-3">
-                      <label class="form-label">Timeout (s)</label>
-                      <input type="number" class="form-control" id="timeout" value="1800" min="1">
+    <!-- Main content - full width -->
+    <main class="main" id="main-content">
+        <div class="content">
+            <!-- Collapsible Fleet Section - collapsed by default -->
+            <div class="fleet-section" :class="{ 'fleet-section--open': fleetOpen }">
+                <button class="fleet-trigger" @click="fleetOpen = !fleetOpen" :aria-expanded="fleetOpen" aria-controls="fleet-content">
+                    <span class="fleet-trigger-icon" aria-hidden="true">&#9662;</span>
+                    <span class="fleet-trigger-label">Fleet</span>
+                    <div class="fleet-trigger-summary">
+                        <span class="fleet-trigger-stat" x-show="agentStats.idle > 0">
+                            <span class="fleet-trigger-dot fleet-trigger-dot--idle"></span>
+                            <span x-text="agentStats.idle"></span> idle
+                        </span>
+                        <span class="fleet-trigger-stat" x-show="agentStats.working > 0">
+                            <span class="fleet-trigger-dot fleet-trigger-dot--working"></span>
+                            <span x-text="agentStats.working"></span> working
+                        </span>
+                        <span class="fleet-trigger-stat" x-show="agents.length === 0">
+                            <span style="color: var(--text-tertiary);">No agents</span>
+                        </span>
                     </div>
-                    <div class="col-md-2 mb-3">
-                      <label class="form-label">Model</label>
-                      <select class="form-select" id="model">
-                        <option value="opus" selected>Opus</option>
-                        <option value="sonnet">Sonnet</option>
-                        <option value="haiku">Haiku</option>
-                      </select>
-                    </div>
-                    <div class="col-md-8 mb-3 d-flex align-items-end">
-                      <label class="form-check form-switch mb-0">
-                        <input class="form-check-input" type="checkbox" id="thinking" checked>
-                        <span class="form-check-label">Extended thinking</span>
-                      </label>
-                    </div>
-                  </div>
-                </div>
-                <div id="contextInfo" class="mb-3 alert alert-info" style="display: none;">
-                  <strong id="contextName"></strong>: <span id="contextDescription"></span>
-                  <div class="small text-muted mt-1" id="contextSettings"></div>
-                </div>
-                <div class="mb-3">
-                  <label class="form-label">Prompt</label>
-                  <textarea class="form-control" id="prompt" rows="4" required placeholder="Describe the task..."></textarea>
-                </div>
-                <button type="submit" class="btn btn-primary" id="submitBtn">
-                  <span class="spinner-border spinner-border-sm d-none" id="submitSpinner"></span>
-                  Submit Task
                 </button>
-              </form>
-              <div id="submitResult" class="mt-3 alert"></div>
+                <div class="fleet-content" id="fleet-content" x-show="fleetOpen" x-cloak>
+                    <div class="fleet-category" x-show="agents.length > 0">
+                        <div class="fleet-category-label">Agents</div>
+                        <div class="fleet-grid">
+                            <template x-for="agent in agents" :key="agent.url">
+                                <div class="fleet-chip">
+                                    <span class="fleet-chip-dot" :class="'fleet-chip-dot--' + agent.state"></span>
+                                    <span class="fleet-chip-name" x-text="getComponentName(agent.url)"></span>
+                                    <span class="fleet-chip-status" x-text="agent.state"></span>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                    <div class="fleet-category" x-show="directors.length > 0">
+                        <div class="fleet-category-label">Directors</div>
+                        <div class="fleet-grid">
+                            <template x-for="dir in directors" :key="dir.url">
+                                <div class="fleet-chip">
+                                    <span class="fleet-chip-dot fleet-chip-dot--idle"></span>
+                                    <span class="fleet-chip-name" x-text="getComponentName(dir.url)"></span>
+                                    <span class="fleet-chip-status">director</span>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                    <div class="fleet-category" x-show="helpers.length > 0">
+                        <div class="fleet-category-label">Helpers</div>
+                        <div class="fleet-grid">
+                            <template x-for="helper in helpers" :key="helper.url">
+                                <div class="fleet-chip">
+                                    <span class="fleet-chip-dot fleet-chip-dot--idle"></span>
+                                    <span class="fleet-chip-name" x-text="getComponentName(helper.url)"></span>
+                                    <span class="fleet-chip-status" x-text="helper.jobs ? helper.jobs.length + ' jobs' : 'helper'"></span>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                    <div x-show="agents.length === 0 && directors.length === 0 && helpers.length === 0" class="empty-state">
+                        No components discovered
+                    </div>
+                </div>
             </div>
-          </div>
 
-          <!-- Session Detail (shown when a session is selected) -->
-          <div class="card mb-3" id="sessionDetail" style="display: none;">
-            <div class="card-header">
-              <h3 class="card-title">Session <span id="sessionDetailId" class="text-muted"></span></h3>
-              <div class="card-actions">
-                <button class="btn btn-sm btn-ghost-secondary" onclick="closeSessionDetail()">✕</button>
-              </div>
+            <!-- Sessions - full width -->
+            <div class="session-list" role="list" aria-label="Sessions">
+                <template x-for="session in sessions" :key="session.id">
+                    <div class="session-card" :class="{ 'session-card--expanded': expandedSession === session.id }" role="listitem">
+                        <div class="session-header"
+                             @click="toggleSession(session.id)"
+                             @keydown.enter="toggleSession(session.id)"
+                             @keydown.space.prevent="toggleSession(session.id)"
+                             tabindex="0"
+                             :aria-expanded="expandedSession === session.id"
+                             :aria-controls="'session-body-' + session.id">
+                            <div class="session-status" :class="'session-status--' + getSessionState(session)">
+                                <template x-if="getSessionState(session) === 'completed'">
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true">
+                                        <path d="M20 6L9 17l-5-5"></path>
+                                    </svg>
+                                </template>
+                                <template x-if="getSessionState(session) === 'working'">
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                        <circle cx="12" cy="12" r="6"></circle>
+                                    </svg>
+                                </template>
+                                <template x-if="getSessionState(session) === 'failed'">
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true">
+                                        <path d="M18 6L6 18M6 6l12 12"></path>
+                                    </svg>
+                                </template>
+                                <template x-if="getSessionState(session) === 'cancelled'">
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <path d="M4 4l16 16"></path>
+                                    </svg>
+                                </template>
+                                <template x-if="!['completed', 'working', 'failed', 'cancelled'].includes(getSessionState(session))">
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                        <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"></circle>
+                                    </svg>
+                                </template>
+                            </div>
+                            <div class="session-info">
+                                <div class="session-summary" x-text="getSessionSummary(session)"></div>
+                                <div class="session-meta">
+                                    <span class="session-agent" x-text="getComponentName(session.agent_url)"></span>
+                                    <span x-text="formatRelativeTime(session.created_at)"></span>
+                                    <span x-text="session.source || 'web'"></span>
+                                </div>
+                            </div>
+                            <div class="session-metrics">
+                                <!-- TODO: Tokens will come from observability improvements -->
+                                <div class="session-metric" x-show="getSessionMetrics(session).tokens">
+                                    <div class="session-metric-label">Tokens</div>
+                                    <div class="session-metric-value" x-text="formatNumber(getSessionMetrics(session).tokens)"></div>
+                                </div>
+                                <div class="session-metric" x-show="getSessionMetrics(session).duration">
+                                    <div class="session-metric-label">Duration</div>
+                                    <div class="session-metric-value" x-text="formatDuration(getSessionMetrics(session).duration)"></div>
+                                </div>
+                            </div>
+                            <span class="session-expand" aria-hidden="true">&#9662;</span>
+                        </div>
+                        <div class="session-body" :id="'session-body-' + session.id" x-show="expandedSession === session.id" x-cloak>
+                            <div class="session-tabs" role="tablist">
+                                <button class="session-tab"
+                                        :class="{ 'session-tab--active': sessionTab === 'io' }"
+                                        @click="sessionTab = 'io'"
+                                        role="tab"
+                                        :aria-selected="sessionTab === 'io'"
+                                        :id="'tab-io-' + session.id"
+                                        :aria-controls="'panel-io-' + session.id">I/O</button>
+                                <button class="session-tab"
+                                        :class="{ 'session-tab--active': sessionTab === 'details' }"
+                                        @click="sessionTab = 'details'"
+                                        role="tab"
+                                        :aria-selected="sessionTab === 'details'"
+                                        :id="'tab-details-' + session.id"
+                                        :aria-controls="'panel-details-' + session.id">Details</button>
+                                <button class="session-tab"
+                                        :class="{ 'session-tab--active': sessionTab === 'metrics' }"
+                                        @click="sessionTab = 'metrics'"
+                                        role="tab"
+                                        :aria-selected="sessionTab === 'metrics'"
+                                        :id="'tab-metrics-' + session.id"
+                                        :aria-controls="'panel-metrics-' + session.id">Metrics</button>
+                            </div>
+                            <div class="session-content">
+                                <!-- I/O Panel -->
+                                <div class="session-panel"
+                                     :class="{ 'session-panel--active': sessionTab === 'io' }"
+                                     role="tabpanel"
+                                     :id="'panel-io-' + session.id"
+                                     :aria-labelledby="'tab-io-' + session.id">
+                                    <template x-if="sessionHistory[session.id]?.loading">
+                                        <div class="empty-state">
+                                            <div class="loading-spinner" style="margin: 0 auto;"></div>
+                                            <div style="margin-top: var(--space-2);">Loading history...</div>
+                                        </div>
+                                    </template>
+                                    <template x-if="sessionHistory[session.id]?.error">
+                                        <div class="empty-state" style="color: var(--status-error);">
+                                            Error loading history: <span x-text="sessionHistory[session.id].error"></span>
+                                        </div>
+                                    </template>
+                                    <template x-if="!sessionHistory[session.id]?.loading && !sessionHistory[session.id]?.error">
+                                        <div>
+                                            <template x-for="(task, idx) in (session.tasks || [])" :key="task.task_id">
+                                                <div style="margin-bottom: var(--space-3);">
+                                                    <div class="io-block">
+                                                        <div class="io-header">
+                                                            <span>Prompt</span>
+                                                        </div>
+                                                        <div class="io-content" x-text="task.prompt || getTaskHistoryData(session.id, task.task_id)?.prompt || 'No prompt'"></div>
+                                                    </div>
+                                                    <div class="io-block" x-show="getTaskOutput(session.id, task)">
+                                                        <div class="io-header">
+                                                            <span>
+                                                                Output
+                                                                <template x-if="task.state === 'working' && activeTaskPolling[task.task_id]">
+                                                                    <span class="io-header-live">(streaming...)</span>
+                                                                </template>
+                                                            </span>
+                                                            <button class="io-expand-btn"
+                                                                    @click="toggleOutputExpand(session.id + '-' + task.task_id)"
+                                                                    x-text="expandedOutputs[session.id + '-' + task.task_id] ? 'Collapse' : 'Expand'"></button>
+                                                        </div>
+                                                        <div class="io-content io-content-md"
+                                                             :class="{ 'io-content--expanded': expandedOutputs[session.id + '-' + task.task_id] }"
+                                                             x-html="renderMarkdown(getTaskOutput(session.id, task))"></div>
+                                                    </div>
+                                                    <div class="io-block" x-show="getTaskError(session.id, task)">
+                                                        <div class="io-header">
+                                                            <span>Error</span>
+                                                        </div>
+                                                        <div class="io-content io-content--error" x-text="getTaskError(session.id, task)"></div>
+                                                    </div>
+                                                </div>
+                                            </template>
+                                            <div x-show="!session.tasks || session.tasks.length === 0" class="empty-state">
+                                                No tasks in this session
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                                <!-- Details Panel -->
+                                <div class="session-panel"
+                                     :class="{ 'session-panel--active': sessionTab === 'details' }"
+                                     role="tabpanel"
+                                     :id="'panel-details-' + session.id"
+                                     :aria-labelledby="'tab-details-' + session.id">
+                                    <div class="session-details">
+                                        <div class="session-detail-item">
+                                            <span class="session-detail-label">Session:</span>
+                                            <span class="session-detail-value" x-text="session.id.slice(0, 12) + '...'"></span>
+                                        </div>
+                                        <div class="session-detail-item">
+                                            <span class="session-detail-label">Agent:</span>
+                                            <span class="session-detail-value" x-text="session.agent_url"></span>
+                                        </div>
+                                        <div class="session-detail-item">
+                                            <span class="session-detail-label">Source:</span>
+                                            <span class="session-detail-value" x-text="session.source || 'web'"></span>
+                                        </div>
+                                        <div class="session-detail-item">
+                                            <span class="session-detail-label">Started:</span>
+                                            <span class="session-detail-value" x-text="formatTime(session.created_at)"></span>
+                                        </div>
+                                        <div class="session-detail-item">
+                                            <span class="session-detail-label">Tasks:</span>
+                                            <span class="session-detail-value" x-text="(session.tasks || []).length"></span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- Metrics Panel -->
+                                <div class="session-panel"
+                                     :class="{ 'session-panel--active': sessionTab === 'metrics' }"
+                                     role="tabpanel"
+                                     :id="'panel-metrics-' + session.id"
+                                     :aria-labelledby="'tab-metrics-' + session.id">
+                                    <div class="metrics-grid">
+                                        <div class="metric-card">
+                                            <div class="metric-label">Tasks</div>
+                                            <div class="metric-value" x-text="(session.tasks || []).length"></div>
+                                        </div>
+                                        <!-- TODO: These metrics will be populated when observability improvements land -->
+                                        <div class="metric-card">
+                                            <div class="metric-label">Tokens</div>
+                                            <div class="metric-value" x-text="formatNumber(getSessionMetrics(session).tokens) || '—'"></div>
+                                        </div>
+                                        <div class="metric-card">
+                                            <div class="metric-label">Duration</div>
+                                            <div class="metric-value" x-text="formatDuration(getSessionMetrics(session).duration) || '—'"></div>
+                                        </div>
+                                        <div class="metric-card">
+                                            <div class="metric-label">Model</div>
+                                            <div class="metric-value" x-text="getSessionMetrics(session).model || '—'"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+                <div x-show="sessions.length === 0 && !isRefreshing" class="empty-state">
+                    No sessions yet. Submit a task to get started.
+                </div>
+                <div x-show="sessions.length === 0 && isRefreshing" class="empty-state">
+                    <div class="loading-spinner" style="margin: 0 auto;"></div>
+                    <div style="margin-top: var(--space-2);">Loading...</div>
+                </div>
             </div>
-            <div class="card-body p-0">
-              <div id="sessionDetailContent"></div>
-            </div>
-          </div>
-
-          <!-- Sessions Section -->
-          <div class="card mb-3">
-            <div class="card-header">
-              <h3 class="card-title">Sessions</h3>
-              <div class="card-actions">
-                <span class="badge bg-purple" id="sessionCount">0</span>
-              </div>
-            </div>
-            <div class="table-responsive">
-              <table class="table table-vcenter table-component" id="sessionTable">
-                <thead>
-                  <tr>
-                    <th style="width: 60px;">Status</th>
-                    <th style="width: 120px;">Session</th>
-                    <th>Agent</th>
-                    <th style="width: 60px;">Tasks</th>
-                    <th>Last Prompt</th>
-                    <th style="width: 80px;"></th>
-                  </tr>
-                </thead>
-                <tbody id="sessionTableBody">
-                  <tr><td colspan="6" class="empty-message">No active sessions</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Agents Section -->
-          <div class="card mb-3">
-            <div class="card-header">
-              <h3 class="card-title">Agents</h3>
-              <div class="card-actions">
-                <span class="badge bg-azure" id="agentCount">0</span>
-              </div>
-            </div>
-            <div class="table-responsive">
-              <table class="table table-vcenter table-component" id="agentTable">
-                <thead>
-                  <tr>
-                    <th style="width: 60px;">Status</th>
-                    <th>URL</th>
-                    <th style="width: 80px;">Version</th>
-                    <th style="width: 80px;">Uptime</th>
-                    <th>Current Task</th>
-                  </tr>
-                </thead>
-                <tbody id="agentTableBody">
-                  <tr><td colspan="5" class="empty-message">No agents discovered</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Directors Section -->
-          <div class="card mb-3">
-            <div class="card-header">
-              <h3 class="card-title">Directors</h3>
-              <div class="card-actions">
-                <span class="badge bg-purple" id="directorCount">0</span>
-              </div>
-            </div>
-            <div class="table-responsive">
-              <table class="table table-vcenter table-component" id="directorTable">
-                <thead>
-                  <tr>
-                    <th style="width: 60px;">Status</th>
-                    <th>URL</th>
-                    <th style="width: 80px;">Version</th>
-                    <th style="width: 80px;">Uptime</th>
-                  </tr>
-                </thead>
-                <tbody id="directorTableBody">
-                  <tr><td colspan="4" class="empty-message">No directors discovered</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Scheduler Section -->
-          <div class="card mb-3" id="schedulerSection" style="display: none;">
-            <div class="card-header">
-              <h3 class="card-title">Scheduler</h3>
-              <div class="card-actions">
-                <span class="badge bg-green" id="schedulerStatus">Running</span>
-              </div>
-            </div>
-            <div class="table-responsive">
-              <table class="table table-vcenter table-component" id="schedulerTable">
-                <thead>
-                  <tr>
-                    <th>Job</th>
-                    <th style="width: 120px;">Schedule</th>
-                    <th style="width: 160px;">Next Run</th>
-                    <th style="width: 160px;">Last Run</th>
-                  </tr>
-                </thead>
-                <tbody id="schedulerTableBody">
-                  <tr><td colspan="4" class="empty-message">No jobs configured</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
         </div>
-      </div>
+    </main>
+
+    <!-- Compact bottom nav -->
+    <nav class="bottom-nav" aria-label="Main navigation">
+        <button class="nav-item nav-item--active" aria-current="page">
+            <span class="nav-icon" aria-hidden="true">&#9776;</span>
+            <span>Sessions</span>
+        </button>
+        <button class="nav-item" @click="fleetOpen = !fleetOpen; if(fleetOpen) window.scrollTo({top: 0, behavior: 'smooth'})">
+            <span class="nav-icon" aria-hidden="true">&#9673;</span>
+            <span>Fleet</span>
+        </button>
+        <button class="nav-item" @click="openTaskModal()">
+            <span class="nav-icon" aria-hidden="true">&#43;</span>
+            <span>Task</span>
+        </button>
+        <button class="nav-item" @click="settingsOpen = true">
+            <span class="nav-icon" aria-hidden="true">&#9881;</span>
+            <span>Settings</span>
+        </button>
+    </nav>
+
+    <!-- Task modal -->
+    <div class="modal-backdrop" :class="{ 'modal-backdrop--open': taskModalOpen }" @click="closeTaskModal()" @keydown.escape.window="closeTaskModal()" x-cloak>
+        <div class="modal" @click.stop role="dialog" aria-labelledby="task-modal-title" aria-modal="true">
+            <div class="modal-header">
+                <h2 class="modal-title" id="task-modal-title">New Task</h2>
+                <button class="modal-close" @click="closeTaskModal()" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form @submit.prevent="submitTask()">
+                    <div class="form-group">
+                        <label class="form-label" for="agent-select">Agent</label>
+                        <select class="form-select" id="agent-select" x-model="taskForm.agentUrl" required>
+                            <option value="">Select an agent...</option>
+                            <template x-for="agent in idleAgents" :key="agent.url">
+                                <option :value="agent.url" x-text="getComponentName(agent.url) + ' (idle)'"></option>
+                            </template>
+                            <template x-for="agent in agents.filter(a => a.state !== 'idle')" :key="agent.url">
+                                <option :value="agent.url" x-text="getComponentName(agent.url) + ' (' + agent.state + ')'" disabled></option>
+                            </template>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="context-select">Context</label>
+                        <select class="form-select" id="context-select" x-model="taskForm.contextId" @change="onContextChange()">
+                            <template x-for="ctx in contexts" :key="ctx.id">
+                                <option :value="ctx.id" x-text="ctx.name"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="prompt-input">Prompt</label>
+                        <textarea class="form-textarea" id="prompt-input" x-model="taskForm.prompt" placeholder="Describe the task..." required x-ref="promptInput"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <div class="form-options" :class="{ 'form-options--open': taskOptionsOpen }">
+                            <button type="button" class="form-options-trigger" @click="taskOptionsOpen = !taskOptionsOpen">
+                                <span>Advanced Options</span>
+                                <span class="form-options-icon" aria-hidden="true">&#9662;</span>
+                            </button>
+                            <div class="form-options-content">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label class="form-label" for="model-select">Model</label>
+                                        <select class="form-select" id="model-select" x-model="taskForm.model" :disabled="taskForm.contextId !== 'manual'">
+                                            <option value="opus">opus</option>
+                                            <option value="sonnet">sonnet</option>
+                                            <option value="haiku">haiku</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label" for="timeout-input">Timeout (s)</label>
+                                        <input type="number" class="form-input" id="timeout-input" x-model.number="taskForm.timeout" min="60" max="7200" :disabled="taskForm.contextId !== 'manual'">
+                                    </div>
+                                </div>
+                                <div class="form-group" style="margin-top: var(--space-2);">
+                                    <label style="display: flex; align-items: center; gap: var(--space-2); cursor: pointer;">
+                                        <input type="checkbox" x-model="taskForm.thinking" :disabled="taskForm.contextId !== 'manual'">
+                                        <span class="form-label" style="margin: 0;">Extended Thinking</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-error" x-show="taskError" x-text="taskError"></div>
+                    <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: var(--space-2);" :disabled="taskSubmitting">
+                        <template x-if="taskSubmitting">
+                            <div class="loading-spinner"></div>
+                        </template>
+                        <svg x-show="!taskSubmitting" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                            <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"></path>
+                        </svg>
+                        <span x-text="taskSubmitting ? 'Submitting...' : 'Submit Task'"></span>
+                    </button>
+                </form>
+            </div>
+        </div>
     </div>
-  </div>
 
-  <!-- Devices Modal -->
-  <div class="modal modal-blur fade" id="devicesModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title">Device Management</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body">
-          <div class="mb-3">
-            <button class="btn btn-primary w-100" onclick="generatePairingCode()">
-              Generate Pairing Code
-            </button>
-          </div>
-          <div id="pairingCodeDisplay" class="alert alert-info" style="display: none;">
-            <div class="text-center">
-              <div class="text-muted small mb-1">Enter this code on your new device:</div>
-              <div class="display-6 font-monospace mb-1" id="pairingCode"></div>
-              <div class="text-muted small">Expires in <span id="pairingExpiry"></span></div>
+    <!-- Settings modal -->
+    <div class="modal-backdrop" :class="{ 'modal-backdrop--open': settingsOpen }" @click="settingsOpen = false" @keydown.escape.window="settingsOpen = false" x-cloak>
+        <div class="modal" @click.stop role="dialog" aria-labelledby="settings-modal-title" aria-modal="true">
+            <div class="modal-header">
+                <h2 class="modal-title" id="settings-modal-title">Settings</h2>
+                <button class="modal-close" @click="settingsOpen = false" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
             </div>
-          </div>
-          <hr>
-          <h6>Active Sessions</h6>
-          <div id="devicesList" class="list-group list-group-flush">
-            <div class="text-muted small">Loading...</div>
-          </div>
+            <div class="modal-body">
+                <h3 style="font-size: 0.875rem; font-weight: 600; margin-bottom: var(--space-2);">Device Management</h3>
+                <button class="btn" style="width: 100%;" @click="generatePairingCode()" :disabled="pairingCode.loading">
+                    <template x-if="pairingCode.loading">
+                        <div class="loading-spinner"></div>
+                    </template>
+                    <span x-text="pairingCode.loading ? 'Generating...' : 'Generate Pairing Code'"></span>
+                </button>
+                <div class="pairing-code" x-show="pairingCode.code" x-cloak>
+                    <div style="font-size: 0.75rem; color: var(--text-tertiary); margin-bottom: var(--space-2);">Enter this code on your new device:</div>
+                    <div class="pairing-code-value" x-text="pairingCode.code"></div>
+                    <div class="pairing-code-expiry">Expires in <span x-text="Math.floor(pairingCode.expiresIn / 60)"></span> minutes</div>
+                </div>
+
+                <h3 style="font-size: 0.875rem; font-weight: 600; margin-top: var(--space-4); margin-bottom: var(--space-2);">Active Sessions</h3>
+                <div class="device-list">
+                    <template x-if="devices.loading">
+                        <div class="empty-state">
+                            <div class="loading-spinner" style="margin: 0 auto;"></div>
+                        </div>
+                    </template>
+                    <template x-if="devices.error">
+                        <div class="empty-state" style="color: var(--status-error);" x-text="devices.error"></div>
+                    </template>
+                    <template x-if="!devices.loading && !devices.error">
+                        <div>
+                            <template x-for="device in devices.list" :key="device.id">
+                                <div class="device-item">
+                                    <div class="device-info">
+                                        <div class="device-name">
+                                            <span x-text="device.label || 'Unknown Device'"></span>
+                                            <span class="badge badge-current" x-show="device.is_current">Current</span>
+                                        </div>
+                                        <div class="device-meta">
+                                            <span x-text="device.ip_address"></span> &middot;
+                                            Last seen: <span x-text="formatTime(device.last_seen)"></span>
+                                        </div>
+                                    </div>
+                                    <button class="btn btn-sm btn-ghost"
+                                            x-show="!device.is_current"
+                                            @click="revokeDevice(device.id)"
+                                            style="color: var(--status-error);">
+                                        Revoke
+                                    </button>
+                                </div>
+                            </template>
+                            <div x-show="devices.list.length === 0" class="empty-state">
+                                No active sessions
+                            </div>
+                        </div>
+                    </template>
+                </div>
+
+                <div style="margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px solid var(--border-default);">
+                    <form action="/logout" method="POST" style="display: inline;">
+                        <button type="submit" class="btn" style="color: var(--status-error); border-color: var(--status-error);">
+                            Logout
+                        </button>
+                    </form>
+                </div>
+            </div>
         </div>
-      </div>
     </div>
-  </div>
-
-  <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta17/dist/js/tabler.min.js"></script>
-  <script>
-    // Tracked task for monitoring
-    let activeTask = null;
-
-    // Sessions storage - fetched from server for global access
-    let sessions = {};
-    let sessionOrder = []; // Maintain server's sort order (newest first)
-
-    // Contexts storage
-    let contexts = [];
-
-    // Selected session for detail view
-    let selectedSession = null;
-
-    // ETag for caching
-    let dashboardETag = null;
-
-    // Adaptive polling interval (ms)
-    const POLL_IDLE = 5000;    // 5s when idle
-    const POLL_ACTIVE = 1000;  // 1s when task running
-    let pollInterval = POLL_IDLE;
-    let refreshTimer = null;
-
-    // Save task to server session
-    async function saveSessionTask(sessionId, agentUrl, taskId, state, prompt) {
-      try {
-        await api('/api/sessions', {
-          method: 'POST',
-          body: JSON.stringify({
-            session_id: sessionId,
-            agent_url: agentUrl,
-            task_id: taskId,
-            state: state,
-            prompt: prompt
-          })
-        });
-      } catch (err) {
-        console.error('Failed to save session task:', err);
-      }
-    }
-
-    // Update task state on server
-    async function updateSessionTaskState(sessionId, taskId, state) {
-      try {
-        await api(`/api/sessions/${sessionId}/tasks/${taskId}`, {
-          method: 'PUT',
-          body: JSON.stringify({ state: state })
-        });
-      } catch (err) {
-        console.error('Failed to update session task state:', err);
-      }
-    }
-
-    // API helper (uses cookies for auth)
-    async function api(path, options = {}) {
-      const resp = await fetch(path, {
-        ...options,
-        credentials: 'same-origin',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(options.headers || {})
-        }
-      });
-
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ message: resp.statusText }));
-        throw new Error(err.message || `HTTP ${resp.status}`);
-      }
-      return resp.json();
-    }
-
-    // Device management functions
-    let devicesModal = null;
-
-    function showDevicesModal() {
-      if (!devicesModal) {
-        devicesModal = new bootstrap.Modal(document.getElementById('devicesModal'));
-      }
-      loadDevices();
-      devicesModal.show();
-    }
-
-    async function loadDevices() {
-      const devicesList = document.getElementById('devicesList');
-      try {
-        const devices = await api('/api/devices');
-        if (devices.length === 0) {
-          devicesList.innerHTML = '<div class="text-muted small">No active sessions</div>';
-          return;
-        }
-        devicesList.innerHTML = devices.map(d => `
-          <div class="list-group-item d-flex justify-content-between align-items-center">
-            <div>
-              <div class="fw-bold">${escapeHtml(d.label || 'Unknown Device')}${d.is_current ? ' <span class="badge bg-blue-lt">Current</span>' : ''}</div>
-              <div class="text-muted small">
-                ${d.ip_address} &middot; Last seen: ${new Date(d.last_seen).toLocaleString()}
-              </div>
-            </div>
-            ${!d.is_current ? `<button class="btn btn-sm btn-ghost-danger" onclick="revokeDevice('${d.id}')">Revoke</button>` : ''}
-          </div>
-        `).join('');
-      } catch (err) {
-        devicesList.innerHTML = `<div class="text-danger small">Error: ${escapeHtml(err.message)}</div>`;
-      }
-    }
-
-    async function generatePairingCode() {
-      const display = document.getElementById('pairingCodeDisplay');
-      const codeEl = document.getElementById('pairingCode');
-      const expiryEl = document.getElementById('pairingExpiry');
-
-      try {
-        const resp = await api('/api/pair/code', { method: 'POST' });
-        codeEl.textContent = resp.code;
-        expiryEl.textContent = `${Math.floor(resp.expires_in / 60)} minutes`;
-        display.style.display = 'block';
-      } catch (err) {
-        alert('Failed to generate pairing code: ' + err.message);
-      }
-    }
-
-    async function revokeDevice(deviceId) {
-      if (!confirm('Revoke access for this device?')) return;
-
-      try {
-        await api(`/api/devices/${deviceId}`, { method: 'DELETE' });
-        loadDevices(); // Refresh list
-      } catch (err) {
-        alert('Failed to revoke device: ' + err.message);
-      }
-    }
-
-    // Fetch and populate contexts
-    async function loadContexts() {
-      try {
-        contexts = await api('/api/contexts');
-        const contextSelect = document.getElementById('contextSelect');
-        contextSelect.innerHTML = contexts.map(ctx =>
-          `<option value="${ctx.id}">${ctx.name}</option>`
-        ).join('');
-        // Select first non-manual context by default if available
-        const firstNonManual = contexts.find(c => c.id !== 'manual');
-        if (firstNonManual) {
-          contextSelect.value = firstNonManual.id;
-        }
-        // Trigger change to update UI
-        updateContextUI();
-      } catch (err) {
-        console.error('Failed to load contexts:', err);
-      }
-    }
-
-    // Update UI based on selected context
-    function updateContextUI() {
-      const contextId = document.getElementById('contextSelect').value;
-      const ctx = contexts.find(c => c.id === contextId);
-      const manualOptions = document.getElementById('manualOptions');
-      const contextInfo = document.getElementById('contextInfo');
-
-      if (contextId === 'manual' || !ctx) {
-        manualOptions.style.display = 'block';
-        contextInfo.style.display = 'none';
-      } else {
-        manualOptions.style.display = 'none';
-        contextInfo.style.display = 'block';
-        document.getElementById('contextName').textContent = ctx.name;
-        document.getElementById('contextDescription').textContent = ctx.description || '';
-
-        // Show context settings
-        const settings = [];
-        if (ctx.model) settings.push(`Model: ${ctx.model}`);
-        if (ctx.timeout_seconds) settings.push(`Timeout: ${ctx.timeout_seconds}s`);
-        if (ctx.thinking !== undefined) settings.push(`Thinking: ${ctx.thinking ? 'on' : 'off'}`);
-        document.getElementById('contextSettings').textContent = settings.join(' | ');
-      }
-    }
-
-    // Get current context settings
-    function getContextSettings() {
-      const contextId = document.getElementById('contextSelect').value;
-      const ctx = contexts.find(c => c.id === contextId);
-
-      if (contextId === 'manual' || !ctx) {
-        return {
-          model: document.getElementById('model').value,
-          timeout_seconds: parseInt(document.getElementById('timeout').value) || 1800,
-          thinking: document.getElementById('thinking').checked,
-          prompt_prefix: ''
-        };
-      }
-
-      return {
-        model: ctx.model || 'opus',
-        timeout_seconds: ctx.timeout_seconds || 1800,
-        thinking: ctx.thinking !== undefined ? ctx.thinking : true,
-        prompt_prefix: ctx.prompt_prefix || ''
-      };
-    }
-
-    // Context change handler
-    document.getElementById('contextSelect').addEventListener('change', updateContextUI);
-
-    // Fetch dashboard data with ETag support
-    async function fetchDashboard() {
-      const headers = { 'Content-Type': 'application/json' };
-      if (dashboardETag) headers['If-None-Match'] = dashboardETag;
-
-      const resp = await fetch('/api/dashboard', {
-        credentials: 'same-origin',
-        headers
-      });
-
-      if (resp.status === 304) {
-        return null; // No change
-      }
-
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ message: resp.statusText }));
-        throw new Error(err.message || `HTTP ${resp.status}`);
-      }
-
-      dashboardETag = resp.headers.get('ETag');
-      return resp.json();
-    }
-
-    // Render agent table row
-    function renderAgentRow(agent) {
-      const stateColors = {
-        'idle': 'bg-green',
-        'working': 'bg-yellow',
-        'cancelling': 'bg-orange'
-      };
-      const stateColor = stateColors[agent.state] || 'bg-secondary';
-
-      let taskInfo = '—';
-      if (agent.current_task) {
-        const preview = escapeHtml(agent.current_task.prompt_preview || '');
-        taskInfo = `<span class="task-col" title="${preview}">${agent.current_task.id}: ${preview}</span>`;
-      }
-
-      return `
-        <tr>
-          <td><span class="badge ${stateColor} status-badge" title="${agent.state}">${stateIcon(agent.state)} ${agent.state}</span></td>
-          <td class="text-muted small">${agent.url}</td>
-          <td class="small">${agent.version || '—'}</td>
-          <td class="small">${formatUptime(agent.uptime_seconds)}</td>
-          <td class="small">${taskInfo}</td>
-        </tr>`;
-    }
-
-    // Render director table row
-    function renderDirectorRow(director) {
-      return `
-        <tr>
-          <td><span class="badge bg-purple status-badge">dir</span></td>
-          <td class="text-muted small">${director.url}</td>
-          <td class="small">${director.version || '—'}</td>
-          <td class="small">${formatUptime(director.uptime_seconds)}</td>
-        </tr>`;
-    }
-
-    // Render scheduler job row
-    function renderSchedulerJobRow(job, agentUrl) {
-      const nextRun = job.next_run ? new Date(job.next_run).toLocaleString() : '—';
-      let lastRunHtml = '—';
-
-      if (job.last_run && job.last_task_id) {
-        const lastRunTime = new Date(job.last_run).toLocaleString();
-        const statusColors = {
-          'submitted': 'text-success',
-          'skipped_busy': 'text-warning',
-          'skipped_error': 'text-danger'
-        };
-        const statusClass = statusColors[job.last_status] || 'text-muted';
-        // Find session containing this task
-        const sessionId = findSessionByTaskId(job.last_task_id);
-        if (sessionId) {
-          lastRunHtml = `<a href="#" class="${statusClass}" onclick="openSessionDetail('${sessionId}'); return false;" title="${job.last_status}">${lastRunTime}</a>`;
-        } else {
-          lastRunHtml = `<span class="${statusClass}" title="${job.last_status}">${lastRunTime}</span>`;
-        }
-      } else if (job.last_run) {
-        lastRunHtml = new Date(job.last_run).toLocaleString();
-      }
-
-      return `
-        <tr>
-          <td class="small">${escapeHtml(job.name)}</td>
-          <td class="text-muted small font-monospace">${escapeHtml(job.schedule)}</td>
-          <td class="small">${nextRun}</td>
-          <td class="small">${lastRunHtml}</td>
-        </tr>`;
-    }
-
-    // Find session containing a task ID
-    function findSessionByTaskId(taskId) {
-      for (const sessionId of sessionOrder) {
-        const session = sessions[sessionId];
-        if (session && session.tasks) {
-          for (const task of session.tasks) {
-            if (task.taskId === taskId) {
-              return sessionId;
-            }
-          }
-        }
-      }
-      return null;
-    }
-
-    // Render session table row
-    function renderSessionRow(sessionId, session) {
-      const taskCount = session.tasks ? session.tasks.length : 0;
-      const lastTask = session.tasks && session.tasks.length > 0 ? session.tasks[session.tasks.length - 1] : null;
-      const stateColors = {
-        'completed': 'bg-green',
-        'failed': 'bg-red',
-        'working': 'bg-yellow',
-        'queued': 'bg-secondary'
-      };
-      const lastState = lastTask ? lastTask.state : 'unknown';
-      const lastPrompt = lastTask ? escapeHtml((lastTask.prompt || '').slice(0, 50)) : '—';
-      const fullPrompt = lastTask ? escapeHtml(lastTask.prompt || '') : '';
-      const isSelected = selectedSession === sessionId ? 'selected' : '';
-
-      return `
-        <tr class="session-row ${isSelected}" onclick="openSessionDetail('${sessionId}')" data-session="${sessionId}">
-          <td><span class="badge ${stateColors[lastState] || 'bg-secondary'} status-badge" title="${lastState}">${stateIcon(lastState)}</span></td>
-          <td class="session-id">${sessionId.slice(0, 8)}...</td>
-          <td class="text-muted small">${session.agentUrl}</td>
-          <td class="text-center">${taskCount}</td>
-          <td class="small task-col" title="${fullPrompt}">${lastPrompt}${(lastTask?.prompt || '').length > 50 ? '...' : ''}</td>
-          <td><button class="btn btn-sm btn-outline-primary" onclick="event.stopPropagation(); continueSession('${sessionId}')">Continue</button></td>
-        </tr>`;
-    }
-
-    // Update scheduler display
-    function updateSchedulerUI(helpers) {
-      const schedulerSection = document.getElementById('schedulerSection');
-      const schedulerStatus = document.getElementById('schedulerStatus');
-      const schedulerTableBody = document.getElementById('schedulerTableBody');
-
-      // Find scheduler helper (first one with jobs)
-      const scheduler = helpers.find(h => h.config && h.config.agent_url);
-
-      if (!scheduler) {
-        schedulerSection.style.display = 'none';
-        return;
-      }
-
-      schedulerSection.style.display = 'block';
-
-      // Update status badge
-      if (scheduler.state === 'running') {
-        schedulerStatus.className = 'badge bg-green';
-        schedulerStatus.textContent = 'Running';
-      } else {
-        schedulerStatus.className = 'badge bg-red';
-        schedulerStatus.textContent = scheduler.state || 'Offline';
-      }
-
-      // Render jobs - jobs are in the raw status response, need to access via config or direct property
-      const jobs = scheduler.jobs || [];
-      if (jobs.length > 0) {
-        schedulerTableBody.innerHTML = jobs.map(job => renderSchedulerJobRow(job, scheduler.config.agent_url)).join('');
-      } else {
-        schedulerTableBody.innerHTML = '<tr><td colspan="4" class="empty-message">No jobs configured</td></tr>';
-      }
-    }
-
-    // Update sessions display
-    function updateSessionsUI() {
-      const sessionTableBody = document.getElementById('sessionTableBody');
-      const sessionSelect = document.getElementById('sessionSelect');
-
-      document.getElementById('sessionCount').textContent = sessionOrder.length;
-
-      if (sessionOrder.length > 0) {
-        sessionTableBody.innerHTML = sessionOrder.map(id => renderSessionRow(id, sessions[id])).join('');
-      } else {
-        sessionTableBody.innerHTML = '<tr><td colspan="6" class="empty-message">No active sessions</td></tr>';
-      }
-
-      // Update session dropdown, preserving current selection
-      const currentSessionValue = sessionSelect.value;
-      sessionSelect.innerHTML = '<option value="">New session</option>' +
-        sessionOrder.map(id => {
-          const s = sessions[id];
-          const taskCount = s.tasks ? s.tasks.length : 0;
-          return `<option value="${id}">${id.slice(0, 8)}... (${taskCount} tasks, ${s.agentUrl})</option>`;
-        }).join('');
-      if (currentSessionValue && sessionOrder.includes(currentSessionValue)) {
-        sessionSelect.value = currentSessionValue;
-      }
-    }
-
-    // Continue session - pre-fill form
-    function continueSession(sessionId) {
-      const session = sessions[sessionId];
-      if (!session) return;
-
-      document.getElementById('sessionSelect').value = sessionId;
-      document.getElementById('agentSelect').value = session.agentUrl;
-      document.getElementById('prompt').focus();
-    }
-
-    // Open session detail view
-    async function openSessionDetail(sessionId) {
-      const session = sessions[sessionId];
-      if (!session) return;
-
-      selectedSession = sessionId;
-      updateSessionsUI(); // Update selection highlighting
-
-      const detailDiv = document.getElementById('sessionDetail');
-      const detailId = document.getElementById('sessionDetailId');
-      const content = document.getElementById('sessionDetailContent');
-
-      detailId.textContent = sessionId.slice(0, 8) + '...';
-      content.innerHTML = '<div class="p-3 text-muted">Loading history...</div>';
-      detailDiv.style.display = 'block';
-
-      // Fetch history for each task from the agent
-      const tasks = session.tasks || [];
-      if (tasks.length === 0) {
-        content.innerHTML = '<div class="p-3 text-muted">No tasks in this session</div>';
-        return;
-      }
-
-      const historyItems = [];
-      const terminalStates = ['completed', 'failed', 'cancelled'];
-      for (const task of tasks) {
-        // Only fetch history for completed tasks - in-progress tasks won't have history yet
-        if (terminalStates.includes(task.state)) {
-          try {
-            const history = await fetchTaskHistory(session.agentUrl, task.taskId);
-            historyItems.push({ ...task, history });
-          } catch (err) {
-            historyItems.push({ ...task, history: null, error: err.message });
-          }
-        } else {
-          // For in-progress tasks, just use the local session data
-          historyItems.push({ ...task, history: null });
-        }
-      }
-
-      renderSessionDetail(historyItems);
-    }
-
-    // Fetch task history via proxy (avoids mixed content issues)
-    async function fetchTaskHistory(agentUrl, taskId) {
-      return api(`/api/history/${taskId}?agent_url=${encodeURIComponent(agentUrl)}`);
-    }
-
-    // Render markdown safely
-    function renderMarkdown(text) {
-      if (!text) return '';
-      try {
-        return marked.parse(text);
-      } catch (e) {
-        return escapeHtml(text);
-      }
-    }
-
-    // Render session detail content
-    function renderSessionDetail(tasks) {
-      const content = document.getElementById('sessionDetailContent');
-      const stateColors = {
-        'completed': 'bg-green',
-        'failed': 'bg-red',
-        'working': 'bg-yellow',
-        'queued': 'bg-secondary',
-        'cancelled': 'bg-orange',
-        'unknown': 'bg-secondary'
-      };
-
-      const html = tasks.map((task, i) => {
-        const state = task.history?.state || task.state || 'unknown';
-        // Prefer session's stored prompt (no context prefix) over history prompt
-        const prompt = task.prompt || task.history?.prompt || '';
-        const output = task.history?.output || '';
-        const error = task.history?.error?.message || task.error || '';
-        const duration = task.history?.duration_seconds;
-        const steps = task.history?.steps || [];
-
-        let outputHtml = '';
-        if (output) {
-          outputHtml = `<div class="task-output">${renderMarkdown(output)}</div>`;
-        } else if (steps.length > 0) {
-          // Show steps outline if no full output
-          const stepsText = steps.map(s => {
-            const preview = s.output_preview || s.input_preview || s.type;
-            return s.tool ? `[${s.tool}] ${preview}` : preview;
-          }).join('\n');
-          outputHtml = `<div class="task-output"><pre>${escapeHtml(stepsText)}</pre></div>`;
-        }
-
-        // Render prompt with markdown
-        const promptHtml = prompt
-          ? `<div class="task-prompt">Prompt:</div><div class="task-prompt-content">${renderMarkdown(prompt)}</div>`
-          : '';
-
-        return `
-          <div class="task-item">
-            <div class="d-flex align-items-center justify-content-between">
-              <div>
-                <span class="badge ${stateColors[state] || 'bg-secondary'} status-badge me-2">${stateIcon(state)}</span>
-                <strong class="small">${task.taskId}</strong>
-                ${duration ? `<span class="text-muted small ms-2">${duration.toFixed(1)}s</span>` : ''}
-              </div>
-              <span class="text-muted small">#${i + 1}</span>
-            </div>
-            ${promptHtml}
-            ${error ? `<div class="alert alert-danger mt-2 mb-0 p-2 small">${escapeHtml(error)}</div>` : ''}
-            ${outputHtml}
-          </div>`;
-      }).join('');
-
-      content.innerHTML = html || '<div class="p-3 text-muted">No tasks</div>';
-    }
-
-    // Close session detail view
-    function closeSessionDetail() {
-      selectedSession = null;
-      document.getElementById('sessionDetail').style.display = 'none';
-      updateSessionsUI();
-    }
-
-    // Update dashboard
-    async function refresh() {
-      try {
-        const data = await fetchDashboard();
-
-        // If 304 (no change), only poll active task
-        if (data === null) {
-          if (activeTask) await pollTask();
-          return;
-        }
-
-        const { agents, directors, helpers, sessions: serverSessions } = data;
-
-        // Update scheduler section
-        updateSchedulerUI(helpers || []);
-
-        // Update sessions from server data
-        sessions = {};
-        sessionOrder = [];
-        for (const s of serverSessions) {
-          sessions[s.id] = {
-            agentUrl: s.agent_url,
-            tasks: s.tasks ? s.tasks.map(t => ({
-              taskId: t.task_id,
-              state: t.state,
-              prompt: t.prompt
-            })) : [],
-            createdAt: s.created_at
-          };
-          sessionOrder.push(s.id);
-        }
-
-        // Update agent table
-        const agentTableBody = document.getElementById('agentTableBody');
-        if (agents.length > 0) {
-          agentTableBody.innerHTML = agents.map(renderAgentRow).join('');
-        } else {
-          agentTableBody.innerHTML = '<tr><td colspan="5" class="empty-message">No agents discovered</td></tr>';
-        }
-        document.getElementById('agentCount').textContent = agents.length;
-
-        // Update director table
-        const directorTableBody = document.getElementById('directorTableBody');
-        if (directors.length > 0) {
-          directorTableBody.innerHTML = directors.map(renderDirectorRow).join('');
-        } else {
-          directorTableBody.innerHTML = '<tr><td colspan="4" class="empty-message">No directors discovered</td></tr>';
-        }
-        document.getElementById('directorCount').textContent = directors.length;
-
-        // Update agent select dropdown
-        const agentSelect = document.getElementById('agentSelect');
-        const currentValue = agentSelect.value;
-        const idleAgents = agents.filter(a => a.state === 'idle');
-        agentSelect.innerHTML = '<option value="">Select an idle agent...</option>' +
-          idleAgents.map(a =>
-            `<option value="${a.url}">${a.url} (${a.state})</option>`
-          ).join('');
-        if (currentValue && agents.some(a => a.url === currentValue)) {
-          agentSelect.value = currentValue;
-        } else if (idleAgents.length === 1) {
-          // Auto-select if there's only one idle agent
-          agentSelect.value = idleAgents[0].url;
-        }
-
-        // Poll active task if any
-        if (activeTask) {
-          await pollTask();
-        }
-
-        // Update sessions UI
-        updateSessionsUI();
-      } catch (err) {
-        console.error('Refresh failed:', err);
-      }
-    }
-
-    // Poll active task status
-    async function pollTask() {
-      if (!activeTask) return;
-
-      try {
-        // Include session_id so server can auto-update session store if task completed
-        let url = `/api/task/${activeTask.taskId}?agent_url=${encodeURIComponent(activeTask.agentUrl)}`;
-        if (activeTask.sessionId) {
-          url += `&session_id=${encodeURIComponent(activeTask.sessionId)}`;
-        }
-        const status = await api(url);
-
-        // Update session state if completed
-        if (['completed', 'failed', 'cancelled'].includes(status.state)) {
-          if (activeTask.sessionId) {
-            // Update on server
-            await updateSessionTaskState(activeTask.sessionId, activeTask.taskId, status.state);
-            // Update local cache
-            if (sessions[activeTask.sessionId]) {
-              const session = sessions[activeTask.sessionId];
-              const taskEntry = session.tasks.find(t => t.taskId === activeTask.taskId);
-              if (taskEntry) {
-                taskEntry.state = status.state;
-              }
-            }
-            // Refresh session detail if this session is selected
-            if (selectedSession === activeTask.sessionId) {
-              openSessionDetail(activeTask.sessionId);
-            }
-          }
-          activeTask = null;
-          scheduleRefresh(); // Switch to slow polling
-        }
-      } catch (err) {
-        console.error('Task poll failed:', err);
-        // On error, check if task completed and moved to history
-        if (activeTask) {
-          try {
-            const history = await api(`/api/history/${activeTask.taskId}?agent_url=${encodeURIComponent(activeTask.agentUrl)}`);
-            if (history && history.state) {
-              // Task found in history - update state
-              if (activeTask.sessionId) {
-                await updateSessionTaskState(activeTask.sessionId, activeTask.taskId, history.state);
-                if (sessions[activeTask.sessionId]) {
-                  const session = sessions[activeTask.sessionId];
-                  const taskEntry = session.tasks.find(t => t.taskId === activeTask.taskId);
-                  if (taskEntry) {
-                    taskEntry.state = history.state;
-                  }
+
+    <script>
+        /**
+         * Agency Dashboard - Alpine.js Application
+         *
+         * State management with proper race condition handling:
+         * - Uses ETags for efficient polling
+         * - Visibility API to pause polling when tab is hidden
+         * - Optimistic UI updates with server reconciliation
+         * - Debounced refresh to prevent thundering herd
+         */
+        function dashboard() {
+            return {
+                // Fleet state
+                agents: [],
+                directors: [],
+                helpers: [],
+                fleetOpen: false,
+
+                // Sessions state
+                sessions: [],
+                expandedSession: null,
+                sessionTab: 'io',
+                sessionHistory: {}, // { sessionId: { loading, error, tasks: { taskId: historyData } } }
+                expandedOutputs: {},
+
+                // Active task polling (for streaming output)
+                activeTaskPolling: {}, // { taskId: pollingIntervalId }
+                activeTasks: {}, // { taskId: { output, state } } for real-time updates
+
+                // Contexts
+                contexts: [],
+
+                // Task modal
+                taskModalOpen: false,
+                taskOptionsOpen: false,
+                taskForm: {
+                    agentUrl: '',
+                    contextId: 'manual',
+                    prompt: '',
+                    model: 'opus',
+                    timeout: 1800,
+                    thinking: true
+                },
+                taskSubmitting: false,
+                taskError: '',
+
+                // Settings modal
+                settingsOpen: false,
+                devices: { loading: false, error: null, list: [] },
+                pairingCode: { loading: false, code: '', expiresIn: 0 },
+
+                // Polling state
+                isPolling: true,
+                isRefreshing: false,
+                pollInterval: 5000,
+                pollTimer: null,
+                etag: null,
+                lastRefresh: 0,
+                refreshDebounce: 500, // Minimum ms between refreshes
+
+                // Computed properties
+                get agentStats() {
+                    const idle = this.agents.filter(a => a.state === 'idle').length;
+                    const working = this.agents.filter(a => a.state === 'working').length;
+                    return { idle, working };
+                },
+
+                get idleAgents() {
+                    return this.agents.filter(a => a.state === 'idle');
+                },
+
+                // Lifecycle
+                init() {
+                    // Load initial data
+                    this.loadContexts();
+                    this.refresh();
+
+                    // Start polling
+                    this.startPolling();
+
+                    // Visibility-based polling pause
+                    document.addEventListener('visibilitychange', () => {
+                        if (document.hidden) {
+                            this.stopPolling();
+                        } else {
+                            this.startPolling();
+                            this.refresh(); // Immediate refresh on resume
+                        }
+                    });
+
+                    // Restore fleet collapse state from localStorage
+                    const fleetState = localStorage.getItem('agency-fleet-open');
+                    if (fleetState !== null) {
+                        this.fleetOpen = fleetState === 'true';
+                    }
+
+                    // Watch fleet state changes
+                    this.$watch('fleetOpen', (value) => {
+                        localStorage.setItem('agency-fleet-open', value);
+                    });
+                },
+
+                // Polling management
+                startPolling() {
+                    if (this.pollTimer) return;
+                    this.isPolling = true;
+                    this.pollTimer = setInterval(() => this.refresh(), this.pollInterval);
+                },
+
+                stopPolling() {
+                    if (this.pollTimer) {
+                        clearInterval(this.pollTimer);
+                        this.pollTimer = null;
+                    }
+                    this.isPolling = false;
+                },
+
+                // Adjust polling rate based on active tasks
+                adjustPollingRate() {
+                    const hasWorkingTask = this.sessions.some(s =>
+                        s.tasks?.some(t => t.state === 'working')
+                    );
+                    const newInterval = hasWorkingTask ? 1000 : 5000;
+
+                    if (newInterval !== this.pollInterval) {
+                        this.pollInterval = newInterval;
+                        if (this.isPolling) {
+                            this.stopPolling();
+                            this.startPolling();
+                        }
+                    }
+                },
+
+                // API helpers
+                async api(path, options = {}) {
+                    const resp = await fetch(path, {
+                        ...options,
+                        credentials: 'same-origin',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...(options.headers || {})
+                        }
+                    });
+
+                    if (!resp.ok) {
+                        const err = await resp.json().catch(() => ({ message: resp.statusText }));
+                        throw new Error(err.message || `HTTP ${resp.status}`);
+                    }
+                    return resp;
+                },
+
+                // Main refresh - fetches dashboard data with ETag
+                async refresh() {
+                    // Debounce rapid refresh calls
+                    const now = Date.now();
+                    if (now - this.lastRefresh < this.refreshDebounce) {
+                        return;
+                    }
+                    this.lastRefresh = now;
+
+                    this.isRefreshing = true;
+                    try {
+                        const headers = { 'Content-Type': 'application/json' };
+                        if (this.etag) {
+                            headers['If-None-Match'] = this.etag;
+                        }
+
+                        const resp = await fetch('/api/dashboard', {
+                            credentials: 'same-origin',
+                            headers
+                        });
+
+                        if (resp.status === 304) {
+                            // No change - just poll active tasks
+                            await this.pollActiveTasks();
+                            return;
+                        }
+
+                        if (!resp.ok) {
+                            throw new Error(`HTTP ${resp.status}`);
+                        }
+
+                        this.etag = resp.headers.get('ETag');
+                        const data = await resp.json();
+
+                        // Update fleet data
+                        this.agents = data.agents || [];
+                        this.directors = data.directors || [];
+                        this.helpers = data.helpers || [];
+
+                        // Update sessions (preserving expansion state)
+                        this.sessions = data.sessions || [];
+
+                        // Poll active tasks for real-time output
+                        await this.pollActiveTasks();
+
+                        // Adjust polling rate based on active tasks
+                        this.adjustPollingRate();
+
+                    } catch (err) {
+                        console.error('Refresh failed:', err);
+                    } finally {
+                        this.isRefreshing = false;
+                    }
+                },
+
+                // Poll active (working) tasks for streaming output
+                async pollActiveTasks() {
+                    const workingTasks = [];
+                    for (const session of this.sessions) {
+                        for (const task of (session.tasks || [])) {
+                            if (task.state === 'working') {
+                                workingTasks.push({
+                                    sessionId: session.id,
+                                    taskId: task.task_id,
+                                    agentUrl: session.agent_url
+                                });
+                            }
+                        }
+                    }
+
+                    // Start polling for new working tasks
+                    for (const { sessionId, taskId, agentUrl } of workingTasks) {
+                        if (!this.activeTaskPolling[taskId]) {
+                            this.activeTaskPolling[taskId] = true;
+                            this.pollTaskStatus(sessionId, taskId, agentUrl);
+                        }
+                    }
+
+                    // Stop polling for completed tasks
+                    for (const taskId of Object.keys(this.activeTaskPolling)) {
+                        if (!workingTasks.find(t => t.taskId === taskId)) {
+                            delete this.activeTaskPolling[taskId];
+                            delete this.activeTasks[taskId];
+                        }
+                    }
+                },
+
+                // Poll individual task for streaming output
+                async pollTaskStatus(sessionId, taskId, agentUrl) {
+                    if (!this.activeTaskPolling[taskId]) return;
+
+                    try {
+                        const resp = await this.api(`/api/task/${taskId}?agent_url=${encodeURIComponent(agentUrl)}&session_id=${encodeURIComponent(sessionId)}`);
+                        const data = await resp.json();
+
+                        // Store real-time output
+                        this.activeTasks[taskId] = {
+                            output: data.output || '',
+                            state: data.state
+                        };
+
+                        // If task completed, update session and stop polling
+                        if (['completed', 'failed', 'cancelled'].includes(data.state)) {
+                            delete this.activeTaskPolling[taskId];
+                            // Trigger refresh to get updated session state
+                            this.refresh();
+                            // Load history for the session
+                            if (this.expandedSession === sessionId) {
+                                this.loadSessionHistory(sessionId);
+                            }
+                        } else {
+                            // Continue polling
+                            setTimeout(() => this.pollTaskStatus(sessionId, taskId, agentUrl), 1000);
+                        }
+                    } catch (err) {
+                        console.error('Task poll failed:', err);
+                        // On error, try to get history
+                        try {
+                            const historyResp = await this.api(`/api/history/${taskId}?agent_url=${encodeURIComponent(agentUrl)}`);
+                            const history = await historyResp.json();
+                            if (history.state) {
+                                delete this.activeTaskPolling[taskId];
+                                this.refresh();
+                            }
+                        } catch {
+                            // Keep polling on history failure
+                            setTimeout(() => this.pollTaskStatus(sessionId, taskId, agentUrl), 2000);
+                        }
+                    }
+                },
+
+                // Load contexts
+                async loadContexts() {
+                    try {
+                        const resp = await this.api('/api/contexts');
+                        this.contexts = await resp.json();
+                        if (this.contexts.length > 0) {
+                            // Select first context by default (usually 'manual')
+                            this.taskForm.contextId = this.contexts[0].id;
+                        }
+                    } catch (err) {
+                        console.error('Failed to load contexts:', err);
+                        // Fallback to manual context
+                        this.contexts = [{ id: 'manual', name: 'Manual' }];
+                    }
+                },
+
+                // Session management
+                toggleSession(sessionId) {
+                    if (this.expandedSession === sessionId) {
+                        this.expandedSession = null;
+                    } else {
+                        this.expandedSession = sessionId;
+                        this.sessionTab = 'io';
+                        this.loadSessionHistory(sessionId);
+                    }
+                },
+
+                async loadSessionHistory(sessionId) {
+                    const session = this.sessions.find(s => s.id === sessionId);
+                    if (!session) return;
+
+                    // Initialize history state
+                    if (!this.sessionHistory[sessionId]) {
+                        this.sessionHistory[sessionId] = { loading: true, error: null, tasks: {} };
+                    } else {
+                        this.sessionHistory[sessionId].loading = true;
+                        this.sessionHistory[sessionId].error = null;
+                    }
+
+                    const tasks = session.tasks || [];
+                    const terminalStates = ['completed', 'failed', 'cancelled'];
+
+                    for (const task of tasks) {
+                        // Only fetch history for completed tasks
+                        if (terminalStates.includes(task.state)) {
+                            try {
+                                const resp = await this.api(`/api/history/${task.task_id}?agent_url=${encodeURIComponent(session.agent_url)}`);
+                                const history = await resp.json();
+                                this.sessionHistory[sessionId].tasks[task.task_id] = history;
+                            } catch (err) {
+                                console.error(`Failed to load history for task ${task.task_id}:`, err);
+                                this.sessionHistory[sessionId].tasks[task.task_id] = { error: err.message };
+                            }
+                        }
+                    }
+
+                    this.sessionHistory[sessionId].loading = false;
+                },
+
+                // Task modal
+                openTaskModal() {
+                    this.taskModalOpen = true;
+                    this.taskError = '';
+                    // Auto-select first idle agent
+                    if (this.idleAgents.length > 0 && !this.taskForm.agentUrl) {
+                        this.taskForm.agentUrl = this.idleAgents[0].url;
+                    }
+                    // Focus prompt input after modal opens
+                    this.$nextTick(() => {
+                        this.$refs.promptInput?.focus();
+                    });
+                },
+
+                closeTaskModal() {
+                    this.taskModalOpen = false;
+                },
+
+                onContextChange() {
+                    const ctx = this.contexts.find(c => c.id === this.taskForm.contextId);
+                    if (ctx && ctx.id !== 'manual') {
+                        // Apply context settings
+                        if (ctx.model) this.taskForm.model = ctx.model;
+                        if (ctx.timeout_seconds) this.taskForm.timeout = ctx.timeout_seconds;
+                        if (ctx.thinking !== undefined) this.taskForm.thinking = ctx.thinking;
+                    }
+                },
+
+                async submitTask() {
+                    this.taskSubmitting = true;
+                    this.taskError = '';
+
+                    try {
+                        const ctx = this.contexts.find(c => c.id === this.taskForm.contextId);
+
+                        // Build full prompt with context prefix if applicable
+                        let fullPrompt = this.taskForm.prompt;
+                        if (ctx && ctx.prompt_prefix) {
+                            fullPrompt = ctx.prompt_prefix + this.taskForm.prompt;
+                        }
+
+                        const body = {
+                            agent_url: this.taskForm.agentUrl,
+                            prompt: fullPrompt,
+                            model: this.taskForm.model,
+                            timeout_seconds: this.taskForm.timeout,
+                            thinking: this.taskForm.thinking
+                        };
+
+                        const resp = await this.api('/api/task', {
+                            method: 'POST',
+                            body: JSON.stringify(body)
+                        });
+
+                        const result = await resp.json();
+
+                        // Close modal and clear form
+                        this.closeTaskModal();
+                        this.taskForm.prompt = '';
+
+                        // Refresh to show new session/task
+                        await this.refresh();
+
+                        // Expand the new session
+                        if (result.session_id) {
+                            this.expandedSession = result.session_id;
+                            this.sessionTab = 'io';
+                        }
+
+                    } catch (err) {
+                        this.taskError = err.message;
+                    } finally {
+                        this.taskSubmitting = false;
+                    }
+                },
+
+                // Settings / Device management
+                async loadDevices() {
+                    this.devices.loading = true;
+                    this.devices.error = null;
+                    try {
+                        const resp = await this.api('/api/devices');
+                        this.devices.list = await resp.json();
+                    } catch (err) {
+                        this.devices.error = err.message;
+                    } finally {
+                        this.devices.loading = false;
+                    }
+                },
+
+                async generatePairingCode() {
+                    this.pairingCode.loading = true;
+                    try {
+                        const resp = await this.api('/api/pair/code', { method: 'POST' });
+                        const data = await resp.json();
+                        this.pairingCode.code = data.code;
+                        this.pairingCode.expiresIn = data.expires_in;
+                    } catch (err) {
+                        console.error('Failed to generate pairing code:', err);
+                    } finally {
+                        this.pairingCode.loading = false;
+                    }
+                },
+
+                async revokeDevice(deviceId) {
+                    if (!confirm('Revoke access for this device?')) return;
+                    try {
+                        await this.api(`/api/devices/${deviceId}`, { method: 'DELETE' });
+                        this.loadDevices();
+                    } catch (err) {
+                        console.error('Failed to revoke device:', err);
+                    }
+                },
+
+                // Watch for settings modal open to load devices
+                $watch: {
+                    settingsOpen(open) {
+                        if (open) {
+                            this.loadDevices();
+                        }
+                    }
+                },
+
+                // Keyboard shortcuts
+                handleKeydown(e) {
+                    // Ignore if in input/textarea or modal is open
+                    if (e.target.matches('input, textarea, select')) return;
+                    if (this.taskModalOpen || this.settingsOpen) return;
+
+                    switch (e.key.toLowerCase()) {
+                        case 'n':
+                            e.preventDefault();
+                            this.openTaskModal();
+                            break;
+                        case 'r':
+                            e.preventDefault();
+                            this.refresh();
+                            break;
+                        case 'f':
+                            e.preventDefault();
+                            this.fleetOpen = !this.fleetOpen;
+                            break;
+                        case 'j':
+                            e.preventDefault();
+                            this.navigateSessions(1);
+                            break;
+                        case 'k':
+                            e.preventDefault();
+                            this.navigateSessions(-1);
+                            break;
+                        case 'enter':
+                            if (this.expandedSession) {
+                                e.preventDefault();
+                                this.expandedSession = null;
+                            }
+                            break;
+                        case 'escape':
+                            e.preventDefault();
+                            this.expandedSession = null;
+                            break;
+                    }
+                },
+
+                navigateSessions(direction) {
+                    if (this.sessions.length === 0) return;
+
+                    const currentIndex = this.expandedSession
+                        ? this.sessions.findIndex(s => s.id === this.expandedSession)
+                        : -1;
+
+                    let newIndex;
+                    if (currentIndex === -1) {
+                        newIndex = direction > 0 ? 0 : this.sessions.length - 1;
+                    } else {
+                        newIndex = currentIndex + direction;
+                        if (newIndex < 0) newIndex = this.sessions.length - 1;
+                        if (newIndex >= this.sessions.length) newIndex = 0;
+                    }
+
+                    const session = this.sessions[newIndex];
+                    if (session) {
+                        this.expandedSession = session.id;
+                        this.sessionTab = 'io';
+                        this.loadSessionHistory(session.id);
+                    }
+                },
+
+                // Utility functions
+                getComponentName(url) {
+                    if (!url) return 'unknown';
+                    try {
+                        const u = new URL(url);
+                        return u.port || u.hostname;
+                    } catch {
+                        return url;
+                    }
+                },
+
+                getSessionState(session) {
+                    const tasks = session.tasks || [];
+                    if (tasks.length === 0) return 'unknown';
+                    const lastTask = tasks[tasks.length - 1];
+                    return lastTask.state || 'unknown';
+                },
+
+                getSessionSummary(session) {
+                    const tasks = session.tasks || [];
+                    if (tasks.length === 0) return 'Empty session';
+                    const firstTask = tasks[0];
+                    const prompt = firstTask.prompt || '';
+                    return this.generateSummary(prompt, 35);
+                },
+
+                generateSummary(prompt, maxLen = 30) {
+                    if (!prompt) return 'No prompt';
+
+                    // Try first sentence
+                    const sentenceEnd = prompt.search(/[.!?]/);
+                    if (sentenceEnd > 0 && sentenceEnd < maxLen) {
+                        return prompt.slice(0, sentenceEnd).trim();
+                    }
+
+                    // Try first line
+                    const lineEnd = prompt.indexOf('\n');
+                    if (lineEnd > 0 && lineEnd < maxLen) {
+                        return prompt.slice(0, lineEnd).trim();
+                    }
+
+                    // Truncate at word boundary
+                    if (prompt.length <= maxLen) {
+                        return prompt.trim();
+                    }
+
+                    const truncated = prompt.slice(0, maxLen);
+                    const lastSpace = truncated.lastIndexOf(' ');
+                    if (lastSpace > maxLen / 2) {
+                        return truncated.slice(0, lastSpace) + '...';
+                    }
+                    return truncated.slice(0, maxLen - 3) + '...';
+                },
+
+                getSessionMetrics(session) {
+                    // TODO: Aggregate metrics from task history when observability improvements land
+                    // For now, return placeholder data from history if available
+                    const tasks = session.tasks || [];
+                    let totalTokens = 0;
+                    let totalDuration = 0;
+                    let model = null;
+
+                    for (const task of tasks) {
+                        const history = this.sessionHistory[session.id]?.tasks?.[task.task_id];
+                        if (history) {
+                            if (history.token_usage) {
+                                totalTokens += (history.token_usage.input || 0) + (history.token_usage.output || 0);
+                            }
+                            if (history.duration_seconds) {
+                                totalDuration += history.duration_seconds;
+                            }
+                            if (history.model && !model) {
+                                model = history.model;
+                            }
+                        }
+                    }
+
+                    return {
+                        tokens: totalTokens || null,
+                        duration: totalDuration || null,
+                        model: model
+                    };
+                },
+
+                getTaskHistoryData(sessionId, taskId) {
+                    return this.sessionHistory[sessionId]?.tasks?.[taskId] || null;
+                },
+
+                getTaskOutput(sessionId, task) {
+                    // For working tasks, get real-time output
+                    if (task.state === 'working' && this.activeTasks[task.task_id]) {
+                        return this.activeTasks[task.task_id].output;
+                    }
+                    // For completed tasks, get from history
+                    const history = this.getTaskHistoryData(sessionId, task.task_id);
+                    return history?.output || '';
+                },
+
+                getTaskError(sessionId, task) {
+                    const history = this.getTaskHistoryData(sessionId, task.task_id);
+                    return history?.error?.message || '';
+                },
+
+                toggleOutputExpand(key) {
+                    this.expandedOutputs[key] = !this.expandedOutputs[key];
+                },
+
+                formatRelativeTime(dateStr) {
+                    if (!dateStr) return '';
+                    const date = new Date(dateStr);
+                    const now = new Date();
+                    const diffMs = now - date;
+                    const diffSec = Math.floor(diffMs / 1000);
+                    const diffMin = Math.floor(diffSec / 60);
+                    const diffHour = Math.floor(diffMin / 60);
+                    const diffDay = Math.floor(diffHour / 24);
+
+                    if (diffSec < 60) return 'just now';
+                    if (diffMin < 60) return `${diffMin}m ago`;
+                    if (diffHour < 24) return `${diffHour}h ago`;
+                    return `${diffDay}d ago`;
+                },
+
+                formatTime(dateStr) {
+                    if (!dateStr) return '';
+                    return new Date(dateStr).toLocaleTimeString();
+                },
+
+                formatDuration(seconds) {
+                    if (!seconds) return null;
+                    if (seconds < 60) return `${Math.round(seconds)}s`;
+                    const mins = Math.floor(seconds / 60);
+                    const secs = Math.round(seconds % 60);
+                    return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
+                },
+
+                formatNumber(num) {
+                    if (!num) return null;
+                    if (num >= 1000) {
+                        return (num / 1000).toFixed(1) + 'k';
+                    }
+                    return num.toString();
+                },
+
+                renderMarkdown(text) {
+                    if (!text) return '';
+                    try {
+                        return marked.parse(text);
+                    } catch (e) {
+                        return this.escapeHtml(text);
+                    }
+                },
+
+                escapeHtml(str) {
+                    if (!str) return '';
+                    return str
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                        .replace(/"/g, '&quot;');
                 }
-              }
-              activeTask = null;
-              scheduleRefresh();
-            }
-          } catch (historyErr) {
-            // Task not found in history either - may still be running or agent unavailable
-            console.error('History lookup also failed:', historyErr);
-          }
+            };
         }
-      }
-    }
-
-    // Reconcile stale "working" tasks on page load
-    // Checks all tasks marked as "working" against the agent to fix stuck states
-    async function reconcileWorkingSessions() {
-      const reconcilePromises = [];
-
-      for (const sessionId of sessionOrder) {
-        const session = sessions[sessionId];
-        if (!session || !session.tasks) continue;
-
-        for (const task of session.tasks) {
-          if (task.state === 'working') {
-            // Check actual state from agent
-            const promise = (async () => {
-              try {
-                const url = `/api/task/${task.taskId}?agent_url=${encodeURIComponent(session.agentUrl)}&session_id=${encodeURIComponent(sessionId)}`;
-                const status = await api(url);
-                if (status.state !== 'working') {
-                  // State changed - update
-                  await updateSessionTaskState(sessionId, task.taskId, status.state);
-                  task.state = status.state;
-                  return true; // Changed
-                }
-              } catch (err) {
-                // Task not found in active tasks, check history
-                try {
-                  const history = await api(`/api/history/${task.taskId}?agent_url=${encodeURIComponent(session.agentUrl)}`);
-                  if (history && history.state) {
-                    await updateSessionTaskState(sessionId, task.taskId, history.state);
-                    task.state = history.state;
-                    return true; // Changed
-                  }
-                } catch {
-                  // Task not found anywhere - mark as unknown
-                  await updateSessionTaskState(sessionId, task.taskId, 'unknown');
-                  task.state = 'unknown';
-                  return true; // Changed
-                }
-              }
-              return false; // No change
-            })();
-            reconcilePromises.push(promise);
-          }
-        }
-      }
-
-      if (reconcilePromises.length > 0) {
-        const results = await Promise.all(reconcilePromises);
-        const changedCount = results.filter(r => r).length;
-        if (changedCount > 0) {
-          console.log(`Reconciled ${changedCount} stale working task(s)`);
-          updateSessionsUI();
-        }
-      }
-    }
-
-    // Submit task
-    document.getElementById('taskForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-
-      const btn = document.getElementById('submitBtn');
-      const spinner = document.getElementById('submitSpinner');
-      const result = document.getElementById('submitResult');
-
-      btn.disabled = true;
-      spinner.classList.remove('d-none');
-      result.classList.remove('show', 'alert-success', 'alert-danger');
-
-      try {
-        const agentUrl = document.getElementById('agentSelect').value;
-        const userPrompt = document.getElementById('prompt').value;
-        const sessionId = document.getElementById('sessionSelect').value;
-
-        // Get settings from context or manual inputs
-        const settings = getContextSettings();
-
-        // Build prompt with optional context prefix
-        const fullPrompt = settings.prompt_prefix
-          ? settings.prompt_prefix + userPrompt
-          : userPrompt;
-
-        const body = {
-          agent_url: agentUrl,
-          prompt: fullPrompt,
-          model: settings.model,
-          timeout_seconds: settings.timeout_seconds,
-          thinking: settings.thinking
-        };
-
-        // Include session_id if continuing an existing session
-        if (sessionId) {
-          body.session_id = sessionId;
-        }
-
-        const resp = await api('/api/task', {
-          method: 'POST',
-          body: JSON.stringify(body)
-        });
-
-        result.className = 'mt-3 alert alert-success show';
-        result.textContent = `Task submitted: ${resp.task_id} (session: ${resp.session_id ? resp.session_id.slice(0, 8) + '...' : 'new'})`;
-
-        // Track session on server
-        const sid = resp.session_id;
-        if (sid) {
-          await saveSessionTask(sid, agentUrl, resp.task_id, resp.status || 'working', userPrompt);
-          // Update local cache
-          if (!sessions[sid]) {
-            sessions[sid] = { agentUrl: agentUrl, tasks: [], createdAt: new Date().toISOString() };
-            sessionOrder.unshift(sid);
-          }
-          sessions[sid].tasks.push({ taskId: resp.task_id, state: resp.status || 'working', prompt: userPrompt });
-        }
-
-        // Start monitoring
-        activeTask = { taskId: resp.task_id, agentUrl: resp.agent_url, sessionId: sid };
-        scheduleRefresh(); // Switch to fast polling
-
-        // Clear prompt but keep other fields for follow-ups
-        document.getElementById('prompt').value = '';
-
-        // Refresh to show agent as busy and open session detail
-        await refresh();
-
-        // Select session and open its detail view
-        if (sid) {
-          document.getElementById('sessionSelect').value = sid;
-          openSessionDetail(sid);
-        }
-      } catch (err) {
-        result.className = 'mt-3 alert alert-danger show';
-        result.textContent = `Error: ${err.message}`;
-      } finally {
-        btn.disabled = false;
-        spinner.classList.add('d-none');
-      }
-    });
-
-    // Helpers
-    function stateIcon(state) {
-      const icons = {
-        'idle': '✓',
-        'completed': '✓',
-        'working': '●',
-        'queued': '○',
-        'failed': '✕',
-        'cancelling': '⊘',
-        'cancelled': '⊘',
-        'unknown': '?'
-      };
-      return icons[state] || '?';
-    }
-
-    function formatUptime(seconds) {
-      if (!seconds) return 'unknown';
-      if (seconds < 60) return `${Math.floor(seconds)}s`;
-      if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-      return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
-    }
-
-    function escapeHtml(str) {
-      if (!str) return '';
-      return str.replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;');
-    }
-
-    // Adaptive polling - faster when task is active
-    function scheduleRefresh() {
-      const newInterval = activeTask ? POLL_ACTIVE : POLL_IDLE;
-      if (newInterval !== pollInterval) {
-        pollInterval = newInterval;
-        if (refreshTimer) clearInterval(refreshTimer);
-        refreshTimer = setInterval(refresh, pollInterval);
-      }
-    }
-
-    // Start refresh loop
-    loadContexts(); // Load available contexts
-    refresh().then(() => {
-      // After initial load, reconcile any stale "working" tasks
-      reconcileWorkingSessions();
-    });
-    refreshTimer = setInterval(refresh, pollInterval);
-  </script>
+    </script>
 </body>
 </html>

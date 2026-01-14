@@ -208,7 +208,7 @@ The system has three state layers that must stay synchronized:
 
 1. **Agent** (`internal/agent/agent.go`) - Authoritative source, tasks map + history
 2. **Web SessionStore** (`internal/view/web/sessions.go`) - In-memory cache, volatile
-3. **Browser** (`dashboard.html` JavaScript) - UI state, polls via `/api/task`
+3. **Browser** (`dashboard.html` Alpine.js) - UI state, polls via `/api/task`
 
 **Key insight:** Agent is the source of truth. Web and Browser are caches that can get stale.
 
@@ -222,3 +222,53 @@ The system has three state layers that must stay synchronized:
 ### Design Principle
 
 When in doubt, query the Agent. The Web's `/api/task/{id}` handler falls back to `/history/{id}` when task not found - this pattern should be used consistently.
+
+---
+
+## Web UI Architecture [READ IF: modifying the dashboard]
+
+### Alpine.js Dashboard
+
+The web UI (`internal/view/web/templates/dashboard.html`) uses Alpine.js for reactive state management. Key design decisions:
+
+**State Management:**
+- Single Alpine.js component (`dashboard()`) manages all UI state
+- Uses ETags for efficient dashboard polling (returns 304 if unchanged)
+- Visibility API pauses polling when tab is hidden
+- Debounced refresh (500ms) prevents thundering herd on rapid updates
+
+**Polling Strategy:**
+- Idle: 5s poll interval
+- Active tasks: 1s poll interval (auto-adjusts)
+- Per-task polling for streaming output updates
+- Falls back to history endpoint when task not found
+
+**Race Condition Handling:**
+- `activeTaskPolling` object tracks polling state per task
+- `activeTasks` stores real-time output separately from session history
+- Session history loaded on-demand when expanding a session
+- Task state changes trigger refresh + history reload
+
+**UI Structure:**
+- Fleet panel: Collapsible, shows agent/director/helper status
+- Session cards: Accordion pattern, one expanded at a time
+- Session tabs: I/O, Details, Metrics
+- Task modal: Agent selection, context presets, advanced options
+
+**Keyboard Shortcuts:**
+- `N` - New task
+- `R` - Refresh
+- `F` - Toggle fleet panel
+- `J/K` - Navigate sessions
+- `Escape` - Close expanded session
+
+**CSS Variables:**
+- Dark mode only (Danish minimalism aesthetic)
+- Mobile-first responsive (optimized for narrow screens)
+- Safe area insets for notched devices
+- Reduced motion support via `prefers-reduced-motion`
+
+**TODOs (placeholder for future observability):**
+- Token usage aggregation per session (needs history API enhancement)
+- Cost estimation (requires pricing data)
+- Step/trace visualization (requires expanded history API)
