@@ -21,7 +21,7 @@ var (
 )
 
 //go:embed templates/*.html
-var templatesFS embed.FS
+var assetsFS embed.FS
 
 // Handlers holds HTTP handler dependencies
 type Handlers struct {
@@ -38,7 +38,7 @@ type Handlers struct {
 
 // NewHandlers creates handlers with dependencies
 func NewHandlers(discovery *Discovery, version string, contexts *ContextsConfig, authStore *AuthStore, rateLimiter *RateLimiter, secureCookie bool) (*Handlers, error) {
-	tmpl, err := template.ParseFS(templatesFS, "templates/*.html")
+	tmpl, err := template.ParseFS(assetsFS, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parsing templates: %w", err)
 	}
@@ -291,6 +291,24 @@ func (h *Handlers) HandleTaskStatus(w http.ResponseWriter, r *http.Request, task
 	// Forward response as-is
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resp.StatusCode)
+	if resp.StatusCode == http.StatusOK && sessionID != "" {
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "read_error", "Failed to read task response")
+			return
+		}
+		var taskData struct {
+			State string `json:"state"`
+		}
+		if json.Unmarshal(body, &taskData) == nil && taskData.State != "" {
+			switch taskData.State {
+			case "completed", "failed", "cancelled":
+				h.sessionStore.UpdateTaskState(sessionID, taskID, taskData.State)
+			}
+		}
+		w.Write(body)
+		return
+	}
 	io.Copy(w, resp.Body)
 }
 

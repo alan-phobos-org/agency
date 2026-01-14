@@ -9,6 +9,16 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/core.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/javascript.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/python.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/go.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/bash.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/json.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/yaml.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/sql.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/xml.min.js"></script>
     <style>
         /* ========================================
            Agency Dashboard - Alpine.js SPA
@@ -531,6 +541,27 @@
             padding: 0 var(--space-3);
         }
 
+        .session-actions {
+            display: flex;
+            justify-content: flex-end;
+            padding: var(--space-2) var(--space-3) 0 var(--space-3);
+        }
+
+        .session-actions-bottom {
+            display: flex;
+            justify-content: center;
+            padding: var(--space-2) 0;
+            margin-top: var(--space-2);
+        }
+
+        .io-task-block {
+            margin-bottom: var(--space-2);
+        }
+
+        .io-task-block:last-of-type {
+            margin-bottom: 0;
+        }
+
         .session-tab {
             padding: var(--space-2) var(--space-3);
             font-size: 0.75rem;
@@ -560,7 +591,7 @@
         }
 
         .session-content {
-            padding: var(--space-3);
+            padding: var(--space-2);
         }
 
         .session-panel {
@@ -576,7 +607,7 @@
             background: var(--bg-surface);
             border: 1px solid var(--border-default);
             border-radius: var(--radius-sm);
-            margin-bottom: var(--space-3);
+            margin-bottom: var(--space-2);
             overflow: hidden;
         }
 
@@ -640,14 +671,7 @@
         .io-content-md {
             font-family: var(--font-sans);
             font-size: 0.8125rem;
-        }
-
-        .io-content-md p {
-            margin-bottom: 0.5em;
-        }
-
-        .io-content-md p:last-child {
-            margin-bottom: 0;
+            white-space: normal; /* Override pre-wrap from .io-content */
         }
 
         .io-content-md pre {
@@ -671,6 +695,18 @@
         .io-content-md pre code {
             background: none;
             padding: 0;
+        }
+
+        .io-content-md p {
+            margin: 0.5em 0;
+        }
+
+        .io-content-md p:first-child {
+            margin-top: 0;
+        }
+
+        .io-content-md p:last-child {
+            margin-bottom: 0;
         }
 
         .io-content-md ul, .io-content-md ol {
@@ -823,12 +859,14 @@
             width: 100%;
             max-height: 90vh;
             overflow-y: auto;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
         }
 
         @media (min-width: 768px) {
             .modal {
                 border-radius: var(--radius-md);
                 max-width: 480px;
+                box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
             }
         }
 
@@ -884,11 +922,30 @@
             margin-bottom: var(--space-3);
         }
 
+        .form-group-inline {
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+            margin-bottom: var(--space-3);
+        }
+
+        .form-group-inline .form-label {
+            margin-bottom: 0;
+            min-width: 60px;
+            flex-shrink: 0;
+        }
+
+        .form-group-inline .form-select,
+        .form-group-inline .form-input {
+            flex: 1;
+        }
+
         .form-label {
             display: block;
             font-size: 0.75rem;
             font-weight: 500;
             margin-bottom: var(--space-1);
+            color: var(--text-secondary);
         }
 
         .form-select,
@@ -1312,61 +1369,60 @@
                             </div>
                             <div class="session-content">
                                 <!-- I/O Panel -->
-                                <div class="session-panel"
-                                     :class="{ 'session-panel--active': sessionTab === 'io' }"
-                                     role="tabpanel"
-                                     :id="'panel-io-' + session.id"
-                                     :aria-labelledby="'tab-io-' + session.id">
-                                    <template x-if="sessionHistory[session.id]?.loading">
-                                        <div class="empty-state">
-                                            <div class="loading-spinner" style="margin: 0 auto;"></div>
-                                            <div style="margin-top: var(--space-2);">Loading history...</div>
-                                        </div>
-                                    </template>
-                                    <template x-if="sessionHistory[session.id]?.error">
-                                        <div class="empty-state" style="color: var(--status-error);">
-                                            Error loading history: <span x-text="sessionHistory[session.id].error"></span>
-                                        </div>
-                                    </template>
-                                    <template x-if="!sessionHistory[session.id]?.loading && !sessionHistory[session.id]?.error">
-                                        <div>
-                                            <template x-for="(task, idx) in (session.tasks || [])" :key="task.task_id">
-                                                <div style="margin-bottom: var(--space-3);">
-                                                    <div class="io-block">
-                                                        <div class="io-header">
-                                                            <span>Prompt</span>
-                                                        </div>
-                                                        <div class="io-content" x-text="task.prompt || getTaskHistoryData(session.id, task.task_id)?.prompt || 'No prompt'"></div>
+                                    <div class="session-panel"
+                                         :class="{ 'session-panel--active': sessionTab === 'io' }"
+                                         role="tabpanel"
+                                         :id="'panel-io-' + session.id"
+                                         :aria-labelledby="'tab-io-' + session.id">
+                                    <div class="empty-state" x-show="sessionHistory[session.id]?.loading">
+                                        <div class="loading-spinner" style="margin: 0 auto;"></div>
+                                        <div style="margin-top: var(--space-2);">Loading history...</div>
+                                    </div>
+                                    <div class="empty-state" style="color: var(--status-error);" x-show="sessionHistory[session.id]?.error">
+                                        Error loading history: <span x-text="sessionHistory[session.id].error"></span>
+                                    </div>
+                                    <div>
+                                        <template x-for="(task, idx) in (session.tasks || [])" :key="task.task_id">
+                                            <div class="io-task-block">
+                                                <div class="io-block">
+                                                    <div class="io-header">
+                                                        <span>#<span x-text="idx + 1"></span> Prompt</span>
                                                     </div>
-                                                    <div class="io-block" x-show="getTaskOutput(session.id, task)">
-                                                        <div class="io-header">
-                                                            <span>
-                                                                Output
-                                                                <template x-if="task.state === 'working' && activeTaskPolling[task.task_id]">
-                                                                    <span class="io-header-live">(streaming...)</span>
-                                                                </template>
-                                                            </span>
-                                                            <button class="io-expand-btn"
-                                                                    @click="toggleOutputExpand(session.id + '-' + task.task_id)"
-                                                                    x-text="expandedOutputs[session.id + '-' + task.task_id] ? 'Collapse' : 'Expand'"></button>
-                                                        </div>
-                                                        <div class="io-content io-content-md"
-                                                             :class="{ 'io-content--expanded': expandedOutputs[session.id + '-' + task.task_id] }"
-                                                             x-html="renderMarkdown(getTaskOutput(session.id, task))"></div>
+                                                    <div class="io-content io-content-md"
+                                                         x-html="renderMarkdown(stripPromptPrefix(task.prompt || getTaskHistoryData(session.id, task.task_id)?.prompt || 'No prompt'))"></div>
+                                                </div>
+                                                <div class="io-block" x-show="getTaskOutput(session.id, task)">
+                                                    <div class="io-header">
+                                                        <span>
+                                                            Output
+                                                            <template x-if="task.state === 'working' && activeTaskPolling[task.task_id]">
+                                                                <span class="io-header-live">(streaming...)</span>
+                                                            </template>
+                                                        </span>
+                                                        <button class="io-expand-btn"
+                                                                @click="toggleOutputExpand(session.id + '-' + task.task_id)"
+                                                                x-text="expandedOutputs[session.id + '-' + task.task_id] ? 'Collapse' : 'Expand'"></button>
                                                     </div>
-                                                    <div class="io-block" x-show="getTaskError(session.id, task)">
-                                                        <div class="io-header">
-                                                            <span>Error</span>
-                                                        </div>
-                                                        <div class="io-content io-content--error" x-text="getTaskError(session.id, task)"></div>
+                                                    <div class="io-content io-content-md"
+                                                         :class="{ 'io-content--expanded': expandedOutputs[session.id + '-' + task.task_id] }"
+                                                         x-html="renderMarkdown(getTaskOutput(session.id, task))">
                                                     </div>
                                                 </div>
-                                            </template>
-                                            <div x-show="!session.tasks || session.tasks.length === 0" class="empty-state">
-                                                No tasks in this session
+                                                <div class="io-block" x-show="getTaskError(session.id, task)">
+                                                    <div class="io-header">
+                                                        <span>Error</span>
+                                                    </div>
+                                                    <div class="io-content io-content--error" x-text="getTaskError(session.id, task)"></div>
+                                                </div>
                                             </div>
+                                        </template>
+                                        <div x-show="!session.tasks || session.tasks.length === 0" class="empty-state">
+                                            No tasks in this session
                                         </div>
-                                    </template>
+                                        <div class="session-actions-bottom">
+                                            <button class="btn btn-sm btn-ghost" @click="openTaskModal(session.id)">+ New task in session</button>
+                                        </div>
+                                    </div>
                                 </div>
                                 <!-- Details Panel -->
                                 <div class="session-panel"
@@ -1470,8 +1526,29 @@
             <div class="modal-body">
                 <form @submit.prevent="submitTask()">
                     <div class="form-group">
+                        <label class="form-label" for="prompt-input">Prompt</label>
+                        <textarea class="form-textarea" id="prompt-input" x-model="taskForm.prompt" placeholder="Describe the task..." required x-ref="promptInput"></textarea>
+                    </div>
+                    <div class="form-group-inline">
+                        <label class="form-label" for="session-select">Session</label>
+                        <select class="form-select" id="session-select" x-model="taskForm.sessionId">
+                            <option value="">New session</option>
+                            <template x-for="session in sessions" :key="session.id">
+                                <option :value="session.id" x-text="getSessionOptionLabel(session)"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <div class="form-group-inline">
+                        <label class="form-label" for="context-select">Context</label>
+                        <select class="form-select" id="context-select" x-model="taskForm.contextId" @change="onContextChange()">
+                            <template x-for="ctx in contexts" :key="ctx.id">
+                                <option :value="ctx.id" x-text="ctx.name"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <div class="form-group-inline">
                         <label class="form-label" for="agent-select">Agent</label>
-                        <select class="form-select" id="agent-select" x-model="taskForm.agentUrl" required>
+                        <select class="form-select" id="agent-select" x-model="taskForm.agentUrl" :disabled="taskForm.sessionId" :required="!taskForm.sessionId">
                             <option value="">Select an agent...</option>
                             <template x-for="agent in idleAgents" :key="agent.url">
                                 <option :value="agent.url" x-text="getComponentName(agent.url) + ' (idle)'"></option>
@@ -1480,18 +1557,6 @@
                                 <option :value="agent.url" x-text="getComponentName(agent.url) + ' (' + agent.state + ')'" disabled></option>
                             </template>
                         </select>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" for="context-select">Context</label>
-                        <select class="form-select" id="context-select" x-model="taskForm.contextId" @change="onContextChange()">
-                            <template x-for="ctx in contexts" :key="ctx.id">
-                                <option :value="ctx.id" x-text="ctx.name"></option>
-                            </template>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" for="prompt-input">Prompt</label>
-                        <textarea class="form-textarea" id="prompt-input" x-model="taskForm.prompt" placeholder="Describe the task..." required x-ref="promptInput"></textarea>
                     </div>
                     <div class="form-group">
                         <div class="form-options" :class="{ 'form-options--open': taskOptionsOpen }">
@@ -1639,6 +1704,7 @@
                 // Active task polling (for streaming output)
                 activeTaskPolling: {}, // { taskId: pollingIntervalId }
                 activeTasks: {}, // { taskId: { output, state } } for real-time updates
+                taskOutputCache: {}, // { taskId: output } fallback for completed tasks
 
                 // Contexts
                 contexts: [],
@@ -1648,6 +1714,7 @@
                 taskOptionsOpen: false,
                 taskForm: {
                     agentUrl: '',
+                    sessionId: '',
                     contextId: 'manual',
                     prompt: '',
                     model: 'opus',
@@ -1710,6 +1777,22 @@
                     // Watch fleet state changes
                     this.$watch('fleetOpen', (value) => {
                         localStorage.setItem('agency-fleet-open', value);
+                    });
+
+                    // Watch for settings modal open to load devices
+                    this.$watch('settingsOpen', (open) => {
+                        if (open) {
+                            this.loadDevices();
+                        }
+                    });
+
+                    // Keep agent selection aligned to session selection
+                    this.$watch('taskForm.sessionId', (sessionId) => {
+                        if (!sessionId) return;
+                        const session = this.sessions.find(s => s.id === sessionId);
+                        if (session && session.agent_url) {
+                            this.taskForm.agentUrl = session.agent_url;
+                        }
                     });
                 },
 
@@ -1803,6 +1886,17 @@
 
                         // Update sessions (preserving expansion state)
                         this.sessions = data.sessions || [];
+                        if (this.taskForm.sessionId) {
+                            const selected = this.sessions.find(s => s.id === this.taskForm.sessionId);
+                            if (!selected) {
+                                this.taskForm.sessionId = '';
+                            } else if (selected.agent_url && selected.agent_url !== this.taskForm.agentUrl) {
+                                this.taskForm.agentUrl = selected.agent_url;
+                            }
+                        }
+                        if (this.expandedSession) {
+                            this.loadSessionHistory(this.expandedSession);
+                        }
 
                         // Poll active tasks for real-time output
                         await this.pollActiveTasks();
@@ -1843,6 +1937,10 @@
                     // Stop polling for completed tasks
                     for (const taskId of Object.keys(this.activeTaskPolling)) {
                         if (!workingTasks.find(t => t.taskId === taskId)) {
+                            const active = this.activeTasks[taskId];
+                            if (active && active.output !== undefined) {
+                                this.taskOutputCache[taskId] = active.output;
+                            }
                             delete this.activeTaskPolling[taskId];
                             delete this.activeTasks[taskId];
                         }
@@ -1862,6 +1960,9 @@
                             output: data.output || '',
                             state: data.state
                         };
+                        if (data.output !== undefined) {
+                            this.taskOutputCache[taskId] = data.output;
+                        }
 
                         // If task completed, update session and stop polling
                         if (['completed', 'failed', 'cancelled'].includes(data.state)) {
@@ -1899,8 +2000,10 @@
                         const resp = await this.api('/api/contexts');
                         this.contexts = await resp.json();
                         if (this.contexts.length > 0) {
-                            // Select first context by default (usually 'manual')
-                            this.taskForm.contextId = this.contexts[0].id;
+                            const preferred = this.contexts.find(c => c.id === 'phobos-dev');
+                            // Select preferred context by default, fall back to first (usually 'manual')
+                            this.taskForm.contextId = (preferred || this.contexts[0]).id;
+                            this.onContextChange();
                         }
                     } catch (err) {
                         console.error('Failed to load contexts:', err);
@@ -1920,44 +2023,64 @@
                     }
                 },
 
-                async loadSessionHistory(sessionId) {
+                async loadSessionHistory(sessionId, force = false) {
                     const session = this.sessions.find(s => s.id === sessionId);
                     if (!session) return;
 
-                    // Initialize history state
                     if (!this.sessionHistory[sessionId]) {
-                        this.sessionHistory[sessionId] = { loading: true, error: null, tasks: {} };
-                    } else {
-                        this.sessionHistory[sessionId].loading = true;
-                        this.sessionHistory[sessionId].error = null;
+                        this.sessionHistory[sessionId] = { loading: false, error: null, tasks: {} };
                     }
+
+                    const historyState = this.sessionHistory[sessionId];
+                    if (historyState.loading) return;
 
                     const tasks = session.tasks || [];
                     const terminalStates = ['completed', 'failed', 'cancelled'];
+                    const missingTasks = tasks.filter(task =>
+                        terminalStates.includes(task.state) &&
+                        (force || !historyState.tasks[task.task_id])
+                    );
 
-                    for (const task of tasks) {
-                        // Only fetch history for completed tasks
-                        if (terminalStates.includes(task.state)) {
-                            try {
-                                const resp = await this.api(`/api/history/${task.task_id}?agent_url=${encodeURIComponent(session.agent_url)}`);
-                                const history = await resp.json();
-                                this.sessionHistory[sessionId].tasks[task.task_id] = history;
-                            } catch (err) {
-                                console.error(`Failed to load history for task ${task.task_id}:`, err);
-                                this.sessionHistory[sessionId].tasks[task.task_id] = { error: err.message };
+                    if (missingTasks.length === 0) {
+                        return;
+                    }
+
+                    historyState.loading = true;
+                    historyState.error = null;
+
+                    for (const task of missingTasks) {
+                        try {
+                            const resp = await this.api(`/api/history/${task.task_id}?agent_url=${encodeURIComponent(session.agent_url)}`);
+                            const history = await resp.json();
+                            historyState.tasks[task.task_id] = history;
+                            if (history.output !== undefined) {
+                                this.taskOutputCache[task.task_id] = history.output;
                             }
+                        } catch (err) {
+                            console.error(`Failed to load history for task ${task.task_id}:`, err);
+                            historyState.tasks[task.task_id] = { error: err.message };
                         }
                     }
 
-                    this.sessionHistory[sessionId].loading = false;
+                    historyState.loading = false;
                 },
 
                 // Task modal
-                openTaskModal() {
+                openTaskModal(sessionId = '') {
                     this.taskModalOpen = true;
                     this.taskError = '';
-                    // Auto-select first idle agent
-                    if (this.idleAgents.length > 0 && !this.taskForm.agentUrl) {
+                    this.taskOptionsOpen = false;
+                    // Reset agentUrl before setting sessionId (which triggers watcher)
+                    this.taskForm.agentUrl = '';
+                    this.taskForm.sessionId = sessionId;
+                    if (sessionId) {
+                        // Set agent from session (watcher also does this, but be explicit)
+                        const session = this.sessions.find(s => s.id === sessionId);
+                        if (session && session.agent_url) {
+                            this.taskForm.agentUrl = session.agent_url;
+                        }
+                    } else if (this.idleAgents.length > 0) {
+                        // Auto-select first idle agent for new sessions
                         this.taskForm.agentUrl = this.idleAgents[0].url;
                     }
                     // Focus prompt input after modal opens
@@ -1986,11 +2109,12 @@
 
                     try {
                         const ctx = this.contexts.find(c => c.id === this.taskForm.contextId);
+                        const prompt = this.taskForm.prompt.trim();
 
                         // Build full prompt with context prefix if applicable
-                        let fullPrompt = this.taskForm.prompt;
+                        let fullPrompt = prompt;
                         if (ctx && ctx.prompt_prefix) {
-                            fullPrompt = ctx.prompt_prefix + this.taskForm.prompt;
+                            fullPrompt = ctx.prompt_prefix + prompt;
                         }
 
                         const body = {
@@ -2000,6 +2124,9 @@
                             timeout_seconds: this.taskForm.timeout,
                             thinking: this.taskForm.thinking
                         };
+                        if (this.taskForm.sessionId) {
+                            body.session_id = this.taskForm.sessionId;
+                        }
 
                         const resp = await this.api('/api/task', {
                             method: 'POST',
@@ -2063,15 +2190,6 @@
                         this.loadDevices();
                     } catch (err) {
                         console.error('Failed to revoke device:', err);
-                    }
-                },
-
-                // Watch for settings modal open to load devices
-                $watch: {
-                    settingsOpen(open) {
-                        if (open) {
-                            this.loadDevices();
-                        }
                     }
                 },
 
@@ -2161,8 +2279,24 @@
                     const tasks = session.tasks || [];
                     if (tasks.length === 0) return 'Empty session';
                     const firstTask = tasks[0];
+
+                    // Check for agent-provided summary in history
+                    const history = this.sessionHistory[session.id]?.tasks?.[firstTask.task_id];
+                    if (history?.summary) {
+                        return history.summary;
+                    }
+
+                    // Fall back to user prompt (stripped of context prefix)
                     const prompt = firstTask.prompt || '';
-                    return this.generateSummary(prompt, 35);
+                    const strippedPrompt = this.stripPromptPrefix(prompt);
+                    return this.generateSummary(strippedPrompt, 35);
+                },
+
+                getSessionOptionLabel(session) {
+                    const summary = this.getSessionSummary(session);
+                    const shortId = session.id ? session.id.slice(0, 8) : 'session';
+                    const agent = this.getComponentName(session.agent_url);
+                    return `${summary} - ${agent} - ${shortId}`;
                 },
 
                 generateSummary(prompt, maxLen = 30) {
@@ -2234,7 +2368,10 @@
                     }
                     // For completed tasks, get from history
                     const history = this.getTaskHistoryData(sessionId, task.task_id);
-                    return history?.output || '';
+                    if (history && history.output !== undefined) {
+                        return history.output || '';
+                    }
+                    return this.taskOutputCache[task.task_id] || '';
                 },
 
                 getTaskError(sessionId, task) {
@@ -2283,9 +2420,39 @@
                     return num.toString();
                 },
 
+                stripPromptPrefix(text) {
+                    if (!text) return '';
+                    // Strip context prefixes - look for "## Task" marker first
+                    const taskMarker = /^[\s\S]*?## Task\n*/;
+                    const taskMatch = text.match(taskMarker);
+                    if (taskMatch) {
+                        return text.slice(taskMatch[0].length).trim();
+                    }
+                    // Fallback: strip "# Project Context" prefixes
+                    const prefixPatterns = [
+                        /^# Project Context\n+## Repository Source[\s\S]*?(?=\n\n[^#\n])/,
+                        /^# Project Context[\s\S]*?(?=\n\n[^#\n])/,
+                    ];
+                    for (const pattern of prefixPatterns) {
+                        const match = text.match(pattern);
+                        if (match) {
+                            return text.slice(match[0].length).trim();
+                        }
+                    }
+                    return text;
+                },
+
                 renderMarkdown(text) {
                     if (!text) return '';
                     try {
+                        marked.setOptions({
+                            highlight: function(code, lang) {
+                                if (lang && hljs.getLanguage(lang)) {
+                                    return hljs.highlight(code, { language: lang }).value;
+                                }
+                                return hljs.highlightAuto(code).value;
+                            }
+                        });
                         return marked.parse(text);
                     } catch (e) {
                         return this.escapeHtml(text);

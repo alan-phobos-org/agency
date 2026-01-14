@@ -480,20 +480,23 @@ func TestSystemWebViewSessionDetail(t *testing.T) {
 		body, _ := io.ReadAll(resp.Body)
 		html := string(body)
 
-		// Check for session detail section
-		require.Contains(t, html, `id="sessionDetail"`, "Should have session detail div")
-		require.Contains(t, html, `id="sessionDetailContent"`, "Should have session detail content")
+		// Check for Alpine.js dashboard structure
+		require.Contains(t, html, `x-data="dashboard()"`, "Should have Alpine.js dashboard component")
+		require.Contains(t, html, "session-card", "Should have session-card class")
+		require.Contains(t, html, "session-body", "Should have session-body for expansion")
+		require.Contains(t, html, "expandedSession", "Should track expanded session")
 
-		// Check for JavaScript functions
-		require.Contains(t, html, "openSessionDetail", "Should have openSessionDetail function")
-		require.Contains(t, html, "closeSessionDetail", "Should have closeSessionDetail function")
-		require.Contains(t, html, "fetchTaskHistory", "Should have fetchTaskHistory function")
-		require.Contains(t, html, "renderSessionDetail", "Should have renderSessionDetail function")
+		// Check for session history functionality
+		require.Contains(t, html, "loadSessionHistory", "Should have loadSessionHistory function")
+		require.Contains(t, html, "sessionHistory", "Should track session history")
+		require.Contains(t, html, "toggleSession", "Should have toggleSession function")
 
 		// Check for CSS classes
-		require.Contains(t, html, ".session-row", "Should have session-row CSS")
-		require.Contains(t, html, ".task-item", "Should have task-item CSS")
-		require.Contains(t, html, ".task-output", "Should have task-output CSS")
+		require.Contains(t, html, ".session-card", "Should have session-card CSS")
+		require.Contains(t, html, ".session-header", "Should have session-header CSS")
+		require.Contains(t, html, ".session-body", "Should have session-body CSS")
+		require.Contains(t, html, ".io-block", "Should have io-block CSS")
+		require.Contains(t, html, ".io-content", "Should have io-content CSS")
 	})
 
 	t.Run("session detail with task shows in dashboard", func(t *testing.T) {

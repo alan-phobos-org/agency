@@ -91,6 +91,7 @@ func (s *Scheduler) Start() error {
 	router := chi.NewRouter()
 	router.Get("/status", s.handleStatus)
 	router.Post("/shutdown", s.handleShutdown)
+	router.Post("/trigger/{job}", s.handleTrigger)
 
 	s.server = &http.Server{
 		Addr:    fmt.Sprintf(":%d", s.config.Port),
@@ -384,4 +385,54 @@ func (s *Scheduler) handleShutdown(w http.ResponseWriter, r *http.Request) {
 		}
 		s.Shutdown(ctx)
 	}()
+}
+
+// handleTrigger manually triggers a job by name
+func (s *Scheduler) handleTrigger(w http.ResponseWriter, r *http.Request) {
+	jobName := chi.URLParam(r, "job")
+
+	s.mu.RLock()
+	var target *jobState
+	for _, js := range s.jobs {
+		if js.Job.Name == jobName {
+			target = js
+			break
+		}
+	}
+	s.mu.RUnlock()
+
+	if target == nil {
+		api.WriteJSON(w, http.StatusNotFound, map[string]string{
+			"error": "job_not_found",
+			"name":  jobName,
+		})
+		return
+	}
+
+	// Check if already running
+	target.mu.Lock()
+	if target.isRunning {
+		target.mu.Unlock()
+		api.WriteJSON(w, http.StatusConflict, map[string]string{
+			"error": "job_already_running",
+			"name":  jobName,
+		})
+		return
+	}
+	target.isRunning = true
+	target.mu.Unlock()
+
+	// Run job synchronously so caller can see result
+	s.runJob(target)
+
+	// Return current state
+	target.mu.RLock()
+	resp := map[string]interface{}{
+		"name":         target.Job.Name,
+		"last_status":  target.LastStatus,
+		"last_task_id": target.LastTaskID,
+	}
+	target.mu.RUnlock()
+
+	api.WriteJSON(w, http.StatusOK, resp)
 }

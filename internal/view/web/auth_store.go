@@ -24,13 +24,14 @@ const (
 	SessionTypeDevice SessionType = "device" // From device pairing (long-lived, revocable)
 )
 
-// Argon2id parameters
-const (
-	argonTime    = 1
-	argonMemory  = 64 * 1024
-	argonThreads = 4
-	argonKeyLen  = 32
-	argonSaltLen = 16
+// Argon2id parameters (configurable for testing)
+var (
+	argonTime       uint32 = 1
+	argonMemory     uint32 = 64 * 1024
+	argonThreads    uint8  = 4
+	argonKeyLen     uint32 = 32
+	argonSaltLen           = 16
+	argonPairingMem uint32 = 16 * 1024 // lighter for short-lived pairing codes
 )
 
 // Session durations
@@ -482,7 +483,7 @@ func hashPairingCode(code string) (string, error) {
 	}
 
 	// Use faster parameters for pairing codes (short-lived)
-	hash := argon2.IDKey([]byte(code), salt, 1, 16*1024, 1, 16)
+	hash := argon2.IDKey([]byte(code), salt, 1, argonPairingMem, 1, 16)
 
 	b64Salt := base64.RawStdEncoding.EncodeToString(salt)
 	b64Hash := base64.RawStdEncoding.EncodeToString(hash)
@@ -507,6 +508,6 @@ func verifyPairingCode(code, encodedHash string) bool {
 		return false
 	}
 
-	computedHash := argon2.IDKey([]byte(code), salt, 1, 16*1024, 1, 16)
+	computedHash := argon2.IDKey([]byte(code), salt, 1, argonPairingMem, 1, 16)
 	return subtle.ConstantTimeCompare(computedHash, expectedHash) == 1
 }

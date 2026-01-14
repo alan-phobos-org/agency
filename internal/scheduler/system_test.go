@@ -188,16 +188,12 @@ jobs:
 	schedulerURL := fmt.Sprintf("http://localhost:%d", schedulerPort)
 	testutil.WaitForHealthy(t, schedulerURL+"/status", 10*time.Second)
 
-	// Wait for the scheduler to trigger the job (runs every minute, but we wait up to 70s)
-	// The cron job runs at the start of every minute, so we might wait up to 60s
-	t.Log("Waiting for scheduled job execution (up to 70s)...")
-	deadline := time.Now().Add(70 * time.Second)
-	for time.Now().Before(deadline) {
-		if atomic.LoadInt32(&taskCount) > 0 {
-			break
-		}
-		time.Sleep(1 * time.Second)
-	}
+	// Trigger job manually via API (avoids 60s wait for cron)
+	t.Log("Triggering job via /trigger endpoint...")
+	resp, err := http.Post(schedulerURL+"/trigger/frequent-job", "application/json", nil)
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// Verify job was submitted
 	count := atomic.LoadInt32(&taskCount)
@@ -206,12 +202,12 @@ jobs:
 	t.Logf("Job executed %d time(s)", count)
 
 	// Verify status shows job info
-	resp, err := http.Get(schedulerURL + "/status")
+	statusResp, err := http.Get(schedulerURL + "/status")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer statusResp.Body.Close()
 
 	var status map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&status)
+	json.NewDecoder(statusResp.Body).Decode(&status)
 
 	jobs := status["jobs"].([]interface{})
 	job := jobs[0].(map[string]interface{})
@@ -485,26 +481,16 @@ jobs:
 	schedulerURL := fmt.Sprintf("http://localhost:%d", schedulerPort)
 	testutil.WaitForHealthy(t, schedulerURL+"/status", 10*time.Second)
 
-	// Wait for job to be triggered
-	t.Log("Waiting for job execution (up to 70s)...")
-	deadline := time.Now().Add(70 * time.Second)
-	var lastStatus string
-	for time.Now().Before(deadline) {
-		resp, err := http.Get(schedulerURL + "/status")
-		if err == nil {
-			var status map[string]interface{}
-			json.NewDecoder(resp.Body).Decode(&status)
-			resp.Body.Close()
+	// Trigger job manually via API (avoids 60s wait for cron)
+	t.Log("Triggering job via /trigger endpoint...")
+	resp, err := http.Post(schedulerURL+"/trigger/busy-test", "application/json", nil)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-			jobs := status["jobs"].([]interface{})
-			job := jobs[0].(map[string]interface{})
-			if s, ok := job["last_status"].(string); ok && s != "" {
-				lastStatus = s
-				break
-			}
-		}
-		time.Sleep(1 * time.Second)
-	}
+	var triggerResp map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&triggerResp)
+	lastStatus := triggerResp["last_status"].(string)
 
 	assert.Equal(t, "skipped_busy", lastStatus, "Job should be skipped when agent is busy")
 	t.Log("Job correctly skipped due to busy agent")

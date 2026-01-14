@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"sync"
 	"time"
 
@@ -195,6 +196,9 @@ func (d *Discovery) Agents() []*ComponentStatus {
 			agents = append(agents, comp)
 		}
 	}
+	sort.Slice(agents, func(i, j int) bool {
+		return agents[i].URL < agents[j].URL
+	})
 	return agents
 }
 
@@ -209,6 +213,9 @@ func (d *Discovery) Directors() []*ComponentStatus {
 			directors = append(directors, comp)
 		}
 	}
+	sort.Slice(directors, func(i, j int) bool {
+		return directors[i].URL < directors[j].URL
+	})
 	return directors
 }
 
@@ -223,6 +230,9 @@ func (d *Discovery) Helpers() []*ComponentStatus {
 			helpers = append(helpers, comp)
 		}
 	}
+	sort.Slice(helpers, func(i, j int) bool {
+		return helpers[i].URL < helpers[j].URL
+	})
 	return helpers
 }
 

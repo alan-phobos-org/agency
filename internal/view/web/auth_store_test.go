@@ -7,6 +7,12 @@ import (
 	"time"
 )
 
+func init() {
+	// Use fast argon2 parameters for tests (1KB instead of 64MB/16KB)
+	argonMemory = 1024
+	argonPairingMem = 1024
+}
+
 func TestPasswordHashing(t *testing.T) {
 	t.Parallel()
 

@@ -53,7 +53,7 @@ jobs:
       ### 5. Report Project Health
       - Summarise the state of the project as you found it
       - Include what you then discovered/did
-      - Finish with anything you couldn't do/next steps
+      - Finish with anything you couldn't do/questions/next steps
 
       ## Workflow
 
@@ -64,9 +64,4 @@ jobs:
       4. Run tests again to verify no regressions
       5. Commit changes with descriptive messages
       6. Move to next repository
-
-      ## Important Notes
-      - Do not make breaking changes
-      - Keep commits small and focused
-      - If unsure about a change, skip it
-      
+  
