@@ -9,18 +9,14 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         /* ========================================
-           FINAL MOCKUP: Combined Design
+           FINAL MOCKUP: Compact Design
 
-           Combines:
-           - Feature layout from mockup-basic
-             (sessions, tasks, fleet, task submission)
-           - Visual style from mockup-langsmith
-             (colors, typography, page layout, CSS)
-
-           Architectural decisions:
-           - Polling for real-time updates
-           - Flat session/task hierarchy
-           - No offline support
+           Key changes:
+           - No sidebar - sessions are full width
+           - Fleet is collapsible, collapsed by default
+           - Reduced padding throughout
+           - Smaller top bar and bottom nav
+           - Maximum screen estate for sessions
            ======================================== */
 
         :root {
@@ -47,14 +43,13 @@
             --accent: #58a6ff;
             --accent-muted: rgba(88, 166, 255, 0.15);
 
-            /* Spacing */
+            /* Compact spacing */
             --space-1: 4px;
-            --space-2: 8px;
-            --space-3: 12px;
-            --space-4: 16px;
-            --space-5: 20px;
-            --space-6: 24px;
-            --space-8: 32px;
+            --space-2: 6px;
+            --space-3: 10px;
+            --space-4: 12px;
+            --space-5: 16px;
+            --space-6: 20px;
 
             /* Typography */
             --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -63,7 +58,6 @@
             /* Border radius */
             --radius-sm: 4px;
             --radius-md: 6px;
-            --radius-lg: 8px;
 
             /* Safe areas */
             --safe-top: env(safe-area-inset-top);
@@ -80,79 +74,48 @@
             font-family: var(--font-sans);
             background: var(--bg-base);
             color: var(--text-primary);
-            line-height: 1.5;
+            line-height: 1.4;
             min-height: 100vh;
             min-height: 100dvh;
+            font-size: 14px;
         }
 
-        /* Top navigation bar */
+        /* Compact top bar */
         .topbar {
             position: sticky;
             top: 0;
             z-index: 100;
             background: var(--bg-surface);
             border-bottom: 1px solid var(--border-default);
-            padding: 0 var(--space-4);
+            padding: 0 var(--space-3);
             padding-top: var(--safe-top);
         }
 
         .topbar-content {
             display: flex;
             align-items: center;
-            height: 48px;
-            gap: var(--space-4);
+            height: 40px;
+            gap: var(--space-3);
         }
 
         .logo {
             font-weight: 600;
-            font-size: 1rem;
+            font-size: 0.9375rem;
             display: flex;
             align-items: center;
             gap: var(--space-2);
         }
 
         .logo-icon {
-            width: 24px;
-            height: 24px;
+            width: 22px;
+            height: 22px;
             background: var(--accent);
             border-radius: var(--radius-sm);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 0.875rem;
+            font-size: 0.8125rem;
             color: white;
-        }
-
-        /* Tabs navigation */
-        .nav-tabs {
-            display: none;
-            gap: var(--space-1);
-            margin-left: var(--space-6);
-        }
-
-        @media (min-width: 768px) {
-            .nav-tabs {
-                display: flex;
-            }
-        }
-
-        .nav-tab {
-            padding: var(--space-3) var(--space-4);
-            color: var(--text-secondary);
-            text-decoration: none;
-            font-size: 0.875rem;
-            font-weight: 500;
-            border-bottom: 2px solid transparent;
-            transition: all 0.15s ease;
-        }
-
-        .nav-tab:hover {
-            color: var(--text-primary);
-        }
-
-        .nav-tab--active {
-            color: var(--text-primary);
-            border-bottom-color: var(--accent);
         }
 
         .topbar-actions {
@@ -166,19 +129,19 @@
             display: none;
             align-items: center;
             gap: var(--space-2);
-            font-size: 0.75rem;
+            font-size: 0.6875rem;
             color: var(--text-tertiary);
         }
 
-        @media (min-width: 768px) {
+        @media (min-width: 600px) {
             .topbar-status {
                 display: flex;
             }
         }
 
         .topbar-status-dot {
-            width: 6px;
-            height: 6px;
+            width: 5px;
+            height: 5px;
             border-radius: 50%;
             background: var(--status-success);
             animation: pulse 2s infinite;
@@ -189,21 +152,21 @@
             50% { opacity: 0.5; }
         }
 
-        /* Buttons */
+        /* Compact buttons */
         .btn {
             display: inline-flex;
             align-items: center;
             justify-content: center;
             gap: var(--space-2);
             padding: var(--space-2) var(--space-3);
-            font-size: 0.875rem;
+            font-size: 0.8125rem;
             font-weight: 500;
-            border-radius: var(--radius-md);
+            border-radius: var(--radius-sm);
             border: 1px solid var(--border-default);
             background: var(--bg-elevated);
             color: var(--text-primary);
             cursor: pointer;
-            min-height: 36px;
+            min-height: 30px;
             transition: all 0.15s ease;
         }
 
@@ -222,8 +185,8 @@
         }
 
         .btn-icon {
-            padding: var(--space-2);
-            min-width: 36px;
+            padding: var(--space-1);
+            min-width: 30px;
         }
 
         .btn-ghost {
@@ -237,237 +200,139 @@
             color: var(--text-primary);
         }
 
-        /* Main layout */
-        .layout {
-            display: flex;
-            min-height: calc(100vh - 48px);
+        .btn-sm {
+            padding: var(--space-1) var(--space-2);
+            font-size: 0.75rem;
+            min-height: 24px;
         }
 
-        /* Sidebar */
-        .sidebar {
-            width: 260px;
-            background: var(--bg-surface);
-            border-right: 1px solid var(--border-default);
-            display: none;
-            flex-direction: column;
+        /* Main content - full width, no sidebar */
+        .main {
+            min-height: calc(100vh - 40px);
+            padding-bottom: calc(var(--space-6) + var(--safe-bottom) + 48px);
         }
 
-        @media (min-width: 1024px) {
-            .sidebar {
-                display: flex;
+        @media (min-width: 768px) {
+            .main {
+                padding-bottom: var(--space-6);
             }
         }
 
-        .sidebar-section {
-            padding: var(--space-4);
-            border-bottom: 1px solid var(--border-muted);
+        .content {
+            padding: var(--space-3);
+            max-width: 1400px;
+            margin: 0 auto;
         }
 
-        .sidebar-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
+        /* Collapsible Fleet Section */
+        .fleet-section {
             margin-bottom: var(--space-3);
         }
 
-        .sidebar-title {
-            font-size: 0.75rem;
-            font-weight: 600;
-            color: var(--text-tertiary);
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        /* Fleet list in sidebar */
-        .fleet-list {
-            display: flex;
-            flex-direction: column;
-            gap: var(--space-1);
-        }
-
-        .fleet-item {
+        .fleet-trigger {
             display: flex;
             align-items: center;
-            gap: var(--space-3);
+            gap: var(--space-2);
+            width: 100%;
             padding: var(--space-2) var(--space-3);
-            border-radius: var(--radius-md);
-            cursor: pointer;
-            transition: background 0.15s ease;
-        }
-
-        .fleet-item:hover {
-            background: var(--bg-hover);
-        }
-
-        .fleet-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            flex-shrink: 0;
-        }
-
-        .fleet-dot--idle {
-            background: var(--status-success);
-        }
-
-        .fleet-dot--working {
-            background: var(--status-running);
-            animation: pulse 1.5s infinite;
-        }
-
-        .fleet-dot--error {
-            background: var(--status-error);
-        }
-
-        .fleet-info {
-            flex: 1;
-            min-width: 0;
-        }
-
-        .fleet-name {
-            font-size: 0.875rem;
-            font-weight: 500;
-        }
-
-        .fleet-meta {
-            font-size: 0.75rem;
-            color: var(--text-tertiary);
-        }
-
-        .fleet-status {
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-        }
-
-        /* Main content */
-        .main {
-            flex: 1;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-        }
-
-        /* Content area */
-        .content {
-            flex: 1;
-            overflow-y: auto;
-            padding: var(--space-4);
-            padding-bottom: calc(var(--space-8) + var(--safe-bottom) + 60px);
-        }
-
-        @media (min-width: 1024px) {
-            .content {
-                padding-bottom: var(--space-8);
-            }
-        }
-
-        /* Section */
-        .section {
-            margin-bottom: var(--space-6);
-        }
-
-        .section-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: var(--space-4);
-        }
-
-        .section-title {
-            font-size: 0.875rem;
-            font-weight: 600;
-        }
-
-        /* Fleet grid (mobile/tablet) */
-        .fleet-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: var(--space-3);
-        }
-
-        @media (min-width: 1024px) {
-            .fleet-grid {
-                display: none;
-            }
-        }
-
-        .fleet-card {
             background: var(--bg-surface);
             border: 1px solid var(--border-default);
             border-radius: var(--radius-md);
-            padding: var(--space-4);
-        }
-
-        .fleet-card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            margin-bottom: var(--space-2);
-        }
-
-        .fleet-card-name {
-            font-weight: 500;
-            font-size: 0.9375rem;
-        }
-
-        .fleet-card-type {
+            color: var(--text-secondary);
             font-size: 0.75rem;
-            color: var(--text-tertiary);
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
         }
 
-        /* Status badge */
-        .status-badge {
-            display: inline-flex;
+        .fleet-trigger:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .fleet-trigger-icon {
+            transition: transform 0.2s ease;
+        }
+
+        .fleet-section--open .fleet-trigger-icon {
+            transform: rotate(180deg);
+        }
+
+        .fleet-trigger-label {
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .fleet-trigger-summary {
+            margin-left: auto;
+            display: flex;
+            gap: var(--space-3);
+        }
+
+        .fleet-trigger-stat {
+            display: flex;
             align-items: center;
             gap: var(--space-1);
-            padding: 2px var(--space-2);
-            font-size: 0.6875rem;
-            font-weight: 500;
-            border-radius: 999px;
-            text-transform: uppercase;
-            letter-spacing: 0.02em;
         }
 
-        .status-badge::before {
-            content: '';
-            width: 5px;
-            height: 5px;
+        .fleet-trigger-dot {
+            width: 6px;
+            height: 6px;
             border-radius: 50%;
         }
 
-        .status-badge--idle {
-            background: rgba(63, 185, 80, 0.15);
-            color: var(--status-success);
+        .fleet-trigger-dot--idle { background: var(--status-success); }
+        .fleet-trigger-dot--working { background: var(--status-running); animation: pulse 1.5s infinite; }
+
+        .fleet-content {
+            display: none;
+            padding: var(--space-3);
+            padding-top: var(--space-2);
         }
 
-        .status-badge--idle::before {
-            background: var(--status-success);
+        .fleet-section--open .fleet-content {
+            display: block;
         }
 
-        .status-badge--working {
-            background: rgba(88, 166, 255, 0.15);
-            color: var(--status-running);
+        .fleet-grid {
+            display: flex;
+            gap: var(--space-2);
+            flex-wrap: wrap;
         }
 
-        .status-badge--working::before {
-            background: var(--status-running);
-            animation: pulse 1.5s infinite;
+        .fleet-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-2);
+            padding: var(--space-1) var(--space-3);
+            background: var(--bg-surface);
+            border: 1px solid var(--border-default);
+            border-radius: 999px;
+            font-size: 0.75rem;
         }
 
-        .status-badge--error {
-            background: rgba(248, 81, 73, 0.15);
-            color: var(--status-error);
+        .fleet-chip-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
         }
 
-        .status-badge--error::before {
-            background: var(--status-error);
+        .fleet-chip-dot--idle { background: var(--status-success); }
+        .fleet-chip-dot--working { background: var(--status-running); animation: pulse 1.5s infinite; }
+
+        .fleet-chip-name {
+            font-weight: 500;
         }
 
-        /* Session list */
+        .fleet-chip-status {
+            color: var(--text-tertiary);
+        }
+
+        /* Session list - full width */
         .session-list {
             display: flex;
             flex-direction: column;
-            gap: var(--space-3);
+            gap: var(--space-2);
         }
 
         .session-card {
@@ -478,16 +343,12 @@
             transition: border-color 0.15s ease;
         }
 
-        .session-card:hover {
-            border-color: var(--border-default);
-        }
-
         .session-card--expanded {
             border-color: var(--accent);
         }
 
         .session-header {
-            padding: var(--space-4);
+            padding: var(--space-3);
             display: flex;
             align-items: center;
             gap: var(--space-3);
@@ -501,14 +362,14 @@
         }
 
         .session-status {
-            width: 20px;
-            height: 20px;
+            width: 18px;
+            height: 18px;
             border-radius: var(--radius-sm);
             display: flex;
             align-items: center;
             justify-content: center;
             flex-shrink: 0;
-            font-size: 0.75rem;
+            font-size: 0.6875rem;
         }
 
         .session-status--idle {
@@ -533,7 +394,7 @@
 
         .session-summary {
             font-weight: 500;
-            font-size: 0.9375rem;
+            font-size: 0.875rem;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -542,9 +403,9 @@
         .session-meta {
             display: flex;
             gap: var(--space-3);
-            font-size: 0.75rem;
+            font-size: 0.6875rem;
             color: var(--text-tertiary);
-            margin-top: 2px;
+            margin-top: 1px;
         }
 
         .session-agent {
@@ -558,7 +419,7 @@
             flex-shrink: 0;
         }
 
-        @media (min-width: 768px) {
+        @media (min-width: 600px) {
             .session-metrics {
                 display: flex;
             }
@@ -566,16 +427,16 @@
 
         .session-metric {
             text-align: right;
-            min-width: 50px;
+            min-width: 45px;
         }
 
         .session-metric-label {
-            font-size: 0.6875rem;
+            font-size: 0.625rem;
             color: var(--text-tertiary);
         }
 
         .session-metric-value {
-            font-size: 0.8125rem;
+            font-size: 0.75rem;
             font-family: var(--font-mono);
         }
 
@@ -583,6 +444,7 @@
             color: var(--text-tertiary);
             transition: transform 0.2s ease;
             flex-shrink: 0;
+            font-size: 0.75rem;
         }
 
         .session-card--expanded .session-expand {
@@ -599,16 +461,16 @@
             display: block;
         }
 
-        /* Session detail tabs */
+        /* Compact session tabs */
         .session-tabs {
             display: flex;
             border-bottom: 1px solid var(--border-muted);
-            padding: 0 var(--space-4);
+            padding: 0 var(--space-3);
         }
 
         .session-tab {
-            padding: var(--space-3) var(--space-4);
-            font-size: 0.8125rem;
+            padding: var(--space-2) var(--space-3);
+            font-size: 0.75rem;
             color: var(--text-secondary);
             cursor: pointer;
             border-bottom: 2px solid transparent;
@@ -626,7 +488,7 @@
         }
 
         .session-content {
-            padding: var(--space-4);
+            padding: var(--space-3);
         }
 
         .session-panel {
@@ -637,12 +499,12 @@
             display: block;
         }
 
-        /* IO blocks */
+        /* Compact IO blocks */
         .io-block {
             background: var(--bg-surface);
             border: 1px solid var(--border-default);
-            border-radius: var(--radius-md);
-            margin-bottom: var(--space-4);
+            border-radius: var(--radius-sm);
+            margin-bottom: var(--space-3);
             overflow: hidden;
         }
 
@@ -651,10 +513,10 @@
         }
 
         .io-header {
-            padding: var(--space-2) var(--space-3);
+            padding: var(--space-1) var(--space-3);
             background: var(--bg-elevated);
             border-bottom: 1px solid var(--border-muted);
-            font-size: 0.75rem;
+            font-size: 0.6875rem;
             font-weight: 600;
             color: var(--text-secondary);
             display: flex;
@@ -667,8 +529,8 @@
             border: none;
             color: var(--text-tertiary);
             cursor: pointer;
-            font-size: 0.75rem;
-            padding: var(--space-1);
+            font-size: 0.625rem;
+            padding: 2px 4px;
         }
 
         .io-expand-btn:hover {
@@ -676,13 +538,14 @@
         }
 
         .io-content {
-            padding: var(--space-3);
+            padding: var(--space-2) var(--space-3);
             font-family: var(--font-mono);
-            font-size: 0.8125rem;
-            max-height: 200px;
+            font-size: 0.75rem;
+            max-height: 160px;
             overflow-y: auto;
             white-space: pre-wrap;
             word-break: break-word;
+            line-height: 1.5;
         }
 
         .io-content--expanded {
@@ -693,14 +556,14 @@
             color: var(--status-error);
         }
 
-        /* Metrics grid */
+        /* Compact metrics grid */
         .metrics-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
-            gap: var(--space-3);
+            gap: var(--space-2);
         }
 
-        @media (max-width: 600px) {
+        @media (max-width: 500px) {
             .metrics-grid {
                 grid-template-columns: repeat(2, 1fr);
             }
@@ -709,41 +572,40 @@
         .metric-card {
             background: var(--bg-surface);
             border: 1px solid var(--border-default);
-            border-radius: var(--radius-md);
-            padding: var(--space-3);
+            border-radius: var(--radius-sm);
+            padding: var(--space-2);
             text-align: center;
         }
 
         .metric-label {
-            font-size: 0.6875rem;
+            font-size: 0.625rem;
             color: var(--text-tertiary);
             text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-bottom: var(--space-1);
+            letter-spacing: 0.04em;
         }
 
         .metric-value {
-            font-size: 1rem;
+            font-size: 0.875rem;
             font-weight: 600;
             font-family: var(--font-mono);
         }
 
-        /* Session details info */
+        /* Session details */
         .session-details {
             display: flex;
             flex-wrap: wrap;
-            gap: var(--space-4);
-            margin-bottom: var(--space-4);
-            padding: var(--space-3);
+            gap: var(--space-3);
+            margin-bottom: var(--space-3);
+            padding: var(--space-2);
             background: var(--bg-surface);
             border: 1px solid var(--border-default);
-            border-radius: var(--radius-md);
+            border-radius: var(--radius-sm);
+            font-size: 0.75rem;
         }
 
         .session-detail-item {
             display: flex;
-            gap: var(--space-2);
-            font-size: 0.8125rem;
+            gap: var(--space-1);
         }
 
         .session-detail-label {
@@ -755,7 +617,7 @@
             font-family: var(--font-mono);
         }
 
-        /* Bottom navigation (mobile) */
+        /* Compact bottom navigation */
         .bottom-nav {
             position: fixed;
             bottom: 0;
@@ -763,8 +625,8 @@
             right: 0;
             background: var(--bg-surface);
             border-top: 1px solid var(--border-default);
-            padding: var(--space-2);
-            padding-bottom: calc(var(--space-2) + var(--safe-bottom));
+            padding: var(--space-1);
+            padding-bottom: calc(var(--space-1) + var(--safe-bottom));
             display: flex;
             justify-content: space-around;
             z-index: 100;
@@ -780,12 +642,12 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 2px;
-            padding: var(--space-2);
+            gap: 1px;
+            padding: var(--space-1) var(--space-2);
             color: var(--text-tertiary);
             text-decoration: none;
-            font-size: 0.6875rem;
-            min-width: 64px;
+            font-size: 0.5625rem;
+            min-width: 56px;
             border-radius: var(--radius-sm);
             transition: all 0.15s ease;
         }
@@ -797,7 +659,7 @@
         }
 
         .nav-icon {
-            font-size: 1.25rem;
+            font-size: 1.125rem;
         }
 
         /* Modal */
@@ -823,7 +685,7 @@
 
         .modal {
             background: var(--bg-surface);
-            border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+            border-radius: var(--radius-md) var(--radius-md) 0 0;
             width: 100%;
             max-height: 90vh;
             overflow-y: auto;
@@ -831,8 +693,8 @@
 
         @media (min-width: 768px) {
             .modal {
-                border-radius: var(--radius-lg);
-                max-width: 500px;
+                border-radius: var(--radius-md);
+                max-width: 480px;
             }
         }
 
@@ -840,7 +702,7 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: var(--space-4);
+            padding: var(--space-3);
             border-bottom: 1px solid var(--border-muted);
             position: sticky;
             top: 0;
@@ -848,7 +710,7 @@
         }
 
         .modal-title {
-            font-size: 1rem;
+            font-size: 0.9375rem;
             font-weight: 600;
         }
 
@@ -856,11 +718,11 @@
             background: none;
             border: none;
             color: var(--text-tertiary);
-            font-size: 1.25rem;
+            font-size: 1.125rem;
             cursor: pointer;
-            padding: var(--space-2);
-            min-width: 44px;
-            min-height: 44px;
+            padding: var(--space-1);
+            min-width: 36px;
+            min-height: 36px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -874,34 +736,34 @@
         }
 
         .modal-body {
-            padding: var(--space-4);
-            padding-bottom: calc(var(--space-4) + var(--safe-bottom));
+            padding: var(--space-3);
+            padding-bottom: calc(var(--space-3) + var(--safe-bottom));
         }
 
-        /* Form */
+        /* Compact form */
         .form-group {
-            margin-bottom: var(--space-4);
+            margin-bottom: var(--space-3);
         }
 
         .form-label {
             display: block;
-            font-size: 0.8125rem;
+            font-size: 0.75rem;
             font-weight: 500;
-            margin-bottom: var(--space-2);
+            margin-bottom: var(--space-1);
         }
 
         .form-select,
         .form-input,
         .form-textarea {
             width: 100%;
-            padding: var(--space-3);
+            padding: var(--space-2);
             background: var(--bg-base);
             border: 1px solid var(--border-default);
-            border-radius: var(--radius-md);
+            border-radius: var(--radius-sm);
             color: var(--text-primary);
             font-family: var(--font-sans);
-            font-size: 0.9375rem;
-            min-height: 44px;
+            font-size: 0.875rem;
+            min-height: 36px;
             transition: border-color 0.15s ease;
         }
 
@@ -910,18 +772,17 @@
         .form-textarea:focus {
             outline: none;
             border-color: var(--accent);
-            box-shadow: 0 0 0 2px var(--accent-muted);
         }
 
         .form-textarea {
-            min-height: 120px;
+            min-height: 100px;
             resize: vertical;
         }
 
         /* Collapsible options */
         .form-options {
             border: 1px solid var(--border-default);
-            border-radius: var(--radius-md);
+            border-radius: var(--radius-sm);
             overflow: hidden;
         }
 
@@ -930,11 +791,11 @@
             align-items: center;
             justify-content: space-between;
             width: 100%;
-            padding: var(--space-3);
+            padding: var(--space-2);
             background: var(--bg-elevated);
             border: none;
             color: var(--text-secondary);
-            font-size: 0.8125rem;
+            font-size: 0.75rem;
             cursor: pointer;
             transition: all 0.15s ease;
         }
@@ -946,7 +807,7 @@
 
         .form-options-content {
             display: none;
-            padding: var(--space-3);
+            padding: var(--space-2);
             border-top: 1px solid var(--border-muted);
             background: var(--bg-base);
         }
@@ -957,21 +818,16 @@
 
         .form-options-icon {
             transition: transform 0.2s ease;
+            font-size: 0.75rem;
         }
 
         .form-options--open .form-options-icon {
             transform: rotate(180deg);
         }
 
-        /* Form row for inline options */
         .form-row {
             display: flex;
-            gap: var(--space-4);
-            margin-bottom: var(--space-3);
-        }
-
-        .form-row:last-child {
-            margin-bottom: 0;
+            gap: var(--space-3);
         }
 
         .form-row .form-group {
@@ -979,43 +835,19 @@
             margin-bottom: 0;
         }
 
-        /* Empty state */
-        .empty-state {
-            text-align: center;
-            padding: var(--space-8);
-            color: var(--text-tertiary);
-        }
-
-        .empty-icon {
-            font-size: 3rem;
-            margin-bottom: var(--space-4);
-        }
-
-        .empty-title {
-            font-size: 1rem;
-            font-weight: 500;
-            color: var(--text-secondary);
-            margin-bottom: var(--space-2);
-        }
-
-        .empty-text {
-            font-size: 0.875rem;
-            margin-bottom: var(--space-4);
-        }
-
         /* Loading indicator */
         .loading-indicator {
             display: inline-flex;
             align-items: center;
-            gap: var(--space-2);
-            font-size: 0.75rem;
+            gap: var(--space-1);
+            font-size: 0.6875rem;
             color: var(--text-tertiary);
         }
 
         .loading-spinner {
-            width: 12px;
-            height: 12px;
-            border: 2px solid var(--border-default);
+            width: 10px;
+            height: 10px;
+            border: 1.5px solid var(--border-default);
             border-top-color: var(--accent);
             border-radius: 50%;
             animation: spin 1s linear infinite;
@@ -1023,15 +855,6 @@
 
         @keyframes spin {
             to { transform: rotate(360deg); }
-        }
-
-        /* Refresh button animation */
-        .btn-refresh {
-            transition: transform 0.15s ease;
-        }
-
-        .btn-refresh:active {
-            transform: rotate(180deg);
         }
 
         .btn-refresh svg {
@@ -1044,176 +867,124 @@
     </style>
 </head>
 <body>
-    <!-- Top bar -->
+    <!-- Compact top bar -->
     <header class="topbar">
         <div class="topbar-content">
             <div class="logo">
                 <div class="logo-icon">A</div>
                 <span>Agency</span>
             </div>
-            <nav class="nav-tabs">
-                <a href="#" class="nav-tab nav-tab--active">Sessions</a>
-                <a href="#" class="nav-tab">Fleet</a>
-                <a href="#" class="nav-tab">Settings</a>
-            </nav>
             <div class="topbar-actions">
                 <div class="topbar-status">
                     <span class="topbar-status-dot"></span>
-                    <span>Polling every 5s</span>
+                    <span>Polling 5s</span>
                 </div>
-                <button class="btn btn-ghost btn-icon btn-refresh" onclick="refresh()" title="Refresh now">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <button class="btn btn-ghost btn-icon btn-refresh" onclick="refresh()" title="Refresh">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
                         <path d="M3 3v5h5"></path>
                     </svg>
                 </button>
                 <button class="btn btn-primary" onclick="openTaskModal()">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M12 5v14M5 12h14"></path>
                     </svg>
-                    <span class="btn-text">New Task</span>
+                    <span>New Task</span>
                 </button>
             </div>
         </div>
     </header>
 
-    <div class="layout">
-        <!-- Sidebar (desktop only) -->
-        <aside class="sidebar">
-            <div class="sidebar-section">
-                <div class="sidebar-header">
-                    <div class="sidebar-title">Fleet</div>
-                    <span class="loading-indicator" id="fleetLoading" style="display: none;">
-                        <span class="loading-spinner"></span>
-                    </span>
-                </div>
-                <div class="fleet-list">
-                    <div class="fleet-item">
-                        <div class="fleet-dot fleet-dot--idle"></div>
-                        <div class="fleet-info">
-                            <div class="fleet-name">agent-01</div>
-                            <div class="fleet-meta">:9001 - Agent</div>
-                        </div>
-                        <div class="fleet-status">idle</div>
+    <!-- Main content - full width -->
+    <main class="main">
+        <div class="content">
+            <!-- Collapsible Fleet Section - collapsed by default -->
+            <div class="fleet-section" id="fleetSection">
+                <button class="fleet-trigger" onclick="toggleFleet()">
+                    <span class="fleet-trigger-icon">&#9662;</span>
+                    <span class="fleet-trigger-label">Fleet</span>
+                    <div class="fleet-trigger-summary">
+                        <span class="fleet-trigger-stat">
+                            <span class="fleet-trigger-dot fleet-trigger-dot--idle"></span>
+                            2 idle
+                        </span>
+                        <span class="fleet-trigger-stat">
+                            <span class="fleet-trigger-dot fleet-trigger-dot--working"></span>
+                            1 working
+                        </span>
                     </div>
-                    <div class="fleet-item">
-                        <div class="fleet-dot fleet-dot--working"></div>
-                        <div class="fleet-info">
-                            <div class="fleet-name">agent-02</div>
-                            <div class="fleet-meta">:9002 - Agent</div>
+                </button>
+                <div class="fleet-content">
+                    <div class="fleet-grid">
+                        <div class="fleet-chip">
+                            <span class="fleet-chip-dot fleet-chip-dot--idle"></span>
+                            <span class="fleet-chip-name">agent-01</span>
+                            <span class="fleet-chip-status">idle</span>
                         </div>
-                        <div class="fleet-status">working</div>
-                    </div>
-                    <div class="fleet-item">
-                        <div class="fleet-dot fleet-dot--idle"></div>
-                        <div class="fleet-info">
-                            <div class="fleet-name">scheduler</div>
-                            <div class="fleet-meta">:9100 - Helper</div>
+                        <div class="fleet-chip">
+                            <span class="fleet-chip-dot fleet-chip-dot--working"></span>
+                            <span class="fleet-chip-name">agent-02</span>
+                            <span class="fleet-chip-status">working</span>
                         </div>
-                        <div class="fleet-status">2 jobs</div>
+                        <div class="fleet-chip">
+                            <span class="fleet-chip-dot fleet-chip-dot--idle"></span>
+                            <span class="fleet-chip-name">scheduler</span>
+                            <span class="fleet-chip-status">2 jobs</span>
+                        </div>
                     </div>
                 </div>
             </div>
-        </aside>
 
-        <!-- Main content -->
-        <main class="main">
-            <div class="content">
-                <!-- Fleet section (mobile/tablet only) -->
-                <section class="section">
-                    <div class="section-header">
-                        <h2 class="section-title">Fleet</h2>
-                    </div>
-                    <div class="fleet-grid">
-                        <div class="fleet-card">
-                            <div class="fleet-card-header">
-                                <div>
-                                    <div class="fleet-card-name">agent-01</div>
-                                    <div class="fleet-card-type">Agent - :9001</div>
-                                </div>
-                                <span class="status-badge status-badge--idle">Idle</span>
+            <!-- Sessions - full width -->
+            <div class="session-list">
+                <!-- Session 1 - Working (expanded) -->
+                <div class="session-card session-card--expanded" id="session1">
+                    <div class="session-header" onclick="toggleSession('session1')">
+                        <div class="session-status session-status--working">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                                <circle cx="12" cy="12" r="6"></circle>
+                            </svg>
+                        </div>
+                        <div class="session-info">
+                            <div class="session-summary">Add retry logic for API</div>
+                            <div class="session-meta">
+                                <span class="session-agent">agent-02</span>
+                                <span>2m ago</span>
+                                <span>web</span>
                             </div>
                         </div>
-                        <div class="fleet-card">
-                            <div class="fleet-card-header">
-                                <div>
-                                    <div class="fleet-card-name">agent-02</div>
-                                    <div class="fleet-card-type">Agent - :9002</div>
-                                </div>
-                                <span class="status-badge status-badge--working">Working</span>
+                        <div class="session-metrics">
+                            <div class="session-metric">
+                                <div class="session-metric-label">Tokens</div>
+                                <div class="session-metric-value">8.2k</div>
+                            </div>
+                            <div class="session-metric">
+                                <div class="session-metric-label">Duration</div>
+                                <div class="session-metric-value">2m 15s</div>
                             </div>
                         </div>
-                        <div class="fleet-card">
-                            <div class="fleet-card-header">
-                                <div>
-                                    <div class="fleet-card-name">scheduler</div>
-                                    <div class="fleet-card-type">Helper - :9100</div>
-                                </div>
-                                <span class="status-badge status-badge--idle">2 jobs</span>
-                            </div>
+                        <span class="session-expand">&#9662;</span>
+                    </div>
+                    <div class="session-body">
+                        <div class="session-tabs">
+                            <div class="session-tab session-tab--active" onclick="switchSessionTab(this, 'io')">I/O</div>
+                            <div class="session-tab" onclick="switchSessionTab(this, 'details')">Details</div>
+                            <div class="session-tab" onclick="switchSessionTab(this, 'metrics')">Metrics</div>
                         </div>
-                    </div>
-                </section>
-
-                <!-- Sessions section -->
-                <section class="section">
-                    <div class="section-header">
-                        <h2 class="section-title">Sessions</h2>
-                        <span class="loading-indicator" id="sessionsLoading" style="display: none;">
-                            <span class="loading-spinner"></span>
-                            <span>Updating...</span>
-                        </span>
-                    </div>
-
-                    <div class="session-list">
-                        <!-- Session 1 - Working (expanded) -->
-                        <div class="session-card session-card--expanded" id="session1">
-                            <div class="session-header" onclick="toggleSession('session1')">
-                                <div class="session-status session-status--working">
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                                        <circle cx="12" cy="12" r="6"></circle>
-                                    </svg>
-                                </div>
-                                <div class="session-info">
-                                    <div class="session-summary">Add retry logic for API</div>
-                                    <div class="session-meta">
-                                        <span class="session-agent">agent-02</span>
-                                        <span>2m ago</span>
-                                        <span>web</span>
+                        <div class="session-content">
+                            <div class="session-panel session-panel--active" data-panel="io">
+                                <div class="io-block">
+                                    <div class="io-header">
+                                        <span>Prompt</span>
                                     </div>
+                                    <div class="io-content">Add retry logic with exponential backoff to the API client. Handle transient failures gracefully and add appropriate logging.</div>
                                 </div>
-                                <div class="session-metrics">
-                                    <div class="session-metric">
-                                        <div class="session-metric-label">Tokens</div>
-                                        <div class="session-metric-value">8.2k</div>
+                                <div class="io-block">
+                                    <div class="io-header">
+                                        <span>Output (streaming...)</span>
+                                        <button class="io-expand-btn" onclick="toggleExpand(this)">Expand</button>
                                     </div>
-                                    <div class="session-metric">
-                                        <div class="session-metric-label">Duration</div>
-                                        <div class="session-metric-value">2m 15s</div>
-                                    </div>
-                                </div>
-                                <span class="session-expand">&#9662;</span>
-                            </div>
-                            <div class="session-body">
-                                <div class="session-tabs">
-                                    <div class="session-tab session-tab--active" onclick="switchSessionTab(this, 'io')">Input/Output</div>
-                                    <div class="session-tab" onclick="switchSessionTab(this, 'details')">Details</div>
-                                    <div class="session-tab" onclick="switchSessionTab(this, 'metrics')">Metrics</div>
-                                </div>
-                                <div class="session-content">
-                                    <div class="session-panel session-panel--active" data-panel="io">
-                                        <div class="io-block">
-                                            <div class="io-header">
-                                                <span>Prompt</span>
-                                            </div>
-                                            <div class="io-content">Add retry logic with exponential backoff to the API client. Handle transient failures gracefully and add appropriate logging.</div>
-                                        </div>
-                                        <div class="io-block">
-                                            <div class="io-header">
-                                                <span>Output (streaming...)</span>
-                                                <button class="io-expand-btn" onclick="toggleExpand(this)">Expand</button>
-                                            </div>
-                                            <div class="io-content">I'll add retry logic to the API client with exponential backoff.
+                                    <div class="io-content">I'll add retry logic to the API client with exponential backoff.
 
 First, let me examine the current API client implementation...
 
@@ -1227,157 +998,157 @@ First, let me examine the current API client implementation...
 - api/client.go
 - api/retry.go (new)
 - api/client_test.go</div>
-                                        </div>
+                                </div>
+                            </div>
+                            <div class="session-panel" data-panel="details">
+                                <div class="session-details">
+                                    <div class="session-detail-item">
+                                        <span class="session-detail-label">Session:</span>
+                                        <span class="session-detail-value">sess_a1b2c3d4</span>
                                     </div>
-                                    <div class="session-panel" data-panel="details">
-                                        <div class="session-details">
-                                            <div class="session-detail-item">
-                                                <span class="session-detail-label">Session ID:</span>
-                                                <span class="session-detail-value">sess_a1b2c3d4</span>
-                                            </div>
-                                            <div class="session-detail-item">
-                                                <span class="session-detail-label">Task ID:</span>
-                                                <span class="session-detail-value">task_e5f6g7h8</span>
-                                            </div>
-                                            <div class="session-detail-item">
-                                                <span class="session-detail-label">Source:</span>
-                                                <span class="session-detail-value">web</span>
-                                            </div>
-                                            <div class="session-detail-item">
-                                                <span class="session-detail-label">Started:</span>
-                                                <span class="session-detail-value">14:23:05</span>
-                                            </div>
-                                            <div class="session-detail-item">
-                                                <span class="session-detail-label">Agent:</span>
-                                                <span class="session-detail-value">agent-02</span>
-                                            </div>
-                                            <div class="session-detail-item">
-                                                <span class="session-detail-label">Model:</span>
-                                                <span class="session-detail-value">claude-sonnet</span>
-                                            </div>
-                                        </div>
+                                    <div class="session-detail-item">
+                                        <span class="session-detail-label">Task:</span>
+                                        <span class="session-detail-value">task_e5f6g7h8</span>
                                     </div>
-                                    <div class="session-panel" data-panel="metrics">
-                                        <div class="metrics-grid">
-                                            <div class="metric-card">
-                                                <div class="metric-label">Tokens</div>
-                                                <div class="metric-value">8,243</div>
-                                            </div>
-                                            <div class="metric-card">
-                                                <div class="metric-label">Cost</div>
-                                                <div class="metric-value">$0.02</div>
-                                            </div>
-                                            <div class="metric-card">
-                                                <div class="metric-label">Duration</div>
-                                                <div class="metric-value">2:15</div>
-                                            </div>
-                                            <div class="metric-card">
-                                                <div class="metric-label">Model</div>
-                                                <div class="metric-value">sonnet</div>
-                                            </div>
-                                        </div>
+                                    <div class="session-detail-item">
+                                        <span class="session-detail-label">Source:</span>
+                                        <span class="session-detail-value">web</span>
+                                    </div>
+                                    <div class="session-detail-item">
+                                        <span class="session-detail-label">Started:</span>
+                                        <span class="session-detail-value">14:23:05</span>
+                                    </div>
+                                    <div class="session-detail-item">
+                                        <span class="session-detail-label">Agent:</span>
+                                        <span class="session-detail-value">agent-02</span>
+                                    </div>
+                                    <div class="session-detail-item">
+                                        <span class="session-detail-label">Model:</span>
+                                        <span class="session-detail-value">claude-sonnet</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="session-panel" data-panel="metrics">
+                                <div class="metrics-grid">
+                                    <div class="metric-card">
+                                        <div class="metric-label">Tokens</div>
+                                        <div class="metric-value">8,243</div>
+                                    </div>
+                                    <div class="metric-card">
+                                        <div class="metric-label">Cost</div>
+                                        <div class="metric-value">$0.02</div>
+                                    </div>
+                                    <div class="metric-card">
+                                        <div class="metric-label">Duration</div>
+                                        <div class="metric-value">2:15</div>
+                                    </div>
+                                    <div class="metric-card">
+                                        <div class="metric-label">Model</div>
+                                        <div class="metric-value">sonnet</div>
                                     </div>
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </div>
 
-                        <!-- Session 2 - Completed -->
-                        <div class="session-card" id="session2">
-                            <div class="session-header" onclick="toggleSession('session2')">
-                                <div class="session-status session-status--idle">
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                                        <path d="M20 6L9 17l-5-5"></path>
-                                    </svg>
-                                </div>
-                                <div class="session-info">
-                                    <div class="session-summary">Fix auth token refresh</div>
-                                    <div class="session-meta">
-                                        <span class="session-agent">agent-01</span>
-                                        <span>15m ago</span>
-                                        <span>web</span>
-                                    </div>
-                                </div>
-                                <div class="session-metrics">
-                                    <div class="session-metric">
-                                        <div class="session-metric-label">Tokens</div>
-                                        <div class="session-metric-value">12.4k</div>
-                                    </div>
-                                    <div class="session-metric">
-                                        <div class="session-metric-label">Duration</div>
-                                        <div class="session-metric-value">45s</div>
-                                    </div>
-                                </div>
-                                <span class="session-expand">&#9662;</span>
+                <!-- Session 2 - Completed -->
+                <div class="session-card" id="session2">
+                    <div class="session-header" onclick="toggleSession('session2')">
+                        <div class="session-status session-status--idle">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                                <path d="M20 6L9 17l-5-5"></path>
+                            </svg>
+                        </div>
+                        <div class="session-info">
+                            <div class="session-summary">Fix auth token refresh</div>
+                            <div class="session-meta">
+                                <span class="session-agent">agent-01</span>
+                                <span>15m ago</span>
+                                <span>web</span>
                             </div>
-                            <div class="session-body">
-                                <div class="session-tabs">
-                                    <div class="session-tab session-tab--active">Input/Output</div>
-                                    <div class="session-tab">Details</div>
-                                    <div class="session-tab">Metrics</div>
+                        </div>
+                        <div class="session-metrics">
+                            <div class="session-metric">
+                                <div class="session-metric-label">Tokens</div>
+                                <div class="session-metric-value">12.4k</div>
+                            </div>
+                            <div class="session-metric">
+                                <div class="session-metric-label">Duration</div>
+                                <div class="session-metric-value">45s</div>
+                            </div>
+                        </div>
+                        <span class="session-expand">&#9662;</span>
+                    </div>
+                    <div class="session-body">
+                        <div class="session-tabs">
+                            <div class="session-tab session-tab--active">I/O</div>
+                            <div class="session-tab">Details</div>
+                            <div class="session-tab">Metrics</div>
+                        </div>
+                        <div class="session-content">
+                            <div class="session-panel session-panel--active">
+                                <div class="io-block">
+                                    <div class="io-header">Prompt</div>
+                                    <div class="io-content">Fix the authentication token refresh logic in the API client. The tokens expire but aren't being renewed automatically.</div>
                                 </div>
-                                <div class="session-content">
-                                    <div class="session-panel session-panel--active">
-                                        <div class="io-block">
-                                            <div class="io-header">Prompt</div>
-                                            <div class="io-content">Fix the authentication token refresh logic in the API client. The tokens expire but aren't being renewed automatically.</div>
-                                        </div>
-                                        <div class="io-block">
-                                            <div class="io-header">Output</div>
-                                            <div class="io-content">Fixed the token refresh issue by adding proper expiry checking and automatic renewal before requests.
+                                <div class="io-block">
+                                    <div class="io-header">Output</div>
+                                    <div class="io-content">Fixed the token refresh issue by adding proper expiry checking and automatic renewal before requests.
 
 **Changes:**
 1. Added token expiry timestamp tracking
 2. Implemented refresh threshold (5 min before expiry)
 3. Added automatic renewal in request interceptor</div>
-                                        </div>
-                                    </div>
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </div>
 
-                        <!-- Session 3 - Error -->
-                        <div class="session-card" id="session3">
-                            <div class="session-header" onclick="toggleSession('session3')">
-                                <div class="session-status session-status--error">
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                                        <path d="M18 6L6 18M6 6l12 12"></path>
-                                    </svg>
-                                </div>
-                                <div class="session-info">
-                                    <div class="session-summary">Deploy to production</div>
-                                    <div class="session-meta">
-                                        <span class="session-agent">agent-01</span>
-                                        <span>1h ago</span>
-                                        <span>scheduler</span>
-                                    </div>
-                                </div>
-                                <div class="session-metrics">
-                                    <div class="session-metric">
-                                        <div class="session-metric-label">Tokens</div>
-                                        <div class="session-metric-value">3.1k</div>
-                                    </div>
-                                    <div class="session-metric">
-                                        <div class="session-metric-label">Duration</div>
-                                        <div class="session-metric-value">12s</div>
-                                    </div>
-                                </div>
-                                <span class="session-expand">&#9662;</span>
+                <!-- Session 3 - Error -->
+                <div class="session-card" id="session3">
+                    <div class="session-header" onclick="toggleSession('session3')">
+                        <div class="session-status session-status--error">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                                <path d="M18 6L6 18M6 6l12 12"></path>
+                            </svg>
+                        </div>
+                        <div class="session-info">
+                            <div class="session-summary">Deploy to production</div>
+                            <div class="session-meta">
+                                <span class="session-agent">agent-01</span>
+                                <span>1h ago</span>
+                                <span>scheduler</span>
                             </div>
-                            <div class="session-body">
-                                <div class="session-tabs">
-                                    <div class="session-tab session-tab--active">Input/Output</div>
-                                    <div class="session-tab">Details</div>
-                                    <div class="session-tab">Metrics</div>
+                        </div>
+                        <div class="session-metrics">
+                            <div class="session-metric">
+                                <div class="session-metric-label">Tokens</div>
+                                <div class="session-metric-value">3.1k</div>
+                            </div>
+                            <div class="session-metric">
+                                <div class="session-metric-label">Duration</div>
+                                <div class="session-metric-value">12s</div>
+                            </div>
+                        </div>
+                        <span class="session-expand">&#9662;</span>
+                    </div>
+                    <div class="session-body">
+                        <div class="session-tabs">
+                            <div class="session-tab session-tab--active">I/O</div>
+                            <div class="session-tab">Details</div>
+                            <div class="session-tab">Metrics</div>
+                        </div>
+                        <div class="session-content">
+                            <div class="session-panel session-panel--active">
+                                <div class="io-block">
+                                    <div class="io-header">Prompt</div>
+                                    <div class="io-content">Deploy the current main branch to production environment.</div>
                                 </div>
-                                <div class="session-content">
-                                    <div class="session-panel session-panel--active">
-                                        <div class="io-block">
-                                            <div class="io-header">Prompt</div>
-                                            <div class="io-content">Deploy the current main branch to production environment.</div>
-                                        </div>
-                                        <div class="io-block">
-                                            <div class="io-header">Error</div>
-                                            <div class="io-content io-content--error">Build failed with exit code 1
+                                <div class="io-block">
+                                    <div class="io-header">Error</div>
+                                    <div class="io-content io-content--error">Build failed with exit code 1
 
 npm ERR! code ELIFECYCLE
 npm ERR! errno 1
@@ -1386,75 +1157,118 @@ npm ERR! Exit status 1
 
 TypeScript error in src/api/client.ts:42:
   Property 'retryConfig' does not exist on type 'ClientOptions'</div>
-                                        </div>
-                                    </div>
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </div>
 
-                        <!-- Session 4 - Completed -->
-                        <div class="session-card" id="session4">
-                            <div class="session-header" onclick="toggleSession('session4')">
-                                <div class="session-status session-status--idle">
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                                        <path d="M20 6L9 17l-5-5"></path>
-                                    </svg>
-                                </div>
-                                <div class="session-info">
-                                    <div class="session-summary">Update dependencies</div>
-                                    <div class="session-meta">
-                                        <span class="session-agent">agent-01</span>
-                                        <span>2h ago</span>
-                                        <span>scheduler</span>
-                                    </div>
-                                </div>
-                                <div class="session-metrics">
-                                    <div class="session-metric">
-                                        <div class="session-metric-label">Tokens</div>
-                                        <div class="session-metric-value">5.2k</div>
-                                    </div>
-                                    <div class="session-metric">
-                                        <div class="session-metric-label">Duration</div>
-                                        <div class="session-metric-value">1m 23s</div>
-                                    </div>
-                                </div>
-                                <span class="session-expand">&#9662;</span>
+                <!-- Session 4 - Completed -->
+                <div class="session-card" id="session4">
+                    <div class="session-header" onclick="toggleSession('session4')">
+                        <div class="session-status session-status--idle">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                                <path d="M20 6L9 17l-5-5"></path>
+                            </svg>
+                        </div>
+                        <div class="session-info">
+                            <div class="session-summary">Update dependencies</div>
+                            <div class="session-meta">
+                                <span class="session-agent">agent-01</span>
+                                <span>2h ago</span>
+                                <span>scheduler</span>
                             </div>
-                            <div class="session-body">
-                                <div class="session-tabs">
-                                    <div class="session-tab session-tab--active">Input/Output</div>
-                                    <div class="session-tab">Details</div>
-                                    <div class="session-tab">Metrics</div>
-                                </div>
-                                <div class="session-content">
-                                    <div class="session-panel session-panel--active">
-                                        <div class="io-block">
-                                            <div class="io-header">Output</div>
-                                            <div class="io-content">Successfully updated 12 packages to their latest versions.
+                        </div>
+                        <div class="session-metrics">
+                            <div class="session-metric">
+                                <div class="session-metric-label">Tokens</div>
+                                <div class="session-metric-value">5.2k</div>
+                            </div>
+                            <div class="session-metric">
+                                <div class="session-metric-label">Duration</div>
+                                <div class="session-metric-value">1m 23s</div>
+                            </div>
+                        </div>
+                        <span class="session-expand">&#9662;</span>
+                    </div>
+                    <div class="session-body">
+                        <div class="session-tabs">
+                            <div class="session-tab session-tab--active">I/O</div>
+                            <div class="session-tab">Details</div>
+                            <div class="session-tab">Metrics</div>
+                        </div>
+                        <div class="session-content">
+                            <div class="session-panel session-panel--active">
+                                <div class="io-block">
+                                    <div class="io-header">Output</div>
+                                    <div class="io-content">Successfully updated 12 packages to their latest versions.
 
 **Updated packages:**
 - typescript: 5.3.3 -> 5.4.2
 - vite: 5.0.12 -> 5.1.4
 - eslint: 8.56.0 -> 8.57.0
 - (9 more...)</div>
-                                        </div>
-                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                </section>
-            </div>
-        </main>
-    </div>
+                </div>
 
-    <!-- Bottom nav (mobile) -->
+                <!-- Session 5 - Completed -->
+                <div class="session-card" id="session5">
+                    <div class="session-header" onclick="toggleSession('session5')">
+                        <div class="session-status session-status--idle">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                                <path d="M20 6L9 17l-5-5"></path>
+                            </svg>
+                        </div>
+                        <div class="session-info">
+                            <div class="session-summary">Add unit tests for auth module</div>
+                            <div class="session-meta">
+                                <span class="session-agent">agent-01</span>
+                                <span>3h ago</span>
+                                <span>web</span>
+                            </div>
+                        </div>
+                        <div class="session-metrics">
+                            <div class="session-metric">
+                                <div class="session-metric-label">Tokens</div>
+                                <div class="session-metric-value">15.8k</div>
+                            </div>
+                            <div class="session-metric">
+                                <div class="session-metric-label">Duration</div>
+                                <div class="session-metric-value">3m 42s</div>
+                            </div>
+                        </div>
+                        <span class="session-expand">&#9662;</span>
+                    </div>
+                    <div class="session-body">
+                        <div class="session-tabs">
+                            <div class="session-tab session-tab--active">I/O</div>
+                            <div class="session-tab">Details</div>
+                            <div class="session-tab">Metrics</div>
+                        </div>
+                        <div class="session-content">
+                            <div class="session-panel session-panel--active">
+                                <div class="io-block">
+                                    <div class="io-header">Output</div>
+                                    <div class="io-content">Added comprehensive unit tests for the auth module with 95% coverage.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Compact bottom nav -->
     <nav class="bottom-nav">
         <a href="#" class="nav-item nav-item--active">
             <span class="nav-icon">&#9776;</span>
             <span>Sessions</span>
         </a>
-        <a href="#" class="nav-item">
+        <a href="#" class="nav-item" onclick="toggleFleet(); return false;">
             <span class="nav-icon">&#9673;</span>
             <span>Fleet</span>
         </a>
@@ -1468,7 +1282,7 @@ TypeScript error in src/api/client.ts:42:
         </a>
     </nav>
 
-    <!-- Task submission modal -->
+    <!-- Task modal -->
     <div class="modal-backdrop" id="taskModal" onclick="closeTaskModal()">
         <div class="modal" onclick="event.stopPropagation()">
             <div class="modal-header">
@@ -1506,7 +1320,7 @@ TypeScript error in src/api/client.ts:42:
                                 <div class="form-group">
                                     <label class="form-label">Model</label>
                                     <select class="form-select">
-                                        <option>claude-sonnet (default)</option>
+                                        <option>claude-sonnet</option>
                                         <option>claude-opus</option>
                                         <option>claude-haiku</option>
                                     </select>
@@ -1514,7 +1328,7 @@ TypeScript error in src/api/client.ts:42:
                                 <div class="form-group">
                                     <label class="form-label">Timeout</label>
                                     <select class="form-select">
-                                        <option>30 minutes</option>
+                                        <option>30 min</option>
                                         <option>1 hour</option>
                                         <option>2 hours</option>
                                     </select>
@@ -1524,7 +1338,7 @@ TypeScript error in src/api/client.ts:42:
                     </div>
                 </div>
                 <button class="btn btn-primary" style="width: 100%;">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"></path>
                     </svg>
                     Submit Task
@@ -1534,6 +1348,11 @@ TypeScript error in src/api/client.ts:42:
     </div>
 
     <script>
+        // Toggle fleet section
+        function toggleFleet() {
+            document.getElementById('fleetSection').classList.toggle('fleet-section--open');
+        }
+
         // Toggle session expansion
         function toggleSession(sessionId) {
             const card = document.getElementById(sessionId);
@@ -1554,13 +1373,11 @@ TypeScript error in src/api/client.ts:42:
         function switchSessionTab(tab, panelName) {
             const container = tab.closest('.session-body');
 
-            // Update tabs
             container.querySelectorAll('.session-tab').forEach(t => {
                 t.classList.remove('session-tab--active');
             });
             tab.classList.add('session-tab--active');
 
-            // Update panels
             container.querySelectorAll('.session-panel').forEach(p => {
                 p.classList.remove('session-panel--active');
                 if (p.dataset.panel === panelName) {
@@ -1595,49 +1412,23 @@ TypeScript error in src/api/client.ts:42:
         function refresh() {
             const btn = document.querySelector('.btn-refresh');
             btn.classList.add('btn-refresh--loading');
-
-            // Show loading indicators
-            document.getElementById('sessionsLoading').style.display = 'inline-flex';
-            document.getElementById('fleetLoading').style.display = 'inline-flex';
-
-            // Simulate API call
             setTimeout(() => {
                 btn.classList.remove('btn-refresh--loading');
-                document.getElementById('sessionsLoading').style.display = 'none';
-                document.getElementById('fleetLoading').style.display = 'none';
             }, 1000);
         }
 
-        // Polling simulation (in real app, this would call the API)
-        let pollInterval = null;
-        let pollCounter = 0;
+        // Polling
+        let pollInterval = setInterval(() => {
+            console.log('Polling...');
+        }, 5000);
 
-        function startPolling() {
-            pollInterval = setInterval(() => {
-                pollCounter++;
-                // In production: fetch fleet status and sessions
-                console.log(`Poll #${pollCounter} - fetching updates...`);
-            }, 5000);
-        }
-
-        function stopPolling() {
-            if (pollInterval) {
-                clearInterval(pollInterval);
-                pollInterval = null;
-            }
-        }
-
-        // Pause polling when tab is hidden
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) {
-                stopPolling();
+                clearInterval(pollInterval);
             } else {
-                startPolling();
+                pollInterval = setInterval(() => console.log('Polling...'), 5000);
             }
         });
-
-        // Start polling on load
-        startPolling();
     </script>
 </body>
 </html>
