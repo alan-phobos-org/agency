@@ -17,6 +17,7 @@ Deploying agents should feel like reliable infrastructure, not babysitting exper
 | [docs/SCHEDULER_DESIGN.md](docs/SCHEDULER_DESIGN.md) | Scheduler architecture | Modifying scheduler |
 | [docs/SESSION_ROUTING_DESIGN.md](docs/SESSION_ROUTING_DESIGN.md) | Centralized session routing | Implementing session routing |
 | [docs/PLAN.md](docs/PLAN.md) | Vision, phases, backlog | Planning work |
+| [docs/DEBUGGING_DEPLOYED.md](docs/DEBUGGING_DEPLOYED.md) | Remote system diagnostics | Debugging deployed systems |
 | [CHANGELOG.md](CHANGELOG.md) | Release history | Preparing releases |
 
 ## Quick Reference
