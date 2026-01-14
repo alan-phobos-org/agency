@@ -10,12 +10,13 @@ The name reflects both the organizational structure (agents working for director
 
 ## Current Status
 
-**Released: v1.0.1** (2026-01-11)
+**Released: v1.1.0** (2026-01-13)
 
 Completed phases:
 - Phase 1: Foundation (MVP) - Agent + CLI director with REST API
 - Phase 1.1: Web View - Status dashboard with auth and task submission
 - Phase 1.2: Interface-Based Architecture - Clean component taxonomy
+- Phase 1.3: Scheduler - Cron-style task scheduling with ag-scheduler
 
 ## Delivery Phases
 
@@ -109,16 +110,32 @@ AI-driven "manager agent" that delegates to other agents.
 - Writing code directly (delegates)
 - Running automated test suites (implementer's job)
 
-### Phase 4: Scheduler Director - PLANNED
+### Phase 1.3: Scheduler - COMPLETE
 
 Cron-based task scheduling.
 
-- Cron expression parsing
-- Task queue with workspace locking
-- REST API for schedule management
-- History for scheduled executions
+**Deliverables:**
+- `ag-scheduler` binary for cron-style task triggering
+- Standard 5-field cron expressions
+- Configurable agent URL, model, and timeout per job
+- Status endpoint showing job states and next run times
+- Fire-and-forget task submission (no completion tracking)
+- Sample config for nightly maintenance across repositories
 
-### Phase 5: GitHub Director - PLANNED
+**Implementation notes:**
+- Scheduler: `internal/scheduler/` package
+- Config: `configs/scheduler.yaml`
+- See [SCHEDULER_DESIGN.md](SCHEDULER_DESIGN.md) for architecture details
+
+### Phase 4: Advanced Scheduler Features - PLANNED
+
+Enhanced scheduler capabilities.
+
+- Task queue with workspace locking
+- History for scheduled executions
+- Completion tracking and retry logic
+
+### Phase 5: GitHub/GitLab Director - PLANNED
 
 Feature parity with h2ai v1 GitHub integration.
 
@@ -130,9 +147,9 @@ Feature parity with h2ai v1 GitHub integration.
 
 ### Phase 6+: Extensions - FUTURE
 
-- GitLab director
 - mDNS discovery
 - Multi-VM coordination
+- Structured logging (JSON) with levels
 
 ## Backlog
 

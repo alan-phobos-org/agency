@@ -76,12 +76,12 @@ Write commit messages as a human developer would:
 ```
 agency/
 ├── cmd/
-│   ├── ag-agent-claude/  # Agent binary
+│   ├── ag-agent-claude/  # Agent binary (wraps Claude CLI)
 │   ├── ag-cli/           # CLI tool (task, status, discover)
 │   ├── ag-scheduler/     # Scheduler binary (cron-style task triggering)
-│   └── ag-view-web/      # Web view binary
+│   └── ag-view-web/      # Web view binary (HTTPS dashboard)
 ├── configs/              # Configuration files (contexts.yaml, scheduler.yaml)
-├── deployment/           # Local deployment scripts
+├── deployment/           # Local and remote deployment scripts
 ├── internal/
 │   ├── agent/      # Agent logic + REST API handlers
 │   ├── api/        # Shared types and constants
@@ -173,12 +173,15 @@ The `release` target: validates semver, checks CHANGELOG.md entry, creates commi
 
 ## Component Overview [READ IF: implementing new features or debugging architecture]
 
-### Current Phase: 1.2 (Complete)
+### Current Phase: 1.3 (Complete)
 
 - **Agent**: Single-task executor with REST API, session support, auto-resume
 - **CLI**: `ag-cli task|status|discover` commands
 - **Web View**: HTTPS dashboard with auth, discovery, task submission, contexts
 - **Scheduler**: Cron-style task triggering (`ag-scheduler -config configs/scheduler.yaml`)
+  - Standard 5-field cron expressions
+  - Configurable agent URL, model, and timeout per job
+  - Status endpoint at `/status` showing job states and next run times
 
 ### Key Behaviors
 
