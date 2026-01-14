@@ -448,6 +448,43 @@ Sessions use the **first task's summary** as their display name:
 
 ---
 
+## Architectural Decisions
+
+### Real-Time Updates: Polling
+
+**Decision:** Use HTTP polling for real-time updates (not WebSocket/SSE).
+
+**Rationale:**
+- Simpler implementation and debugging
+- Works reliably across all network conditions
+- No connection state management complexity
+- Sufficient for dashboard use case (sub-second updates not required)
+- Easier to implement ETag-based caching for efficiency
+
+### Session/Task Hierarchy: Flat
+
+**Decision:** Use a flat session list (not nested/hierarchical traces).
+
+**Rationale:**
+- Simpler mental model for users
+- Sessions are the primary unit of work
+- Each session contains one task (or a linear sequence)
+- Avoids complexity of tree navigation
+- Better mobile experience with simpler layouts
+
+### Offline Support: None
+
+**Decision:** No offline caching or localStorage persistence.
+
+**Rationale:**
+- Dashboard is for real-time monitoring
+- Stale cached data could be misleading
+- Reduces implementation complexity
+- Users expect fresh data when viewing dashboard
+- No PWA requirements
+
+---
+
 ## State Management
 
 ### Client-Side Architecture
@@ -497,9 +534,8 @@ interface AppState {
   };
 
   sessions: {
-    items: Session[];
-    expanded: Set<string>;     // Expanded session IDs
-    selected: string | null;   // Currently selected
+    items: Session[];       // Flat list of sessions
+    expanded: string | null; // Single expanded session (accordion)
     lastUpdated: number;
   };
 
@@ -514,17 +550,18 @@ interface AppState {
     fleetPanelOpen: boolean;
     taskModalOpen: boolean;
     settingsModalOpen: boolean;
-    expandedTasks: Set<string>;
   };
 }
 ```
 
 ### Polling Strategy
 
+**Implementation:** HTTP polling with visibility-based pausing.
+
 ```
 Idle State:
   - Fleet status: every 5s
-  - Sessions: every 5s (with ETag)
+  - Sessions: every 5s (with ETag for efficiency)
 
 Active Task State:
   - Active task: every 1s
@@ -533,7 +570,21 @@ Active Task State:
 
 Background Tab:
   - All polling paused (visibility API)
-  - Resume on tab focus
+  - Resume immediately on tab focus
+  - Visual indicator shows polling status
+```
+
+**Polling Implementation:**
+```javascript
+// Pause when tab hidden, resume when visible
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    stopPolling();
+  } else {
+    startPolling();
+    refresh(); // Immediate fetch on resume
+  }
+});
 ```
 
 ---
@@ -662,30 +713,48 @@ To modify the UI:
 
 ## Mockups
 
-Three HTML/JS mockups are provided in the docs folder:
+### Final Design
+
+**[mockup-final.html](mockup-final.html)** - The approved design combining:
+- **Feature layout** from mockup-basic (sessions, tasks, fleet, task submission)
+- **Visual style** from mockup-langsmith (colors, typography, page layout, CSS)
+- **Architectural decisions:** Polling, flat hierarchy, no offline
+
+### Design Explorations
+
+Three exploratory mockups were created during design:
 
 1. **[mockup-basic.html](mockup-basic.html)** - Conventional, Bootstrap-inspired layout
 2. **[mockup-creative.html](mockup-creative.html)** - Innovative, experimental design
 3. **[mockup-langsmith.html](mockup-langsmith.html)** - Inspired by LangSmith observability UI
 
-Each mockup demonstrates:
+### Mockup Features
+
+All mockups demonstrate:
 - Dark mode with Danish minimalism
 - iPhone 17 Pro responsive design
-- Expandable session/task hierarchy
+- Expandable session cards (flat, accordion-style)
 - Human-readable summaries
-- Collapsible fleet panel
+- Fleet status panel
+- Polling status indicator
+
+---
+
+## Resolved Questions
+
+1. **Real-time updates** - **Polling.** HTTP polling with visibility-based pausing. Simple, reliable, sufficient for dashboard use case.
+
+2. **Offline support** - **None.** Dashboard is for real-time monitoring; cached data would be stale and misleading.
+
+3. **Session hierarchy** - **Flat.** Simple list of sessions, each containing one task. No nested trace trees.
 
 ---
 
 ## Open Questions
 
-1. **Real-time updates** - Should we add WebSocket/SSE support for live task output streaming, or is polling sufficient?
+1. **Export/sharing** - Do users need to export session data (JSON, share links)?
 
-2. **Offline support** - Should sessions be cached in localStorage/IndexedDB for offline viewing?
-
-3. **Export/sharing** - Do users need to export session data (JSON, share links)?
-
-4. **Multi-agent views** - When director-claude orchestrates multiple agents, how should the UI visualize the parent-child relationship?
+2. **Multi-agent views** - When director-claude orchestrates multiple agents, how should the UI visualize the parent-child relationship?
 
 ---
 
