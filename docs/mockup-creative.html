@@ -1,0 +1,1088 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Agency Dashboard - Creative Mockup</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+    <style>
+        /* ========================================
+           MOCKUP: Creative/Innovative Design
+
+           This mockup explores an experimental,
+           timeline-based approach with:
+
+           Features:
+           - Vertical timeline visualization
+           - Floating cards with subtle animations
+           - Gesture-driven interactions
+           - Ambient status indicators
+           - Glassmorphism effects
+           - Micro-interactions throughout
+           ======================================== */
+
+        :root {
+            /* Ultra-dark palette with subtle warmth */
+            --bg-void: #08080a;
+            --bg-base: #0c0c0e;
+            --bg-surface: rgba(22, 22, 26, 0.8);
+            --bg-elevated: rgba(32, 32, 38, 0.9);
+            --bg-glass: rgba(255, 255, 255, 0.03);
+
+            --text-primary: #f0f0f2;
+            --text-secondary: #8a8a94;
+            --text-muted: #4a4a52;
+
+            --border-subtle: rgba(255, 255, 255, 0.06);
+            --border-glow: rgba(99, 102, 241, 0.3);
+
+            /* Status with glow effects */
+            --status-idle: #34d399;
+            --status-idle-glow: rgba(52, 211, 153, 0.2);
+            --status-working: #818cf8;
+            --status-working-glow: rgba(129, 140, 248, 0.3);
+            --status-error: #fb7185;
+            --status-error-glow: rgba(251, 113, 133, 0.2);
+
+            --accent: #818cf8;
+            --accent-glow: rgba(129, 140, 248, 0.15);
+
+            /* Spacing */
+            --space-1: 0.25rem;
+            --space-2: 0.5rem;
+            --space-3: 0.75rem;
+            --space-4: 1rem;
+            --space-6: 1.5rem;
+            --space-8: 2rem;
+            --space-12: 3rem;
+
+            /* Typography */
+            --font-sans: 'Inter', system-ui, sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+
+            /* Effects */
+            --blur-sm: 8px;
+            --blur-md: 16px;
+            --blur-lg: 24px;
+
+            /* Safe areas */
+            --safe-top: env(safe-area-inset-top);
+            --safe-bottom: env(safe-area-inset-bottom);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            background: var(--bg-void);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+            min-height: 100dvh;
+            overflow-x: hidden;
+        }
+
+        /* Ambient background */
+        .ambient-bg {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .ambient-orb {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(100px);
+            opacity: 0.4;
+            animation: float 20s ease-in-out infinite;
+        }
+
+        .ambient-orb--1 {
+            width: 400px;
+            height: 400px;
+            background: var(--status-working-glow);
+            top: -100px;
+            right: -100px;
+            animation-delay: -5s;
+        }
+
+        .ambient-orb--2 {
+            width: 300px;
+            height: 300px;
+            background: var(--status-idle-glow);
+            bottom: 20%;
+            left: -100px;
+            animation-delay: -10s;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            33% { transform: translate(30px, -30px) scale(1.05); }
+            66% { transform: translate(-20px, 20px) scale(0.95); }
+        }
+
+        /* Header - minimal floating */
+        .header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            padding: var(--space-4);
+            padding-top: calc(var(--space-4) + var(--safe-top));
+        }
+
+        .header-content {
+            max-width: 600px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--bg-surface);
+            backdrop-filter: blur(var(--blur-md));
+            -webkit-backdrop-filter: blur(var(--blur-md));
+            border: 1px solid var(--border-subtle);
+            border-radius: 16px;
+            padding: var(--space-3) var(--space-4);
+        }
+
+        .logo {
+            font-weight: 600;
+            font-size: 1.125rem;
+            letter-spacing: -0.02em;
+        }
+
+        .logo-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: var(--accent);
+            border-radius: 50%;
+            margin-left: var(--space-2);
+            animation: pulse-glow 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 8px var(--accent-glow); }
+            50% { box-shadow: 0 0 20px var(--accent-glow), 0 0 40px var(--accent-glow); }
+        }
+
+        .header-actions {
+            display: flex;
+            gap: var(--space-2);
+        }
+
+        /* Floating action buttons */
+        .fab {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            border: 1px solid var(--border-subtle);
+            background: var(--bg-glass);
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .fab:hover {
+            background: var(--bg-elevated);
+            color: var(--text-primary);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+        }
+
+        .fab--primary {
+            background: var(--accent);
+            color: white;
+            border-color: transparent;
+        }
+
+        .fab--primary:hover {
+            background: #6366f1;
+            box-shadow: 0 8px 24px var(--accent-glow);
+        }
+
+        /* Main content */
+        .main {
+            position: relative;
+            z-index: 1;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: var(--space-4);
+            padding-top: calc(100px + var(--safe-top));
+            padding-bottom: calc(var(--space-12) + var(--safe-bottom) + 80px);
+        }
+
+        /* Fleet status - ambient orbs */
+        .fleet-status {
+            display: flex;
+            justify-content: center;
+            gap: var(--space-6);
+            margin-bottom: var(--space-8);
+        }
+
+        .fleet-orb {
+            position: relative;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: transform 0.3s ease;
+        }
+
+        .fleet-orb:hover {
+            transform: scale(1.1);
+        }
+
+        .fleet-orb::before {
+            content: '';
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--orb-color, var(--status-idle));
+            opacity: 0.15;
+            filter: blur(12px);
+            animation: breathe 3s ease-in-out infinite;
+        }
+
+        .fleet-orb::after {
+            content: '';
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--orb-color, var(--status-idle));
+            box-shadow: 0 0 12px var(--orb-color, var(--status-idle));
+        }
+
+        .fleet-orb--working {
+            --orb-color: var(--status-working);
+        }
+
+        .fleet-orb--working::after {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        .fleet-orb--error {
+            --orb-color: var(--status-error);
+        }
+
+        @keyframes breathe {
+            0%, 100% { transform: scale(1); opacity: 0.15; }
+            50% { transform: scale(1.3); opacity: 0.25; }
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .fleet-label {
+            position: absolute;
+            bottom: -4px;
+            font-size: 0.6875rem;
+            color: var(--text-muted);
+            font-weight: 500;
+            letter-spacing: 0.02em;
+        }
+
+        /* Timeline */
+        .timeline {
+            position: relative;
+            padding-left: var(--space-8);
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 5px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(
+                to bottom,
+                var(--accent) 0%,
+                var(--border-subtle) 30%,
+                var(--border-subtle) 100%
+            );
+            border-radius: 2px;
+        }
+
+        /* Session card */
+        .session-card {
+            position: relative;
+            margin-bottom: var(--space-4);
+            background: var(--bg-surface);
+            backdrop-filter: blur(var(--blur-md));
+            -webkit-backdrop-filter: blur(var(--blur-md));
+            border: 1px solid var(--border-subtle);
+            border-radius: 16px;
+            overflow: hidden;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .session-card::before {
+            content: '';
+            position: absolute;
+            left: calc(-1 * var(--space-8) + 1px);
+            top: 28px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--session-color, var(--status-idle));
+            box-shadow: 0 0 8px var(--session-color, var(--status-idle));
+        }
+
+        .session-card--working {
+            --session-color: var(--status-working);
+            border-color: var(--border-glow);
+        }
+
+        .session-card--working::before {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        .session-card--error {
+            --session-color: var(--status-error);
+        }
+
+        .session-card:hover {
+            transform: translateX(4px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+        }
+
+        .session-header {
+            padding: var(--space-4);
+            cursor: pointer;
+        }
+
+        .session-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: var(--space-2);
+        }
+
+        .session-summary {
+            font-weight: 500;
+            font-size: 1rem;
+            line-height: 1.4;
+        }
+
+        .session-time {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+        }
+
+        .session-meta {
+            display: flex;
+            gap: var(--space-3);
+            font-size: 0.8125rem;
+            color: var(--text-secondary);
+        }
+
+        .session-agent {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-1);
+        }
+
+        .session-agent::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--text-muted);
+        }
+
+        .session-expand {
+            position: absolute;
+            right: var(--space-4);
+            top: 50%;
+            transform: translateY(-50%);
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            transition: all 0.3s ease;
+        }
+
+        .session-card--expanded .session-expand {
+            transform: translateY(-50%) rotate(180deg);
+        }
+
+        /* Session body */
+        .session-body {
+            display: none;
+            border-top: 1px solid var(--border-subtle);
+        }
+
+        .session-card--expanded .session-body {
+            display: block;
+            animation: slideDown 0.3s ease;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-8px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Task */
+        .task {
+            padding: var(--space-4);
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .task:last-child {
+            border-bottom: none;
+        }
+
+        .task-header {
+            display: flex;
+            align-items: center;
+            gap: var(--space-3);
+            cursor: pointer;
+            margin-bottom: var(--space-3);
+        }
+
+        .task-status {
+            width: 20px;
+            height: 20px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            flex-shrink: 0;
+        }
+
+        .task-status--completed {
+            background: var(--status-idle-glow);
+            color: var(--status-idle);
+        }
+
+        .task-status--working {
+            background: var(--status-working-glow);
+            color: var(--status-working);
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        .task-status--error {
+            background: var(--status-error-glow);
+            color: var(--status-error);
+        }
+
+        .task-title {
+            flex: 1;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        .task-duration {
+            font-size: 0.75rem;
+            font-family: var(--font-mono);
+            color: var(--text-muted);
+        }
+
+        /* Task details */
+        .task-details {
+            display: none;
+            margin-top: var(--space-3);
+        }
+
+        .task--expanded .task-details {
+            display: block;
+            animation: fadeIn 0.2s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .task-prompt,
+        .task-output {
+            background: var(--bg-void);
+            border-radius: 8px;
+            padding: var(--space-3);
+            margin-bottom: var(--space-3);
+            font-size: 0.8125rem;
+        }
+
+        .task-prompt {
+            color: var(--text-secondary);
+            border-left: 2px solid var(--accent);
+        }
+
+        .task-output {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            max-height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+
+        /* Metrics strip */
+        .metrics-strip {
+            display: flex;
+            gap: var(--space-1);
+        }
+
+        .metric-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-1);
+            padding: var(--space-1) var(--space-2);
+            background: var(--bg-glass);
+            border-radius: 999px;
+            font-size: 0.6875rem;
+            color: var(--text-muted);
+        }
+
+        .metric-pill-value {
+            color: var(--text-secondary);
+            font-family: var(--font-mono);
+        }
+
+        /* Floating bottom bar */
+        .bottom-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            padding: var(--space-4);
+            padding-bottom: calc(var(--space-4) + var(--safe-bottom));
+            display: flex;
+            justify-content: center;
+        }
+
+        .bottom-bar-content {
+            display: flex;
+            gap: var(--space-2);
+            background: var(--bg-surface);
+            backdrop-filter: blur(var(--blur-lg));
+            -webkit-backdrop-filter: blur(var(--blur-lg));
+            border: 1px solid var(--border-subtle);
+            border-radius: 20px;
+            padding: var(--space-2);
+        }
+
+        .nav-btn {
+            width: 48px;
+            height: 48px;
+            border-radius: 14px;
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 1.25rem;
+        }
+
+        .nav-btn:hover,
+        .nav-btn--active {
+            background: var(--bg-glass);
+            color: var(--text-primary);
+        }
+
+        .nav-btn--active {
+            background: var(--accent);
+            color: white;
+        }
+
+        /* Modal - slide up sheet */
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            z-index: 200;
+            display: none;
+            align-items: flex-end;
+        }
+
+        .modal-backdrop--open {
+            display: flex;
+            animation: fadeIn 0.2s ease;
+        }
+
+        .modal {
+            width: 100%;
+            max-height: 90vh;
+            background: var(--bg-base);
+            border-radius: 24px 24px 0 0;
+            overflow: hidden;
+            animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(100%);
+            }
+            to {
+                transform: translateY(0);
+            }
+        }
+
+        .modal-handle {
+            display: flex;
+            justify-content: center;
+            padding: var(--space-3);
+        }
+
+        .modal-handle::before {
+            content: '';
+            width: 40px;
+            height: 4px;
+            background: var(--border-subtle);
+            border-radius: 2px;
+        }
+
+        .modal-header {
+            padding: 0 var(--space-6) var(--space-4);
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .modal-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .modal-body {
+            padding: var(--space-6);
+            padding-bottom: calc(var(--space-6) + var(--safe-bottom));
+            overflow-y: auto;
+            max-height: calc(90vh - 100px);
+        }
+
+        /* Form elements */
+        .form-group {
+            margin-bottom: var(--space-6);
+        }
+
+        .form-label {
+            display: block;
+            font-size: 0.8125rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: var(--space-2);
+        }
+
+        .form-select,
+        .form-input,
+        .form-textarea {
+            width: 100%;
+            padding: var(--space-4);
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            color: var(--text-primary);
+            font-family: var(--font-sans);
+            font-size: 1rem;
+            transition: all 0.2s ease;
+        }
+
+        .form-select:focus,
+        .form-input:focus,
+        .form-textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+
+        .form-textarea {
+            min-height: 140px;
+            resize: none;
+        }
+
+        .btn-submit {
+            width: 100%;
+            padding: var(--space-4);
+            background: var(--accent);
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-submit:hover {
+            background: #6366f1;
+            box-shadow: 0 8px 24px var(--accent-glow);
+            transform: translateY(-2px);
+        }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: var(--space-12) var(--space-4);
+        }
+
+        .empty-icon {
+            font-size: 4rem;
+            margin-bottom: var(--space-4);
+            opacity: 0.2;
+        }
+
+        .empty-text {
+            color: var(--text-muted);
+            font-size: 0.9375rem;
+        }
+
+        /* Desktop adjustments */
+        @media (min-width: 768px) {
+            .bottom-bar {
+                display: none;
+            }
+
+            .main {
+                padding-bottom: var(--space-12);
+            }
+
+            .modal {
+                border-radius: 24px;
+                max-width: 480px;
+                margin: auto;
+                margin-bottom: 10vh;
+            }
+
+            .modal-backdrop--open {
+                align-items: center;
+            }
+
+            @keyframes slideUp {
+                from {
+                    opacity: 0;
+                    transform: translateY(20px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Ambient background -->
+    <div class="ambient-bg">
+        <div class="ambient-orb ambient-orb--1"></div>
+        <div class="ambient-orb ambient-orb--2"></div>
+    </div>
+
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                Agency<span class="logo-dot"></span>
+            </div>
+            <div class="header-actions">
+                <button class="fab" aria-label="Search">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <path d="M21 21l-4.35-4.35"></path>
+                    </svg>
+                </button>
+                <button class="fab fab--primary" onclick="openTaskModal()" aria-label="New Task">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 5v14M5 12h14"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main -->
+    <main class="main">
+        <!-- Fleet status orbs -->
+        <div class="fleet-status">
+            <div class="fleet-orb" title="agent-01 - idle">
+                <span class="fleet-label">ag-01</span>
+            </div>
+            <div class="fleet-orb fleet-orb--working" title="agent-02 - working">
+                <span class="fleet-label">ag-02</span>
+            </div>
+            <div class="fleet-orb" title="scheduler - 2 jobs">
+                <span class="fleet-label">sched</span>
+            </div>
+        </div>
+
+        <!-- Timeline -->
+        <div class="timeline">
+            <!-- Active session -->
+            <div class="session-card session-card--working session-card--expanded" onclick="toggleSession(this)">
+                <div class="session-header">
+                    <div class="session-top">
+                        <div class="session-summary">Add retry logic for API</div>
+                        <div class="session-time">2m ago</div>
+                    </div>
+                    <div class="session-meta">
+                        <span class="session-agent">agent-02</span>
+                        <span>web</span>
+                    </div>
+                </div>
+                <span class="session-expand">&#9662;</span>
+
+                <div class="session-body">
+                    <div class="task task--expanded" onclick="event.stopPropagation(); toggleTask(this)">
+                        <div class="task-header">
+                            <div class="task-status task-status--working">&#9679;</div>
+                            <div class="task-title">Add retry logic for API</div>
+                            <div class="task-duration">working</div>
+                        </div>
+                        <div class="task-details">
+                            <div class="task-prompt">
+                                Add retry logic with exponential backoff to the API client. Handle transient failures gracefully.
+                            </div>
+                            <div class="task-output">I'll add retry logic to the API client with exponential backoff.
+
+First, let me examine the current API client implementation...
+
+**Changes Made:**
+1. Added RetryConfig struct
+2. Implemented exponential backoff with jitter
+3. Added transient error detection...</div>
+                            <div class="metrics-strip">
+                                <span class="metric-pill"><span class="metric-pill-value">8.2k</span> tokens</span>
+                                <span class="metric-pill"><span class="metric-pill-value">$0.02</span></span>
+                                <span class="metric-pill"><span class="metric-pill-value">2m 15s</span></span>
+                                <span class="metric-pill">sonnet</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Completed session -->
+            <div class="session-card" onclick="toggleSession(this)">
+                <div class="session-header">
+                    <div class="session-top">
+                        <div class="session-summary">Fix auth token refresh</div>
+                        <div class="session-time">15m ago</div>
+                    </div>
+                    <div class="session-meta">
+                        <span class="session-agent">agent-01</span>
+                        <span>web</span>
+                    </div>
+                </div>
+                <span class="session-expand">&#9662;</span>
+
+                <div class="session-body">
+                    <div class="task" onclick="event.stopPropagation(); toggleTask(this)">
+                        <div class="task-header">
+                            <div class="task-status task-status--completed">&#10003;</div>
+                            <div class="task-title">Fix auth token refresh</div>
+                            <div class="task-duration">45s</div>
+                        </div>
+                        <div class="task-details">
+                            <div class="task-prompt">
+                                Fix the authentication token refresh logic in the API client.
+                            </div>
+                            <div class="task-output">Fixed the token refresh issue by adding proper expiry checking.</div>
+                            <div class="metrics-strip">
+                                <span class="metric-pill"><span class="metric-pill-value">12.4k</span> tokens</span>
+                                <span class="metric-pill"><span class="metric-pill-value">$0.04</span></span>
+                                <span class="metric-pill"><span class="metric-pill-value">45s</span></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Failed session -->
+            <div class="session-card session-card--error" onclick="toggleSession(this)">
+                <div class="session-header">
+                    <div class="session-top">
+                        <div class="session-summary">Deploy to production</div>
+                        <div class="session-time">1h ago</div>
+                    </div>
+                    <div class="session-meta">
+                        <span class="session-agent">agent-01</span>
+                        <span>scheduler</span>
+                    </div>
+                </div>
+                <span class="session-expand">&#9662;</span>
+
+                <div class="session-body">
+                    <div class="task" onclick="event.stopPropagation(); toggleTask(this)">
+                        <div class="task-header">
+                            <div class="task-status task-status--error">&#10007;</div>
+                            <div class="task-title">Deploy to production</div>
+                            <div class="task-duration">failed</div>
+                        </div>
+                        <div class="task-details">
+                            <div class="task-output" style="color: var(--status-error);">Error: Build failed with exit code 1
+
+npm ERR! code ELIFECYCLE
+npm ERR! errno 1</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- More sessions... -->
+            <div class="session-card" onclick="toggleSession(this)">
+                <div class="session-header">
+                    <div class="session-top">
+                        <div class="session-summary">Update dependencies</div>
+                        <div class="session-time">2h ago</div>
+                    </div>
+                    <div class="session-meta">
+                        <span class="session-agent">agent-01</span>
+                        <span>scheduler</span>
+                    </div>
+                </div>
+                <span class="session-expand">&#9662;</span>
+
+                <div class="session-body">
+                    <div class="task" onclick="event.stopPropagation(); toggleTask(this)">
+                        <div class="task-header">
+                            <div class="task-status task-status--completed">&#10003;</div>
+                            <div class="task-title">Update dependencies</div>
+                            <div class="task-duration">1m 23s</div>
+                        </div>
+                        <div class="task-details">
+                            <div class="task-output">Successfully updated 12 packages.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Bottom navigation -->
+    <div class="bottom-bar">
+        <div class="bottom-bar-content">
+            <button class="nav-btn nav-btn--active" aria-label="Timeline">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 3v18h18"></path>
+                    <path d="M18 17V9"></path>
+                    <path d="M13 17V5"></path>
+                    <path d="M8 17v-3"></path>
+                </svg>
+            </button>
+            <button class="nav-btn" aria-label="Fleet">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <circle cx="19" cy="5" r="2"></circle>
+                    <circle cx="5" cy="5" r="2"></circle>
+                    <circle cx="19" cy="19" r="2"></circle>
+                    <circle cx="5" cy="19" r="2"></circle>
+                    <path d="M6.7 6.7L9.5 9.5"></path>
+                    <path d="M14.5 9.5l2.8-2.8"></path>
+                    <path d="M14.5 14.5l2.8 2.8"></path>
+                    <path d="M6.7 17.3l2.8-2.8"></path>
+                </svg>
+            </button>
+            <button class="nav-btn" onclick="openTaskModal()" aria-label="New Task">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 5v14M5 12h14"></path>
+                </svg>
+            </button>
+            <button class="nav-btn" aria-label="Settings">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"></path>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Task modal -->
+    <div class="modal-backdrop" id="taskModal" onclick="closeTaskModal()">
+        <div class="modal" onclick="event.stopPropagation()">
+            <div class="modal-handle"></div>
+            <div class="modal-header">
+                <h2 class="modal-title">New Task</h2>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">Agent</label>
+                    <select class="form-select">
+                        <option>agent-01 (idle)</option>
+                        <option>agent-02 (working)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Context</label>
+                    <select class="form-select">
+                        <option>None</option>
+                        <option>Code Review</option>
+                        <option>Bug Fix</option>
+                        <option>Feature</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Prompt</label>
+                    <textarea class="form-textarea" placeholder="Describe what you want to accomplish..."></textarea>
+                </div>
+                <button class="btn-submit">Submit Task</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function toggleSession(card) {
+            card.classList.toggle('session-card--expanded');
+        }
+
+        function toggleTask(task) {
+            task.classList.toggle('task--expanded');
+        }
+
+        function openTaskModal() {
+            document.getElementById('taskModal').classList.add('modal-backdrop--open');
+        }
+
+        function closeTaskModal() {
+            document.getElementById('taskModal').classList.remove('modal-backdrop--open');
+        }
+
+        // Touch gestures for modal (swipe down to close)
+        let startY = 0;
+        const modal = document.querySelector('.modal');
+
+        modal.addEventListener('touchstart', (e) => {
+            startY = e.touches[0].clientY;
+        });
+
+        modal.addEventListener('touchmove', (e) => {
+            const deltaY = e.touches[0].clientY - startY;
+            if (deltaY > 100) {
+                closeTaskModal();
+            }
+        });
+    </script>
+</body>
+</html>

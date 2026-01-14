@@ -1,0 +1,696 @@
+# Web UI Design
+
+This document specifies the design for Agency's new observability web UI layer.
+
+**Related:** [PLAN.md](PLAN.md) Phase 2.1 Observability
+
+---
+
+## Design Philosophy
+
+### Danish Minimalism Principles
+
+The UI follows Danish minimalist design principles:
+
+1. **Functional simplicity** - Every element serves a purpose; no decorative clutter
+2. **Quiet confidence** - Subtle, refined aesthetics over bold or flashy design
+3. **Generous whitespace** - Content breathes; density is controlled
+4. **Typography-first** - Clean sans-serif fonts carry the visual hierarchy
+5. **Muted palette** - Low-contrast, sophisticated colors with purposeful accents
+6. **Quality materials** - Premium feel through subtle shadows, borders, and transitions
+
+### Dark Mode Implementation
+
+Dark mode is the default and only mode, optimized for:
+- Extended viewing in low-light environments
+- Reduced eye strain during long monitoring sessions
+- Visual distinction of status indicators
+- Code and log output readability
+
+---
+
+## Visual Design System
+
+### Color Palette
+
+```
+Background Layers:
+  --bg-base:        #0d0d0f      /* Deepest background */
+  --bg-surface:     #151518      /* Cards, panels */
+  --bg-elevated:    #1c1c21      /* Modals, dropdowns */
+  --bg-hover:       #232329      /* Interactive hover states */
+
+Text:
+  --text-primary:   #e8e8eb      /* Primary content */
+  --text-secondary: #9898a0      /* Secondary, muted */
+  --text-tertiary:  #5c5c64      /* Disabled, placeholders */
+
+Borders:
+  --border-subtle:  #28282f      /* Subtle separators */
+  --border-default: #3a3a42      /* Default borders */
+
+Status Colors:
+  --status-idle:    #4ade80      /* Green - idle/success */
+  --status-working: #60a5fa      /* Blue - in progress */
+  --status-error:   #f87171      /* Red - failed/error */
+  --status-warning: #fbbf24      /* Amber - warning */
+  --status-pending: #a78bfa      /* Purple - pending/queued */
+
+Accents:
+  --accent-primary: #3b82f6      /* Interactive elements */
+  --accent-hover:   #60a5fa      /* Hover state */
+```
+
+### Typography
+
+```
+Font Stack:
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace
+
+Scale:
+  --text-xs:   0.75rem   (12px)  /* Timestamps, metadata */
+  --text-sm:   0.875rem  (14px)  /* Secondary content */
+  --text-base: 1rem      (16px)  /* Body text */
+  --text-lg:   1.125rem  (18px)  /* Subheadings */
+  --text-xl:   1.25rem   (20px)  /* Section titles */
+  --text-2xl:  1.5rem    (24px)  /* Page titles */
+
+Weights:
+  --font-normal: 400
+  --font-medium: 500
+  --font-semibold: 600
+```
+
+### Spacing System
+
+```
+--space-1:  0.25rem  (4px)
+--space-2:  0.5rem   (8px)
+--space-3:  0.75rem  (12px)
+--space-4:  1rem     (16px)
+--space-5:  1.25rem  (20px)
+--space-6:  1.5rem   (24px)
+--space-8:  2rem     (32px)
+--space-10: 2.5rem   (40px)
+--space-12: 3rem     (48px)
+```
+
+### Border Radius
+
+```
+--radius-sm: 4px     /* Buttons, inputs */
+--radius-md: 6px     /* Cards */
+--radius-lg: 8px     /* Modals, panels */
+--radius-xl: 12px    /* Large containers */
+```
+
+---
+
+## Mobile-First Responsive Design
+
+### iPhone 17 Pro Optimization
+
+Primary breakpoint targets:
+
+| Device | Width | Design Focus |
+|--------|-------|--------------|
+| iPhone 17 Pro | 402px | Primary mobile target |
+| iPhone 17 Pro Max | 440px | Large mobile |
+| iPad Mini | 768px | Tablet portrait |
+| iPad Pro 11" | 834px | Tablet landscape |
+| Desktop | 1024px+ | Full layout |
+
+### Mobile-Specific Considerations
+
+1. **Touch targets** - Minimum 44x44px for all interactive elements
+2. **Bottom navigation** - Primary actions accessible with thumb
+3. **Swipe gestures** - Expand/collapse panels, dismiss modals
+4. **Safe areas** - Respect iOS notch and home indicator
+5. **Pull-to-refresh** - Native-feeling data refresh
+6. **Haptic feedback** - System haptics on key interactions
+
+### Responsive Layout Strategy
+
+```
+Mobile (< 768px):
+  - Single column layout
+  - Stacked cards
+  - Bottom sheet for details
+  - Floating action button for task submission
+  - Collapsible sidebar as overlay
+
+Tablet (768px - 1023px):
+  - Two column layout
+  - List + detail split view
+  - Side panel for navigation
+
+Desktop (1024px+):
+  - Three column layout
+  - Persistent sidebar navigation
+  - Inline detail panels
+  - Keyboard shortcuts enabled
+```
+
+---
+
+## Information Architecture
+
+### Hierarchy
+
+```
+Dashboard (root)
+├── Fleet Overview
+│   ├── Agents (list with status)
+│   ├── Directors (list with status)
+│   └── Helpers (list with status)
+│
+├── Sessions (primary view)
+│   ├── Session Card
+│   │   ├── Summary (30 char from first task)
+│   │   ├── Status indicator
+│   │   ├── Agent badge
+│   │   ├── Timestamp
+│   │   └── Expand/collapse control
+│   │
+│   └── Session Detail (expanded)
+│       ├── Session metadata
+│       ├── Tasks (list)
+│       │   ├── Task summary
+│       │   ├── Status
+│       │   ├── Duration
+│       │   └── Expand control
+│       │
+│       └── Task Detail (expanded)
+│           ├── Full prompt
+│           ├── Output (scrollable)
+│           ├── Steps/traces (if available)
+│           └── Metrics (tokens, cost, time)
+│
+├── Task Submission
+│   ├── Agent selector
+│   ├── Context picker
+│   ├── Prompt input
+│   └── Options (model, timeout, thinking)
+│
+└── Settings
+    ├── Paired devices
+    ├── Contexts management
+    └── Preferences
+```
+
+### Navigation Pattern
+
+- **Mobile:** Bottom tab bar with 4 primary sections
+- **Desktop:** Left sidebar with persistent navigation
+- **Universal:** Breadcrumb trail for nested views
+
+---
+
+## Component Specifications
+
+### 1. Session Card (Compact)
+
+The primary UI element for displaying sessions in a list.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  ● Fix auth token refresh      │  agent-01   2m ago   ▼│
+└─────────────────────────────────────────────────────────┘
+   │                                   │          │      │
+   │                                   │          │      └─ Expand
+   │                                   │          └─ Relative time
+   │                                   └─ Agent badge (truncated)
+   └─ Task summary (30 char max) with status dot
+```
+
+**States:**
+- Default: Collapsed, shows summary only
+- Expanded: Shows full session detail inline
+- Active: Subtle pulse animation on status dot
+
+### 2. Session Detail (Expanded)
+
+When a session card is expanded:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  ● Fix auth token refresh      │  agent-01   2m ago   ▲│
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  Session: sess_a1b2c3                                   │
+│  Source: web  │  Started: 14:23:05                      │
+│                                                         │
+│  Tasks                                                  │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │ ✓ Fix auth token refresh           45s      ▼  │   │
+│  └─────────────────────────────────────────────────┘   │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │ ● Add retry logic for API          working  ▼  │   │
+│  └─────────────────────────────────────────────────┘   │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 3. Task Detail (Expanded)
+
+When a task within a session is expanded:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ ✓ Fix auth token refresh                   45s      ▲  │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  Prompt                                                 │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │ Fix the authentication token refresh logic in   │   │
+│  │ the API client. The tokens expire but the...    │   │
+│  └─────────────────────────────────────────────────┘   │
+│                                                         │
+│  Output                                          ⤢     │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │ I'll analyze the auth client code and fix the   │   │
+│  │ token refresh logic.                            │   │
+│  │                                                 │   │
+│  │ **Changes Made:**                               │   │
+│  │ 1. Added refresh threshold check                │   │
+│  │ 2. Implemented automatic token renewal...       │   │
+│  │                                                 │   │
+│  │                                    [Show more ▼]│   │
+│  └─────────────────────────────────────────────────┘   │
+│                                                         │
+│  Metrics                                                │
+│  ┌──────────┬──────────┬──────────┬──────────┐         │
+│  │ Tokens   │ Cost     │ Duration │ Model    │         │
+│  │ 12.4k    │ $0.037   │ 45s      │ sonnet   │         │
+│  └──────────┴──────────┴──────────┴──────────┘         │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 4. Fleet Overview Panel
+
+Collapsible by default on mobile, persistent on desktop.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Fleet                                              ▼   │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  Agents                                                 │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │ ● agent-01    idle       localhost:9001         │   │
+│  │ ● agent-02    working    localhost:9002         │   │
+│  └─────────────────────────────────────────────────┘   │
+│                                                         │
+│  Directors                                              │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │ ○ scheduler   2 jobs     localhost:9100         │   │
+│  └─────────────────────────────────────────────────┘   │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 5. Task Submission Modal
+
+Full-screen on mobile, modal on desktop.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  New Task                                          ✕    │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  Agent                                                  │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │ agent-01 (idle)                              ▼  │   │
+│  └─────────────────────────────────────────────────┘   │
+│                                                         │
+│  Context                                                │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │ None (custom prompt)                         ▼  │   │
+│  └─────────────────────────────────────────────────┘   │
+│                                                         │
+│  Prompt                                                 │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │                                                 │   │
+│  │                                                 │   │
+│  │                                                 │   │
+│  └─────────────────────────────────────────────────┘   │
+│                                                         │
+│  Options                                           ▼    │
+│                                                         │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │                                      Submit ▶   │   │
+│  └─────────────────────────────────────────────────┘   │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+## API Changes
+
+### Task Summary Field
+
+To display human-readable summaries instead of cryptic UUIDs, the agent API must be extended.
+
+#### Agent API Changes
+
+**POST /task** - Request unchanged, response extended:
+
+```json
+{
+  "task_id": "task_a1b2c3d4",
+  "session_id": "sess_e5f6g7h8",
+  "summary": "Fix auth token refresh"  // NEW: 30 char max
+}
+```
+
+**GET /task/:id** - Response extended:
+
+```json
+{
+  "id": "task_a1b2c3d4",
+  "state": "completed",
+  "summary": "Fix auth token refresh",  // NEW
+  "prompt": "Fix the authentication token refresh logic...",
+  "output": "I'll analyze the auth client code...",
+  "exit_code": 0,
+  "duration_seconds": 45.2,
+  "tokens_used": 12400,      // NEW: optional
+  "cost_usd": 0.037          // NEW: optional
+}
+```
+
+**GET /history** - List includes summaries:
+
+```json
+{
+  "tasks": [
+    {
+      "id": "task_a1b2c3d4",
+      "summary": "Fix auth token refresh",  // NEW
+      "state": "completed",
+      "started_at": "2025-01-14T14:23:05Z",
+      "completed_at": "2025-01-14T14:23:50Z"
+    }
+  ]
+}
+```
+
+#### Summary Generation
+
+The agent generates summaries from the prompt using:
+
+1. **First sentence extraction** - Take first sentence if under 30 chars
+2. **Imperative verb detection** - Extract "Fix X", "Add Y", "Update Z" patterns
+3. **Truncation with ellipsis** - If still too long, truncate at word boundary + "..."
+
+Implementation pseudocode:
+
+```go
+func GenerateSummary(prompt string, maxLen int) string {
+    // Try first sentence
+    if idx := strings.IndexAny(prompt, ".!?"); idx > 0 && idx < maxLen {
+        return strings.TrimSpace(prompt[:idx])
+    }
+
+    // Try first line
+    if idx := strings.Index(prompt, "\n"); idx > 0 && idx < maxLen {
+        return strings.TrimSpace(prompt[:idx])
+    }
+
+    // Truncate at word boundary
+    if len(prompt) <= maxLen {
+        return prompt
+    }
+
+    truncated := prompt[:maxLen]
+    if idx := strings.LastIndex(truncated, " "); idx > maxLen/2 {
+        return truncated[:idx] + "..."
+    }
+    return truncated[:maxLen-3] + "..."
+}
+```
+
+#### Session Summary
+
+Sessions use the **first task's summary** as their display name:
+
+```json
+{
+  "id": "sess_e5f6g7h8",
+  "summary": "Fix auth token refresh",  // From first task
+  "agent_url": "http://localhost:9001",
+  "tasks": [...]
+}
+```
+
+---
+
+## State Management
+
+### Client-Side Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    UI Components                        │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐    │
+│  │ Fleet   │  │Sessions │  │ Task    │  │Settings │    │
+│  │ Panel   │  │  List   │  │ Submit  │  │  Modal  │    │
+│  └────┬────┘  └────┬────┘  └────┬────┘  └────┬────┘    │
+│       │            │            │            │          │
+│       └────────────┴────────────┴────────────┘          │
+│                         │                               │
+│                    ┌────┴────┐                          │
+│                    │  Store  │                          │
+│                    └────┬────┘                          │
+│                         │                               │
+│    ┌────────────────────┼────────────────────┐          │
+│    │                    │                    │          │
+│ ┌──┴──┐  ┌──────┐  ┌───┴────┐  ┌─────────┐ │          │
+│ │Fleet│  │Sessions│  │Active  │  │Settings │ │          │
+│ │State│  │ State  │  │Task    │  │ State   │ │          │
+│ └─────┘  └────────┘  └────────┘  └─────────┘ │          │
+│                                               │          │
+└───────────────────────────────────────────────┼──────────┘
+                                                │
+                                           ┌────┴────┐
+                                           │  API    │
+                                           │ Client  │
+                                           └────┬────┘
+                                                │
+                                        ┌───────┴───────┐
+                                        │   REST API    │
+                                        └───────────────┘
+```
+
+### State Shape
+
+```typescript
+interface AppState {
+  fleet: {
+    agents: ComponentStatus[];
+    directors: ComponentStatus[];
+    helpers: ComponentStatus[];
+    lastUpdated: number;
+  };
+
+  sessions: {
+    items: Session[];
+    expanded: Set<string>;     // Expanded session IDs
+    selected: string | null;   // Currently selected
+    lastUpdated: number;
+  };
+
+  activeTask: {
+    taskId: string | null;
+    sessionId: string | null;
+    agentUrl: string | null;
+    pollInterval: number;
+  };
+
+  ui: {
+    fleetPanelOpen: boolean;
+    taskModalOpen: boolean;
+    settingsModalOpen: boolean;
+    expandedTasks: Set<string>;
+  };
+}
+```
+
+### Polling Strategy
+
+```
+Idle State:
+  - Fleet status: every 5s
+  - Sessions: every 5s (with ETag)
+
+Active Task State:
+  - Active task: every 1s
+  - Fleet status: every 2s
+  - Sessions: every 2s
+
+Background Tab:
+  - All polling paused (visibility API)
+  - Resume on tab focus
+```
+
+---
+
+## Accessibility
+
+### WCAG 2.1 AA Compliance
+
+1. **Color contrast** - Minimum 4.5:1 for text, 3:1 for UI elements
+2. **Focus indicators** - Visible focus rings on all interactive elements
+3. **Keyboard navigation** - Full keyboard accessibility
+4. **Screen reader support** - Semantic HTML, ARIA labels
+5. **Motion reduction** - Respect `prefers-reduced-motion`
+
+### Keyboard Shortcuts (Desktop)
+
+| Key | Action |
+|-----|--------|
+| `n` | New task |
+| `r` | Refresh dashboard |
+| `f` | Toggle fleet panel |
+| `j/k` | Navigate sessions up/down |
+| `Enter` | Expand/collapse selected |
+| `Escape` | Close modals, deselect |
+
+---
+
+## Implementation Approach
+
+### Technology Stack
+
+**Recommended:** Vanilla JavaScript with Web Components
+
+**Rationale:**
+- Zero build step (maintainability)
+- Native browser APIs
+- No framework lock-in
+- Matches existing codebase style
+- Easy to update/modify
+
+**Alternative:** Preact (if more interactivity needed)
+- 3KB runtime
+- JSX syntax
+- Hooks for state
+- Still minimal build step
+
+### File Structure
+
+```
+internal/view/web/
+├── static/
+│   ├── css/
+│   │   └── dashboard.css      # Design system + component styles
+│   ├── js/
+│   │   ├── app.js             # Main application
+│   │   ├── store.js           # State management
+│   │   ├── api.js             # API client
+│   │   └── components/
+│   │       ├── fleet-panel.js
+│   │       ├── session-list.js
+│   │       ├── session-card.js
+│   │       ├── task-detail.js
+│   │       └── task-modal.js
+│   └── icons/
+│       └── icons.svg          # SVG sprite
+├── templates/
+│   ├── dashboard.html         # Main SPA shell
+│   ├── login.html
+│   └── pair.html
+└── embed.go                   # Go embed directives
+```
+
+### CSS Architecture
+
+```css
+/* Design tokens */
+:root {
+  /* Colors, spacing, typography from design system */
+}
+
+/* Base reset */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* Component styles using BEM naming */
+.session-card { }
+.session-card__header { }
+.session-card__header--expanded { }
+.session-card__body { }
+
+/* Utility classes for common patterns */
+.u-visually-hidden { }
+.u-flex { }
+.u-gap-4 { }
+```
+
+---
+
+## Maintainability Guidelines
+
+### Code Organization
+
+1. **Single responsibility** - Each component does one thing
+2. **Explicit dependencies** - No implicit globals
+3. **Consistent naming** - BEM for CSS, camelCase for JS
+4. **Documentation** - JSDoc comments on all public functions
+
+### Update Workflow
+
+To modify the UI:
+
+1. **Design tokens** - Update CSS custom properties for global changes
+2. **Component styles** - Modify component-specific CSS
+3. **Component logic** - Update individual JS modules
+4. **Templates** - Minimal changes needed (structure only)
+
+### Testing Strategy
+
+1. **Visual regression** - Screenshot tests for components
+2. **Unit tests** - Pure functions (summary generation, formatting)
+3. **Integration tests** - API client + state management
+4. **E2E tests** - Critical user flows (submit task, view results)
+
+---
+
+## Mockups
+
+Three HTML/JS mockups are provided in the docs folder:
+
+1. **[mockup-basic.html](mockup-basic.html)** - Conventional, Bootstrap-inspired layout
+2. **[mockup-creative.html](mockup-creative.html)** - Innovative, experimental design
+3. **[mockup-langsmith.html](mockup-langsmith.html)** - Inspired by LangSmith observability UI
+
+Each mockup demonstrates:
+- Dark mode with Danish minimalism
+- iPhone 17 Pro responsive design
+- Expandable session/task hierarchy
+- Human-readable summaries
+- Collapsible fleet panel
+
+---
+
+## Open Questions
+
+1. **Real-time updates** - Should we add WebSocket/SSE support for live task output streaming, or is polling sufficient?
+
+2. **Offline support** - Should sessions be cached in localStorage/IndexedDB for offline viewing?
+
+3. **Export/sharing** - Do users need to export session data (JSON, share links)?
+
+4. **Multi-agent views** - When director-claude orchestrates multiple agents, how should the UI visualize the parent-child relationship?
+
+---
+
+## Related Documents
+
+- [PLAN.md](PLAN.md) - Project roadmap
+- [DESIGN.md](DESIGN.md) - Technical architecture
+- [authentication.md](authentication.md) - Auth system

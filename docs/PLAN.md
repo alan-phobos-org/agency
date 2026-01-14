@@ -74,6 +74,13 @@ Observability, security isolation, and multi-instance support.
 - `/history` API with pagination
 - Health checks and graceful shutdown
 - Fleet management CLI (`agency shutdown --all`)
+- **Web UI Layer** - New observability dashboard (see [WEB_UI_DESIGN.md](WEB_UI_DESIGN.md))
+  - Dark mode with Danish minimalism aesthetic
+  - iPhone 17 Pro optimized (mobile-first responsive)
+  - Expandable step/trace visualization
+  - Human-readable task summaries (30 char max) replacing cryptic IDs
+  - Collapsible agent/director details
+  - Hierarchical session → task → step navigation
 
 #### 2.2 Security
 - Agent auth (bind localhost, add token)
