@@ -15,6 +15,7 @@ Deploying agents should feel like reliable infrastructure, not babysitting exper
 | [docs/REFERENCE.md](docs/REFERENCE.md) | API specs, endpoints, config | Implementing API changes |
 | [docs/DESIGN.md](docs/DESIGN.md) | Architecture, patterns | Major refactoring |
 | [docs/SCHEDULER_DESIGN.md](docs/SCHEDULER_DESIGN.md) | Scheduler architecture | Modifying scheduler |
+| [docs/SESSION_ROUTING_DESIGN.md](docs/SESSION_ROUTING_DESIGN.md) | Centralized session routing | Implementing session routing |
 | [docs/PLAN.md](docs/PLAN.md) | Vision, phases, backlog | Planning work |
 | [CHANGELOG.md](CHANGELOG.md) | Release history | Preparing releases |
 

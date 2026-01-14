@@ -129,6 +129,70 @@ Feature parity with h2ai v1 GitHub integration.
 
 ## Backlog
 
+### Session Routing (Centralized) - DESIGN COMPLETE
+
+Route all task submissions through Web Director for unified session tracking.
+
+**Problem:** Scheduler and CLI bypass web director, creating invisible sessions.
+
+**Solution:** Scheduler/CLI post to director's `/api/task` instead of agent directly.
+
+**Design:** See [SESSION_ROUTING_DESIGN.md](SESSION_ROUTING_DESIGN.md)
+
+**Implementation phases:**
+1. Config and fallback structure (scheduler `director_url`)
+2. Internal API port (unauthenticated localhost port for services)
+3. Session metadata (track source: web/scheduler/cli)
+4. CLI director update
+5. System integration and tests
+
+### Session Broker Service (Decentralized) - FUTURE
+
+More resilient alternative to centralized session routing. Creates a dedicated session management service that all components register with.
+
+**Problem solved:** Web director as single point of failure; session state lost on director restart; difficulty scaling to multiple directors.
+
+**Architecture:**
+```
+         ┌─────────────────────────────────────────────────────────┐
+         │              Session Broker (new service)               │
+         │  ┌─────────────────────────────────────────────────┐   │
+         │  │  SessionStore (Redis/SQLite/shared file store)  │   │
+         │  └─────────────────────────────────────────────────┘   │
+         │     GET /sessions    POST /sessions    PUT /sessions   │
+         └─────────────────────────────────────────────────────────┘
+                ▲           ▲              ▲
+                │           │              │
+    ┌───────────┴──┐  ┌─────┴─────┐  ┌─────┴─────┐
+    │ Web Director │  │ Scheduler │  │    CLI    │
+    └──────────────┘  └───────────┘  └───────────┘
+           │                │              │
+           └────────────────┼──────────────┘
+                            ▼
+                      ┌────────────┐
+                      │   Agent    │
+                      └────────────┘
+```
+
+**Key benefits:**
+- No single point of failure for tasking
+- Session state survives director restarts
+- Multiple directors can share session view
+- Easier to add new orchestrators
+
+**Protocol:**
+1. Component creates session: `POST broker:9200/sessions` → `{session_id}`
+2. Component tasks agent: `POST agent:9000/task {session_id, prompt}`
+3. Component updates broker: `PUT broker:9200/sessions/{id}/tasks {task_id, state}`
+
+**Implementation scope:**
+- New `ag-session-broker` binary
+- Port 9200 (in discovery range)
+- Persistent storage (SQLite initially)
+- Migrate SessionStore consumers to broker API
+
+**When to implement:** After centralized routing proves limiting (multiple directors, high availability requirements).
+
 ### Task State Synchronization
 
 Tasks can appear stuck in "working" state in the web UI due to distributed state without synchronization. Quick fixes implemented (reconciliation on load, poll error fallback). Full architectural solution needed.
@@ -141,6 +205,8 @@ Tasks can appear stuck in "working" state in the web UI due to distributed state
 - Decision on multi-agent sessions
 - Decision on session retention policy separate from history
 
+**Note:** Session Routing (above) partially addresses this by centralizing session management. Full solution requires either Stateless Web or Agent-Owned Sessions.
+
 ### Remote Deployment & Multi-Instance
 
 - Add `deploy-remote` build target with staging/prod mechanisms
@@ -150,5 +216,8 @@ Tasks can appear stuck in "working" state in the web UI due to distributed state
 ## Related Documents
 
 - [DESIGN.md](DESIGN.md) - Architecture and technical design
+- [SESSION_ROUTING_DESIGN.md](SESSION_ROUTING_DESIGN.md) - Centralized session routing design
+- [SCHEDULER_DESIGN.md](SCHEDULER_DESIGN.md) - Scheduler architecture
+- [TASK_STATE_SYNC_DESIGN.md](TASK_STATE_SYNC_DESIGN.md) - Task state synchronization
 - [authentication.md](authentication.md) - Auth system design
 - [security-audit.md](security-audit.md) - Security findings
