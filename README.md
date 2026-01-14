@@ -12,6 +12,7 @@ Agency provides infrastructure for running AI agents that perform software engin
 |-----------|-------------|
 | **ag-agent-claude** | Executes tasks via Claude CLI in a sandboxed environment |
 | **ag-cli** | Command-line tool for task submission, status, and discovery |
+| **ag-scheduler** | Runs tasks on cron schedules with configurable jobs |
 | **ag-view-web** | Web dashboard with auth, discovery, and task management |
 
 ## Quick Start
@@ -34,6 +35,7 @@ Requires `AG_WEB_PASSWORD` environment variable (can be set in `.env` file).
 - [CHANGELOG.md](CHANGELOG.md) - Release history
 - [docs/PLAN.md](docs/PLAN.md) - Vision, phases, and backlog
 - [docs/DESIGN.md](docs/DESIGN.md) - Architecture and technical design
+- [docs/SCHEDULER_DESIGN.md](docs/SCHEDULER_DESIGN.md) - Scheduler architecture and configuration
 - [docs/authentication.md](docs/authentication.md) - Auth system design
 - [docs/security-audit.md](docs/security-audit.md) - Security findings
 

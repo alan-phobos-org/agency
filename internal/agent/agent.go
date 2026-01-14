@@ -416,7 +416,8 @@ func (a *Agent) handleShutdown(w http.ResponseWriter, r *http.Request) {
 	}
 	req.TimeoutSeconds = 30
 
-	json.NewDecoder(r.Body).Decode(&req)
+	// Ignore decode errors - defaults (TimeoutSeconds=30, Force=false) are safe
+	_ = json.NewDecoder(r.Body).Decode(&req)
 
 	a.mu.RLock()
 	hasTask := a.currentTask != nil && a.state == StateWorking
