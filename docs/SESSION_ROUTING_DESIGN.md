@@ -193,17 +193,20 @@ func (s *Scheduler) runJob(js *jobState) {
 The scheduler must handle the director's self-signed HTTPS certificate:
 
 ```go
-func (s *Scheduler) createDirectorClient() *http.Client {
-    // Skip TLS verification for localhost self-signed certs
-    tr := &http.Transport{
-        TLSClientConfig: &tls.Config{
-            InsecureSkipVerify: isLocalhost(s.config.DirectorURL),
-        },
+func (s *Scheduler) createHTTPClient(targetURL string) *http.Client {
+    client := &http.Client{Timeout: 30 * time.Second}
+
+    // Skip TLS verification for localhost HTTPS (self-signed certs)
+    if strings.HasPrefix(targetURL, "https://localhost") ||
+        strings.HasPrefix(targetURL, "https://127.0.0.1") {
+        client.Transport = &http.Transport{
+            TLSClientConfig: &tls.Config{
+                InsecureSkipVerify: true,
+            },
+        }
     }
-    return &http.Client{
-        Transport: tr,
-        Timeout:   30 * time.Second,
-    }
+
+    return client
 }
 ```
 

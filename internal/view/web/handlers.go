@@ -200,10 +200,7 @@ func (h *Handlers) HandleTaskSubmit(w http.ResponseWriter, r *http.Request) {
 	if source == "" {
 		source = "web" // Default source is web UI
 	}
-	var opts []AddTaskOption
-	if source != "" {
-		opts = append(opts, WithSource(source))
-	}
+	opts := []AddTaskOption{WithSource(source)}
 	if req.SourceJob != "" {
 		opts = append(opts, WithSourceJob(req.SourceJob))
 	}
