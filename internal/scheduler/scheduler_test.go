@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -597,8 +598,7 @@ func TestSchedulerJobNoDoubleRun(t *testing.T) {
 		if r.URL.Path == "/task" && r.Method == "POST" {
 			// Simulate slow agent
 			time.Sleep(50 * time.Millisecond)
-			count := submissions
-			submissions++
+			count := atomic.AddInt32(&submissions, 1) - 1
 			w.WriteHeader(http.StatusCreated)
 			json.NewEncoder(w).Encode(map[string]string{
 				"task_id": "task-" + string(rune('0'+count)),
@@ -643,7 +643,7 @@ func TestSchedulerJobNoDoubleRun(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Should only have submitted once despite two checkAndRunJobs calls
-	assert.Equal(t, int32(1), submissions)
+	assert.Equal(t, int32(1), atomic.LoadInt32(&submissions))
 }
 
 func TestSchedulerDirectorRouting(t *testing.T) {

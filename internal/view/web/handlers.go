@@ -105,8 +105,8 @@ type TaskSubmitRequest struct {
 	TimeoutSeconds int               `json:"timeout_seconds,omitempty"`
 	SessionID      string            `json:"session_id,omitempty"` // Continue existing session
 	Env            map[string]string `json:"env,omitempty"`
-	Thinking       *bool             `json:"thinking,omitempty"` // Enable extended thinking (default: true)
-	Source         string            `json:"source,omitempty"`   // "web", "scheduler", "cli" (default: "web")
+	Thinking       *bool             `json:"thinking,omitempty"`   // Enable extended thinking (default: true)
+	Source         string            `json:"source,omitempty"`     // "web", "scheduler", "cli" (default: "web")
 	SourceJob      string            `json:"source_job,omitempty"` // Job name for scheduler
 }
 
