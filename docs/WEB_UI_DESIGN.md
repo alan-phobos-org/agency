@@ -912,8 +912,1023 @@ These decisions were made during design review:
 
 ---
 
+## Edge Cases & Race Conditions
+
+This section documents potential race conditions, edge cases, and synchronization issues that must be handled correctly.
+
+### Polling Race Conditions
+
+#### 1. Out-of-Order Response Arrival
+
+**Problem:** When polling rapidly (1s intervals during active tasks), network latency can cause responses to arrive out of order. A request sent at T+1s might return after a request sent at T+2s.
+
+**Solution:** Use request sequencing with AbortController:
+
+```javascript
+// Track current request to cancel stale ones
+let currentController = null;
+let requestSequence = 0;
+
+async function fetchDashboard() {
+    // Cancel any in-flight request
+    if (currentController) {
+        currentController.abort();
+    }
+
+    currentController = new AbortController();
+    const mySequence = ++requestSequence;
+
+    try {
+        const response = await fetch('/api/dashboard', {
+            signal: currentController.signal
+        });
+
+        // Verify this is still the latest request
+        if (mySequence !== requestSequence) {
+            return; // Stale response, discard
+        }
+
+        const data = await response.json();
+        updateState(data);
+    } catch (err) {
+        if (err.name === 'AbortError') {
+            // Request was cancelled, this is expected
+            return;
+        }
+        handleError(err);
+    }
+}
+```
+
+#### 2. Tab Visibility Transitions
+
+**Problem:** User rapidly switches tabs (hidden → visible → hidden). If not handled, multiple polling loops can start.
+
+**Solution:** Guard against concurrent polling initialization:
+
+```javascript
+let isPolling = false;
+let pollTimer = null;
+
+function startPolling() {
+    if (isPolling) return; // Already polling
+    isPolling = true;
+
+    // Immediate fetch on resume
+    refresh();
+
+    pollTimer = setInterval(() => {
+        if (!document.hidden) {
+            refresh();
+        }
+    }, this.activeTask ? 1000 : 5000);
+}
+
+function stopPolling() {
+    isPolling = false;
+    if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+    }
+    // Cancel any in-flight requests
+    if (currentController) {
+        currentController.abort();
+        currentController = null;
+    }
+}
+
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        stopPolling();
+    } else {
+        startPolling();
+    }
+});
+```
+
+#### 3. Stale "Working" Task Detection
+
+**Problem:** If the dashboard loads while an agent was mid-task, but that task has since completed (agent restarted, network partition, etc.), the UI shows a perpetually "working" task.
+
+**Solution:** Reconciliation on initial load and periodic verification:
+
+```javascript
+async function reconcileWorkingSessions() {
+    const workingTasks = sessions
+        .flatMap(s => s.tasks)
+        .filter(t => t.state === 'working');
+
+    for (const task of workingTasks) {
+        try {
+            // Query agent directly for current task state
+            const response = await fetch(`${task.agent_url}/task/${task.task_id}`);
+            if (response.status === 404) {
+                // Task no longer exists on agent - mark as unknown
+                task.state = 'unknown';
+                task.stale_reason = 'Task not found on agent';
+            } else {
+                const current = await response.json();
+                if (current.state !== 'working') {
+                    // Update to actual state
+                    task.state = current.state;
+                    task.output = current.output;
+                }
+            }
+        } catch (err) {
+            // Agent unreachable - mark task state as uncertain
+            task.state = 'unknown';
+            task.stale_reason = 'Agent unreachable';
+        }
+    }
+}
+```
+
+### Optimistic UI Edge Cases
+
+#### 1. Task Submission Failure
+
+**Problem:** User submits a task, UI optimistically shows it as "working", but the actual submission fails.
+
+**Solution:** Implement proper rollback:
+
+```javascript
+async function submitTask(prompt, agentUrl) {
+    // Optimistically add to UI
+    const optimisticTask = {
+        task_id: 'pending-' + Date.now(),
+        state: 'submitting', // Special state for optimistic updates
+        prompt: prompt,
+        isOptimistic: true
+    };
+
+    addTaskToSession(optimisticTask);
+
+    try {
+        const response = await fetch('/api/task', {
+            method: 'POST',
+            body: JSON.stringify({ agent_url: agentUrl, prompt }),
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (!response.ok) {
+            throw new Error(await response.text());
+        }
+
+        const result = await response.json();
+
+        // Replace optimistic task with real one
+        replaceOptimisticTask(optimisticTask.task_id, {
+            task_id: result.task_id,
+            state: 'working',
+            prompt: prompt,
+            isOptimistic: false
+        });
+
+    } catch (err) {
+        // Rollback: Remove optimistic task, show error
+        removeOptimisticTask(optimisticTask.task_id);
+        showError(`Task submission failed: ${err.message}`);
+    }
+}
+```
+
+#### 2. Agent State Change During Submission
+
+**Problem:** Agent shows as "idle" when user opens task modal, but becomes "working" before submission completes.
+
+**Solution:** Double-check agent state before submission:
+
+```javascript
+async function submitTask(prompt, agentUrl) {
+    // Pre-flight check
+    const agentStatus = await fetch(`${agentUrl}/status`);
+    const status = await agentStatus.json();
+
+    if (status.state !== 'idle') {
+        showError(`Agent is now ${status.state}. Please select another agent.`);
+        // Refresh agent list
+        await refreshFleet();
+        return;
+    }
+
+    // Proceed with submission...
+}
+```
+
+### Session State Synchronization
+
+#### 1. Session Created Externally
+
+**Problem:** A session is created via CLI or another client while the dashboard is open. The dashboard should show it without requiring manual refresh.
+
+**Solution:** Polling handles this automatically, but ensure proper merge logic:
+
+```javascript
+function mergeSessionUpdate(existingSessions, newSessions) {
+    const merged = [...existingSessions];
+
+    for (const newSession of newSessions) {
+        const existing = merged.find(s => s.id === newSession.id);
+
+        if (!existing) {
+            // New session - add it
+            merged.push(newSession);
+        } else {
+            // Existing session - update carefully
+            // Preserve UI state (expanded, scroll position)
+            existing.tasks = newSession.tasks;
+            existing.updated_at = newSession.updated_at;
+            // Don't overwrite: existing.isExpanded, existing.scrollTop
+        }
+    }
+
+    // Sort by updated_at (newest first)
+    return merged.sort((a, b) =>
+        new Date(b.updated_at) - new Date(a.updated_at)
+    );
+}
+```
+
+#### 2. Concurrent Task in Same Session
+
+**Problem:** User has a session expanded, viewing task output. A second task starts in that session (e.g., follow-up command). The new task should appear without disrupting the current view.
+
+**Solution:** Append-only updates for tasks within expanded sessions:
+
+```javascript
+function updateSessionTasks(session, newTasks) {
+    // Only add new tasks, never remove or reorder existing
+    for (const task of newTasks) {
+        if (!session.tasks.find(t => t.task_id === task.task_id)) {
+            session.tasks.push(task);
+        } else {
+            // Update existing task in place
+            const existing = session.tasks.find(t => t.task_id === task.task_id);
+            Object.assign(existing, task);
+        }
+    }
+}
+```
+
+---
+
+## API Implementation Details
+
+### ETag-Based Caching
+
+The `/api/dashboard` endpoint supports conditional requests using ETags to minimize bandwidth on unchanged data.
+
+#### Server Implementation (Go)
+
+```go
+func (h *Handlers) HandleDashboard(w http.ResponseWriter, r *http.Request) {
+    data := h.buildDashboardData()
+
+    // Generate ETag from data hash
+    hash := sha256.Sum256([]byte(fmt.Sprintf("%v", data)))
+    etag := fmt.Sprintf(`"%x"`, hash[:8])
+
+    // Check If-None-Match header
+    if match := r.Header.Get("If-None-Match"); match == etag {
+        w.WriteHeader(http.StatusNotModified)
+        return
+    }
+
+    w.Header().Set("ETag", etag)
+    w.Header().Set("Cache-Control", "private, no-cache")
+    json.NewEncoder(w).Encode(data)
+}
+```
+
+#### Client Implementation
+
+```javascript
+let lastETag = null;
+
+async function fetchDashboard() {
+    const headers = {};
+    if (lastETag) {
+        headers['If-None-Match'] = lastETag;
+    }
+
+    const response = await fetch('/api/dashboard', { headers });
+
+    if (response.status === 304) {
+        // Data unchanged, skip update
+        return;
+    }
+
+    lastETag = response.headers.get('ETag');
+    const data = await response.json();
+    updateState(data);
+}
+```
+
+#### ETag Generation Strategies
+
+| Strategy | Pros | Cons |
+|----------|------|------|
+| Content hash (SHA256) | Accurate, catches any change | CPU cost for large responses |
+| Last-modified timestamp | Simple, efficient | May miss changes if clock skews |
+| Version counter | Very fast | Requires additional state tracking |
+
+**Recommendation:** Use content hash for `/api/dashboard` (small payload), timestamp for `/api/task/:id/output` (large, append-only).
+
+### Request Timeout Handling
+
+All API requests should have timeouts to prevent hanging UI:
+
+```javascript
+async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+        const response = await fetch(url, {
+            ...options,
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        return response;
+    } catch (err) {
+        clearTimeout(timeoutId);
+        if (err.name === 'AbortError') {
+            throw new Error(`Request timed out after ${timeoutMs}ms`);
+        }
+        throw err;
+    }
+}
+```
+
+---
+
+## Task State Machine
+
+Tasks follow a finite state machine with well-defined transitions:
+
+```
+                    ┌──────────────┐
+                    │   pending    │
+                    │  (queued)    │
+                    └──────┬───────┘
+                           │ agent accepts
+                           ▼
+                    ┌──────────────┐
+        ┌──────────│   working    │──────────┐
+        │          │ (executing)  │          │
+        │          └──────┬───────┘          │
+        │ cancel          │ completes        │ error
+        ▼                 ▼                  ▼
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│  cancelled   │  │  completed   │  │   failed     │
+│              │  │              │  │              │
+└──────────────┘  └──────────────┘  └──────────────┘
+        │                 │                  │
+        └─────────────────┴──────────────────┘
+                          │
+                    ┌─────┴─────┐
+                    │  Terminal │
+                    │  States   │
+                    └───────────┘
+```
+
+### State Definitions
+
+| State | Description | UI Treatment |
+|-------|-------------|--------------|
+| `pending` | Task queued but not yet started | Gray dot, "Queued" label |
+| `working` | Task actively executing | Blue dot with pulse animation, "Working" label |
+| `completed` | Task finished successfully | Green checkmark |
+| `failed` | Task encountered error | Red X, show error message |
+| `cancelled` | Task was cancelled by user | Gray dash, "Cancelled" label |
+| `unknown` | State uncertain (agent unreachable) | Yellow warning icon, "Unknown" label |
+
+### State Transition Validation
+
+```javascript
+const VALID_TRANSITIONS = {
+    'pending': ['working', 'cancelled'],
+    'working': ['completed', 'failed', 'cancelled'],
+    'completed': [],  // Terminal
+    'failed': [],     // Terminal
+    'cancelled': [],  // Terminal
+    'unknown': ['working', 'completed', 'failed', 'cancelled'] // Can resolve to any
+};
+
+function isValidTransition(fromState, toState) {
+    return VALID_TRANSITIONS[fromState]?.includes(toState) ?? false;
+}
+
+function updateTaskState(task, newState) {
+    if (!isValidTransition(task.state, newState)) {
+        console.warn(`Invalid state transition: ${task.state} → ${newState}`);
+        // Still update for display, but log warning
+    }
+    task.state = newState;
+}
+```
+
+---
+
+## iOS-Specific Implementation
+
+### Safe Area Insets
+
+The dashboard must respect iOS safe areas to avoid content being hidden by the notch or home indicator.
+
+#### HTML Viewport Configuration
+
+```html
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+```
+
+#### CSS Safe Area Implementation
+
+```css
+/* Root container */
+.app-container {
+    padding-top: env(safe-area-inset-top);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+}
+
+/* Fixed header */
+.header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding-top: calc(var(--space-4) + env(safe-area-inset-top));
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+}
+
+/* Fixed bottom navigation/FAB */
+.fab {
+    position: fixed;
+    bottom: calc(var(--space-6) + env(safe-area-inset-bottom));
+    right: calc(var(--space-4) + env(safe-area-inset-right));
+}
+
+/* Full-screen modal on mobile */
+.modal--fullscreen {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+}
+```
+
+### Haptic Feedback
+
+Safari on iOS does not support the standard `navigator.vibrate()` API. However, iOS 18+ provides haptic feedback through a checkbox switch workaround.
+
+#### Implementation
+
+```javascript
+// Create hidden haptic trigger element
+function createHapticTrigger() {
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.setAttribute('switch', '');
+    input.style.cssText = 'position:absolute;opacity:0;pointer-events:none;';
+    input.id = 'haptic-trigger';
+
+    const label = document.createElement('label');
+    label.setAttribute('for', 'haptic-trigger');
+    label.style.cssText = 'position:absolute;opacity:0;pointer-events:none;';
+
+    document.body.appendChild(input);
+    document.body.appendChild(label);
+
+    return label;
+}
+
+let hapticLabel = null;
+
+function triggerHaptic() {
+    // Try standard API first (Android, desktop)
+    if (navigator.vibrate) {
+        navigator.vibrate(10);
+        return;
+    }
+
+    // iOS 18+ workaround
+    if (!hapticLabel) {
+        hapticLabel = createHapticTrigger();
+    }
+    hapticLabel.click();
+}
+
+// Usage: Haptic on successful task submission
+async function submitTask() {
+    try {
+        await postTask(data);
+        triggerHaptic();
+        showSuccess('Task submitted');
+    } catch (err) {
+        showError(err.message);
+    }
+}
+```
+
+**Note:** Haptic feedback is a progressive enhancement. The UI must work correctly without it.
+
+### Pull-to-Refresh
+
+Native-feeling refresh on mobile:
+
+```javascript
+let pullStartY = 0;
+let isPulling = false;
+const PULL_THRESHOLD = 80;
+
+document.addEventListener('touchstart', (e) => {
+    if (window.scrollY === 0) {
+        pullStartY = e.touches[0].clientY;
+        isPulling = true;
+    }
+});
+
+document.addEventListener('touchmove', (e) => {
+    if (!isPulling) return;
+
+    const pullDistance = e.touches[0].clientY - pullStartY;
+    if (pullDistance > 0 && pullDistance < PULL_THRESHOLD * 2) {
+        // Show pull indicator
+        updatePullIndicator(pullDistance / PULL_THRESHOLD);
+    }
+});
+
+document.addEventListener('touchend', (e) => {
+    if (!isPulling) return;
+    isPulling = false;
+
+    const pullDistance = e.changedTouches[0].clientY - pullStartY;
+    if (pullDistance > PULL_THRESHOLD) {
+        triggerRefresh();
+    }
+    hidePullIndicator();
+});
+```
+
+---
+
+## Enhanced Accessibility
+
+### WCAG 2.2 Compliance
+
+The dashboard targets WCAG 2.2 Level AA compliance, with particular attention to:
+
+#### Success Criterion 4.1.3: Status Messages
+
+Status messages (task completion, errors, connection status) must be announced to screen readers without moving focus.
+
+**Implementation using ARIA Live Regions:**
+
+```html
+<!-- Status announcer (always in DOM, even when empty) -->
+<div id="status-announcer"
+     role="status"
+     aria-live="polite"
+     aria-atomic="true"
+     class="u-visually-hidden">
+</div>
+
+<!-- Alert for urgent messages -->
+<div id="alert-announcer"
+     role="alert"
+     aria-live="assertive"
+     aria-atomic="true"
+     class="u-visually-hidden">
+</div>
+```
+
+```javascript
+function announceStatus(message) {
+    const announcer = document.getElementById('status-announcer');
+    announcer.textContent = message;
+}
+
+function announceAlert(message) {
+    const announcer = document.getElementById('alert-announcer');
+    announcer.textContent = message;
+}
+
+// Usage
+function onTaskComplete(task) {
+    announceStatus(`Task completed: ${task.summary}`);
+}
+
+function onConnectionLost() {
+    announceAlert('Connection lost. Attempting to reconnect.');
+}
+```
+
+#### Live Region Best Practices
+
+| Attribute | Value | Use Case |
+|-----------|-------|----------|
+| `aria-live="polite"` | Waits for user idle | Task status updates, non-urgent notifications |
+| `aria-live="assertive"` | Interrupts immediately | Connection errors, critical failures |
+| `aria-atomic="true"` | Announces entire region | Short messages, status changes |
+| `aria-atomic="false"` | Announces only changes | Log output, streaming content |
+| `role="log"` | Preserves history | Task output display |
+| `role="status"` | Current state | Connection status, poll indicator |
+
+### Focus Management
+
+#### Modal Focus Trap
+
+```javascript
+function openModal(modalElement) {
+    // Store current focus
+    const previousFocus = document.activeElement;
+
+    // Find focusable elements
+    const focusable = modalElement.querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    const firstFocusable = focusable[0];
+    const lastFocusable = focusable[focusable.length - 1];
+
+    // Focus first element
+    firstFocusable.focus();
+
+    // Trap focus
+    modalElement.addEventListener('keydown', (e) => {
+        if (e.key !== 'Tab') return;
+
+        if (e.shiftKey && document.activeElement === firstFocusable) {
+            e.preventDefault();
+            lastFocusable.focus();
+        } else if (!e.shiftKey && document.activeElement === lastFocusable) {
+            e.preventDefault();
+            firstFocusable.focus();
+        }
+    });
+
+    // Return focus on close
+    modalElement.addEventListener('close', () => {
+        previousFocus.focus();
+    }, { once: true });
+}
+```
+
+#### Skip Links
+
+```html
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<a href="#sessions-list" class="skip-link">Skip to sessions</a>
+```
+
+```css
+.skip-link {
+    position: absolute;
+    top: -40px;
+    left: 0;
+    padding: var(--space-2) var(--space-4);
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    z-index: 1000;
+}
+
+.skip-link:focus {
+    top: 0;
+}
+```
+
+### Reduced Motion
+
+```css
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+
+    .status-dot--working {
+        animation: none;
+    }
+}
+```
+
+---
+
+## Error Handling & Recovery
+
+### Error Categories
+
+| Category | HTTP Status | User Message | Recovery Action |
+|----------|-------------|--------------|-----------------|
+| Network Error | N/A | "Unable to connect" | Auto-retry with backoff |
+| Server Error | 5xx | "Server error" | Auto-retry with backoff |
+| Auth Error | 401 | "Session expired" | Redirect to login |
+| Validation | 400 | Show server message | User corrects input |
+| Not Found | 404 | "Not found" | Remove from local state |
+| Conflict | 409 | "Agent is busy" | Refresh and prompt user |
+
+### Exponential Backoff for Reconnection
+
+```javascript
+class ConnectionManager {
+    constructor() {
+        this.retryCount = 0;
+        this.maxRetries = 10;
+        this.baseDelay = 1000;  // 1 second
+        this.maxDelay = 60000;  // 1 minute
+        this.isConnected = true;
+    }
+
+    calculateDelay() {
+        // Exponential backoff with jitter
+        const exponential = Math.min(
+            this.maxDelay,
+            this.baseDelay * Math.pow(2, this.retryCount)
+        );
+        // Add random jitter (0-50% of delay)
+        const jitter = exponential * Math.random() * 0.5;
+        return exponential + jitter;
+    }
+
+    async reconnect() {
+        if (this.retryCount >= this.maxRetries) {
+            this.showPermanentError();
+            return;
+        }
+
+        const delay = this.calculateDelay();
+        this.showReconnecting(delay);
+
+        await sleep(delay);
+
+        try {
+            await this.healthCheck();
+            this.retryCount = 0;
+            this.isConnected = true;
+            this.showConnected();
+        } catch (err) {
+            this.retryCount++;
+            this.reconnect(); // Recursive retry
+        }
+    }
+
+    onError(err) {
+        if (err.name === 'TypeError' || !navigator.onLine) {
+            // Network error
+            this.isConnected = false;
+            this.reconnect();
+        }
+    }
+}
+```
+
+### User-Facing Error States
+
+```html
+<!-- Connection banner -->
+<div x-show="!isConnected" class="connection-banner connection-banner--error">
+    <span class="connection-banner__icon">⚠</span>
+    <span class="connection-banner__message">
+        Connection lost. Reconnecting in <span x-text="reconnectIn"></span>s...
+    </span>
+    <button @click="retryNow()" class="connection-banner__retry">Retry Now</button>
+</div>
+
+<!-- Inline error for task submission -->
+<div x-show="submitError" class="form-error" role="alert">
+    <span x-text="submitError"></span>
+</div>
+```
+
+### Graceful Degradation
+
+When features fail, the UI should degrade gracefully:
+
+| Feature | Failure Mode | Degradation |
+|---------|--------------|-------------|
+| Fleet status | Agent unreachable | Show "Unknown" state, gray icon |
+| Task output | Polling fails | Show last known output, "Update paused" |
+| Session list | API error | Show cached list, "Last updated X ago" |
+| Task submission | Network error | Queue locally, retry when online |
+| ETag cache | Header missing | Fall back to full fetch |
+
+---
+
+## Connection Management
+
+### Online/Offline Detection
+
+```javascript
+function setupConnectionMonitoring() {
+    window.addEventListener('online', () => {
+        console.log('Connection restored');
+        announceStatus('Connection restored');
+        startPolling();
+        refresh();
+    });
+
+    window.addEventListener('offline', () => {
+        console.log('Connection lost');
+        announceAlert('Connection lost');
+        stopPolling();
+        showOfflineBanner();
+    });
+
+    // Also detect via failed requests
+    // navigator.onLine is not always reliable
+}
+```
+
+### Health Check Endpoint
+
+The UI should verify connectivity via a lightweight health check:
+
+```javascript
+async function healthCheck() {
+    const response = await fetchWithTimeout('/api/health', {}, 5000);
+    if (!response.ok) {
+        throw new Error('Health check failed');
+    }
+    return true;
+}
+```
+
+Server implementation:
+
+```go
+func (h *Handlers) HandleHealth(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Cache-Control", "no-store")
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte("OK"))
+}
+```
+
+---
+
+## Alpine.js Lifecycle Management
+
+### Cleanup on Component Destruction
+
+```javascript
+Alpine.data('dashboard', () => ({
+    pollTimer: null,
+    abortController: null,
+
+    init() {
+        this.startPolling();
+        this.setupVisibilityHandler();
+    },
+
+    destroy() {
+        // Critical: Clean up to prevent memory leaks
+        this.stopPolling();
+        this.removeVisibilityHandler();
+
+        if (this.abortController) {
+            this.abortController.abort();
+            this.abortController = null;
+        }
+    },
+
+    visibilityHandler: null,
+
+    setupVisibilityHandler() {
+        this.visibilityHandler = () => {
+            if (document.hidden) {
+                this.stopPolling();
+            } else {
+                this.startPolling();
+            }
+        };
+        document.addEventListener('visibilitychange', this.visibilityHandler);
+    },
+
+    removeVisibilityHandler() {
+        if (this.visibilityHandler) {
+            document.removeEventListener('visibilitychange', this.visibilityHandler);
+            this.visibilityHandler = null;
+        }
+    }
+}));
+```
+
+### Recursive setTimeout vs setInterval
+
+**Recommendation:** Use recursive `setTimeout` instead of `setInterval` for polling.
+
+```javascript
+// Preferred: Recursive setTimeout
+async function poll() {
+    try {
+        await refresh();
+    } catch (err) {
+        handleError(err);
+    }
+
+    // Only schedule next poll after current one completes
+    if (isPolling) {
+        pollTimer = setTimeout(poll, getInterval());
+    }
+}
+
+// Avoid: setInterval
+// - Continues firing even if previous request hasn't completed
+// - Can cause request pileup on slow networks
+// - Harder to adjust interval dynamically
+```
+
+**Benefits of recursive setTimeout:**
+- Guarantees minimum interval between request completion and next request start
+- Naturally handles slow responses without request pileup
+- Easy to adjust interval based on state (active task vs idle)
+
+---
+
+## Placeholder Features (Pending Observability Improvements)
+
+The following features are designed but require observability improvements before full implementation:
+
+### 1. Token Usage & Cost Display
+
+**Current state:** Placeholder in Task Detail view.
+
+```javascript
+// TODO: Requires agent to expose token counts in task response
+// Currently shows "—" for tokens_used and cost_usd
+function formatMetrics(task) {
+    return {
+        tokens: task.tokens_used ? formatNumber(task.tokens_used) : '—',
+        cost: task.cost_usd ? `$${task.cost_usd.toFixed(3)}` : '—',
+        duration: formatDuration(task.duration_seconds),
+        model: task.model || '—'
+    };
+}
+```
+
+**Dependency:** Agent must track and report token usage from Claude API responses.
+
+### 2. Step/Trace Visualization
+
+**Current state:** Placeholder section in expanded task view.
+
+```html
+<!-- TODO: Requires structured trace data from agent -->
+<div class="task-steps" x-show="task.steps && task.steps.length > 0">
+    <h4>Steps</h4>
+    <!-- Step timeline will go here -->
+    <p class="placeholder-text">Step visualization coming soon</p>
+</div>
+```
+
+**Dependency:** Agent must emit structured step events with timing data.
+
+### 3. Real-time Output Streaming
+
+**Current state:** Polling every 1s for partial output.
+
+**Future improvement:** When observability layer supports it, switch to SSE for true streaming:
+
+```javascript
+// Future: SSE-based streaming (when available)
+function streamTaskOutput(taskId, onChunk) {
+    const eventSource = new EventSource(`/api/task/${taskId}/stream`);
+    eventSource.onmessage = (event) => {
+        onChunk(event.data);
+    };
+    eventSource.onerror = () => {
+        eventSource.close();
+        // Fall back to polling
+        pollTaskOutput(taskId, onChunk);
+    };
+    return eventSource;
+}
+```
+
+---
+
 ## Related Documents
 
 - [PLAN.md](PLAN.md) - Project roadmap
 - [DESIGN.md](DESIGN.md) - Technical architecture
 - [authentication.md](authentication.md) - Auth system
+
+## References
+
+### Web APIs
+- [Page Visibility API - MDN](https://developer.mozilla.org/en-US/docs/Web/API/Page_Visibility_API)
+- [AbortController - MDN](https://developer.mozilla.org/en-US/docs/Web/API/AbortController)
+- [ETag - MDN](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag)
+- [env() Safe Area - MDN](https://developer.mozilla.org/en-US/docs/Web/CSS/env)
+
+### Accessibility
+- [ARIA Live Regions - UXPin](https://www.uxpin.com/studio/blog/aria-live-regions-for-dynamic-content/)
+- [WCAG 4.1.3 Status Messages](https://wcag.dock.codes/documentation/wcag413/)
+- [Accessible Notifications - Sara Soueidan](https://www.sarasoueidan.com/blog/accessible-notifications-with-aria-live-regions-part-2/)
+
+### Patterns
+- [Optimistic UI - TanStack Query](https://tanstack.com/query/latest/docs/framework/react/guides/optimistic-updates)
+- [Exponential Backoff - AWS](https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/retry-backoff.html)
+- [Alpine.js Polling Patterns](https://khalidabuhakmeh.com/alpinejs-polling-aspnet-core-apis-for-updates)
