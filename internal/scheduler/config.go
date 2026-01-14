@@ -10,10 +10,11 @@ import (
 
 // Config represents the scheduler configuration
 type Config struct {
-	Port     int    `yaml:"port"`
-	LogLevel string `yaml:"log_level"`
-	AgentURL string `yaml:"agent_url"`
-	Jobs     []Job  `yaml:"jobs"`
+	Port        int    `yaml:"port"`
+	LogLevel    string `yaml:"log_level"`
+	DirectorURL string `yaml:"director_url"` // Primary target for session tracking (optional)
+	AgentURL    string `yaml:"agent_url"`    // Fallback if director unavailable
+	Jobs        []Job  `yaml:"jobs"`
 }
 
 // Job represents a scheduled job

@@ -291,3 +291,55 @@ func TestHandleUpdateSessionTaskNotFound(t *testing.T) {
 
 	require.Equal(t, http.StatusNotFound, rec.Code)
 }
+
+func TestSessionStoreAddTaskWithSource(t *testing.T) {
+	t.Parallel()
+
+	store := NewSessionStore()
+
+	// Add task with source options
+	store.AddTask("session-1", "http://agent:9000", "task-1", "working", "scheduled task",
+		WithSource("scheduler"),
+		WithSourceJob("nightly-maintenance"))
+
+	session, ok := store.Get("session-1")
+	require.True(t, ok)
+	require.Equal(t, "scheduler", session.Source)
+	require.Equal(t, "nightly-maintenance", session.SourceJob)
+	require.Len(t, session.Tasks, 1)
+
+	// Add task without source (default behavior)
+	store.AddTask("session-2", "http://agent:9000", "task-2", "working", "web task")
+
+	session2, ok := store.Get("session-2")
+	require.True(t, ok)
+	require.Empty(t, session2.Source)
+	require.Empty(t, session2.SourceJob)
+}
+
+func TestSessionSourceInJSON(t *testing.T) {
+	t.Parallel()
+
+	store := NewSessionStore()
+
+	// Add task with source
+	store.AddTask("session-1", "http://agent:9000", "task-1", "working", "prompt",
+		WithSource("cli"),
+		WithSourceJob(""))
+
+	sessions := store.GetAll()
+	require.Len(t, sessions, 1)
+
+	// Marshal to JSON and verify source fields
+	data, err := json.Marshal(sessions[0])
+	require.NoError(t, err)
+
+	var parsed map[string]interface{}
+	err = json.Unmarshal(data, &parsed)
+	require.NoError(t, err)
+
+	require.Equal(t, "cli", parsed["source"])
+	// source_job should be omitted if empty
+	_, hasSourceJob := parsed["source_job"]
+	require.False(t, hasSourceJob, "source_job should be omitted when empty")
+}

@@ -19,6 +19,7 @@ var version = "dev"
 
 func main() {
 	port := flag.Int("port", 8443, "Port to listen on")
+	internalPort := flag.Int("internal-port", 0, "Internal HTTP port for unauthenticated localhost API (0=disabled)")
 	bind := flag.String("bind", "0.0.0.0", "Address to bind to")
 	portStart := flag.Int("port-start", 9000, "Discovery port range start")
 	portEnd := flag.Int("port-end", 9199, "Discovery port range end")
@@ -89,6 +90,7 @@ func main() {
 
 	cfg := &web.Config{
 		Port:            *port,
+		InternalPort:    *internalPort,
 		Bind:            *bind,
 		AuthStore:       authStore,
 		PortStart:       *portStart,

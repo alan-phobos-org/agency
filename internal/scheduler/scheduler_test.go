@@ -645,3 +645,330 @@ func TestSchedulerJobNoDoubleRun(t *testing.T) {
 	// Should only have submitted once despite two checkAndRunJobs calls
 	assert.Equal(t, int32(1), submissions)
 }
+
+func TestSchedulerDirectorRouting(t *testing.T) {
+	t.Parallel()
+
+	// Create mock director that accepts tasks
+	directorCalled := false
+	var receivedReq map[string]interface{}
+	director := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/task" && r.Method == "POST" {
+			directorCalled = true
+			json.NewDecoder(r.Body).Decode(&receivedReq)
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(map[string]string{
+				"task_id": "task-dir-123",
+			})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer director.Close()
+
+	// Create mock agent (should not be called when director succeeds)
+	agentCalled := false
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		agentCalled = true
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]string{"task_id": "task-agent-123"})
+	}))
+	defer agent.Close()
+
+	cfg := &Config{
+		Port:        0,
+		DirectorURL: director.URL,
+		AgentURL:    agent.URL,
+		Jobs: []Job{
+			{
+				Name:     "test-job",
+				Schedule: "0 1 * * *",
+				Prompt:   "Test prompt",
+				Model:    "opus",
+				Timeout:  time.Hour,
+			},
+		},
+	}
+
+	s := New(cfg, "test")
+
+	cron, _ := ParseCron(cfg.Jobs[0].Schedule)
+	js := &jobState{
+		Job:  &cfg.Jobs[0],
+		Cron: cron,
+	}
+	s.jobs = []*jobState{js}
+
+	s.runJob(js)
+
+	// Should have called director, not agent
+	assert.True(t, directorCalled, "Director should have been called")
+	assert.False(t, agentCalled, "Agent should not have been called when director succeeds")
+
+	// Verify request format
+	assert.Equal(t, agent.URL, receivedReq["agent_url"])
+	assert.Equal(t, "Test prompt", receivedReq["prompt"])
+	assert.Equal(t, "opus", receivedReq["model"])
+	assert.Equal(t, float64(3600), receivedReq["timeout_seconds"])
+	assert.Equal(t, "scheduler", receivedReq["source"])
+	assert.Equal(t, "test-job", receivedReq["source_job"])
+
+	// Verify state
+	assert.Equal(t, "submitted", js.LastStatus)
+	assert.Equal(t, "task-dir-123", js.LastTaskID)
+}
+
+func TestSchedulerDirectorFallbackToAgent(t *testing.T) {
+	t.Parallel()
+
+	// Create mock director that fails
+	director := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer director.Close()
+
+	// Create mock agent that succeeds
+	agentCalled := false
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/task" && r.Method == "POST" {
+			agentCalled = true
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(map[string]string{
+				"task_id": "task-fallback-123",
+			})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer agent.Close()
+
+	cfg := &Config{
+		Port:        0,
+		DirectorURL: director.URL,
+		AgentURL:    agent.URL,
+		Jobs: []Job{
+			{
+				Name:     "test-job",
+				Schedule: "0 1 * * *",
+				Prompt:   "Test prompt",
+			},
+		},
+	}
+
+	s := New(cfg, "test")
+
+	cron, _ := ParseCron(cfg.Jobs[0].Schedule)
+	js := &jobState{
+		Job:  &cfg.Jobs[0],
+		Cron: cron,
+	}
+	s.jobs = []*jobState{js}
+
+	s.runJob(js)
+
+	// Should have fallen back to agent
+	assert.True(t, agentCalled, "Agent should have been called as fallback")
+	assert.Equal(t, "submitted", js.LastStatus)
+	assert.Equal(t, "task-fallback-123", js.LastTaskID)
+}
+
+func TestSchedulerDirectorUnavailable(t *testing.T) {
+	t.Parallel()
+
+	// Use a URL that won't connect
+	cfg := &Config{
+		Port:        0,
+		DirectorURL: "http://localhost:59999", // Won't connect
+		AgentURL:    "http://localhost:59998", // Also won't connect
+		Jobs: []Job{
+			{
+				Name:     "test-job",
+				Schedule: "0 1 * * *",
+				Prompt:   "Test prompt",
+			},
+		},
+	}
+
+	s := New(cfg, "test")
+
+	cron, _ := ParseCron(cfg.Jobs[0].Schedule)
+	js := &jobState{
+		Job:  &cfg.Jobs[0],
+		Cron: cron,
+	}
+	s.jobs = []*jobState{js}
+
+	s.runJob(js)
+
+	// Should have failed with error status
+	assert.Equal(t, "skipped_error", js.LastStatus)
+	assert.Empty(t, js.LastTaskID)
+}
+
+func TestSchedulerNoDirectorConfigured(t *testing.T) {
+	t.Parallel()
+
+	// Create mock agent
+	agentCalled := false
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/task" && r.Method == "POST" {
+			agentCalled = true
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(map[string]string{
+				"task_id": "task-agent-only",
+			})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer agent.Close()
+
+	// No DirectorURL configured
+	cfg := &Config{
+		Port:     0,
+		AgentURL: agent.URL,
+		Jobs: []Job{
+			{
+				Name:     "test-job",
+				Schedule: "0 1 * * *",
+				Prompt:   "Test prompt",
+			},
+		},
+	}
+
+	s := New(cfg, "test")
+
+	cron, _ := ParseCron(cfg.Jobs[0].Schedule)
+	js := &jobState{
+		Job:  &cfg.Jobs[0],
+		Cron: cron,
+	}
+	s.jobs = []*jobState{js}
+
+	s.runJob(js)
+
+	// Should go directly to agent
+	assert.True(t, agentCalled, "Agent should have been called directly")
+	assert.Equal(t, "submitted", js.LastStatus)
+	assert.Equal(t, "task-agent-only", js.LastTaskID)
+}
+
+func TestSchedulerDirectorAgentBusy(t *testing.T) {
+	t.Parallel()
+
+	// Create mock director that returns agent busy
+	director := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/task" {
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]string{"error": "agent_busy"})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer director.Close()
+
+	// Create mock agent (should be called as fallback)
+	agentCalled := false
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/task" {
+			agentCalled = true
+			// Agent is also busy
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]string{"error": "agent_busy"})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer agent.Close()
+
+	cfg := &Config{
+		Port:        0,
+		DirectorURL: director.URL,
+		AgentURL:    agent.URL,
+		Jobs: []Job{
+			{
+				Name:     "test-job",
+				Schedule: "0 1 * * *",
+				Prompt:   "Test prompt",
+			},
+		},
+	}
+
+	s := New(cfg, "test")
+
+	cron, _ := ParseCron(cfg.Jobs[0].Schedule)
+	js := &jobState{
+		Job:  &cfg.Jobs[0],
+		Cron: cron,
+	}
+	s.jobs = []*jobState{js}
+
+	s.runJob(js)
+
+	// Director returned busy, so fallback to agent which is also busy
+	assert.True(t, agentCalled, "Agent should have been called as fallback")
+	assert.Equal(t, "skipped_busy", js.LastStatus)
+}
+
+func TestConfigDirectorURL(t *testing.T) {
+	t.Parallel()
+
+	yaml := `
+port: 9100
+director_url: https://localhost:8443
+agent_url: http://localhost:9000
+jobs:
+  - name: test-job
+    schedule: "0 1 * * *"
+    prompt: "Test prompt"
+`
+	cfg, err := Parse([]byte(yaml))
+	require.NoError(t, err)
+
+	assert.Equal(t, "https://localhost:8443", cfg.DirectorURL)
+	assert.Equal(t, "http://localhost:9000", cfg.AgentURL)
+}
+
+func TestSchedulerStatusWithDirectorURL(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{
+		Port:        0,
+		DirectorURL: "https://localhost:8443",
+		AgentURL:    "http://localhost:9000",
+		Jobs: []Job{
+			{
+				Name:     "test-job",
+				Schedule: "0 1 * * *",
+				Prompt:   "Test prompt",
+			},
+		},
+	}
+
+	s := New(cfg, "test-version")
+
+	// Initialize job states manually for status test
+	s.mu.Lock()
+	cron, _ := ParseCron(cfg.Jobs[0].Schedule)
+	s.jobs = []*jobState{{
+		Job:     &cfg.Jobs[0],
+		Cron:    cron,
+		NextRun: cron.Next(time.Now()),
+	}}
+	s.running = true
+	s.mu.Unlock()
+
+	req := httptest.NewRequest("GET", "/status", nil)
+	w := httptest.NewRecorder()
+	s.handleStatus(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+
+	config := resp["config"].(map[string]interface{})
+	assert.Equal(t, "http://localhost:9000", config["agent_url"])
+	assert.Equal(t, "https://localhost:8443", config["director_url"])
+}

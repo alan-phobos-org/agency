@@ -622,6 +622,7 @@ func TestIntegrationMultiBrowserSession(t *testing.T) {
 
 	t.Run("browser A creates new session, browser B joins same session", func(t *testing.T) {
 		// Browser A: Submit task to agent (creates new session)
+		// Note: HandleTaskSubmit now automatically adds task to session store
 		taskBody := fmt.Sprintf(`{
 			"agent_url": %q,
 			"prompt": "Browser A first task"
@@ -636,19 +637,6 @@ func TestIntegrationMultiBrowserSession(t *testing.T) {
 		sessionID := taskResp.SessionID
 		require.NotEmpty(t, sessionID, "Agent should return a session ID")
 
-		// Browser A: Save task to web server's session store (simulating dashboard JS)
-		sessionBody := fmt.Sprintf(`{
-			"session_id": %q,
-			"agent_url": %q,
-			"task_id": %q,
-			"state": "working",
-			"prompt": "Browser A first task"
-		}`, sessionID, mockAgent.URL, taskResp.TaskID)
-		resp2, err := authRequest(browserA, "POST", "/api/sessions", sessionBody)
-		require.NoError(t, err)
-		resp2.Body.Close()
-		require.Equal(t, http.StatusCreated, resp2.StatusCode)
-
 		// Browser B: Fetch sessions and see Browser A's session
 		resp3, err := authRequest(browserB, "GET", "/api/sessions", "")
 		require.NoError(t, err)
@@ -661,6 +649,7 @@ func TestIntegrationMultiBrowserSession(t *testing.T) {
 		require.Len(t, sessions[0].Tasks, 1)
 
 		// Browser B: Submit task to same session
+		// Note: HandleTaskSubmit now automatically adds task to session store
 		taskBody2 := fmt.Sprintf(`{
 			"agent_url": %q,
 			"prompt": "Browser B task",
@@ -674,18 +663,6 @@ func TestIntegrationMultiBrowserSession(t *testing.T) {
 		var taskResp2 TaskSubmitResponse
 		json.NewDecoder(resp4.Body).Decode(&taskResp2)
 		require.Equal(t, sessionID, taskResp2.SessionID, "Agent should return same session ID")
-
-		// Browser B: Save task to session store
-		sessionBody2 := fmt.Sprintf(`{
-			"session_id": %q,
-			"agent_url": %q,
-			"task_id": %q,
-			"state": "working",
-			"prompt": "Browser B task"
-		}`, sessionID, mockAgent.URL, taskResp2.TaskID)
-		resp5, err := authRequest(browserB, "POST", "/api/sessions", sessionBody2)
-		require.NoError(t, err)
-		resp5.Body.Close()
 
 		// Both browsers fetch sessions - should see same session with 2 tasks
 		resp6, err := authRequest(browserA, "GET", "/api/sessions", "")
@@ -811,6 +788,7 @@ func TestIntegrationMultiBrowserSessionRace(t *testing.T) {
 		agentMu.Unlock()
 
 		// Simulate both browsers submitting "new session" tasks concurrently
+		// Note: HandleTaskSubmit now automatically adds task to session store
 		var wg sync.WaitGroup
 		var sessionIDs sync.Map
 
@@ -834,18 +812,6 @@ func TestIntegrationMultiBrowserSessionRace(t *testing.T) {
 
 				var taskResp TaskSubmitResponse
 				json.NewDecoder(resp.Body).Decode(&taskResp)
-
-				// Save to session store
-				sessionBody := fmt.Sprintf(`{
-					"session_id": %q,
-					"agent_url": %q,
-					"task_id": %q,
-					"state": "working",
-					"prompt": "Browser %d task"
-				}`, taskResp.SessionID, mockAgent.URL, taskResp.TaskID, browserNum)
-
-				resp2, _ := authRequest("POST", "/api/sessions", sessionBody)
-				resp2.Body.Close()
 
 				sessionIDs.Store(browserNum, taskResp.SessionID)
 			}(i)
@@ -989,8 +955,9 @@ func TestIntegrationSessionBouncing(t *testing.T) {
 		return client.Do(req)
 	}
 
-	// Helper to simulate the full browser flow
-	submitTaskAndSave := func(browserName, sessionID string) (string, string, error) {
+	// Helper to simulate browser task submission
+	// Note: HandleTaskSubmit now automatically adds task to session store
+	submitTask := func(browserName, sessionID string) (string, string, error) {
 		var taskBody string
 		if sessionID != "" {
 			taskBody = fmt.Sprintf(`{
@@ -1014,36 +981,24 @@ func TestIntegrationSessionBouncing(t *testing.T) {
 		var taskResp TaskSubmitResponse
 		json.NewDecoder(resp.Body).Decode(&taskResp)
 
-		// Save to web server's session store (simulating dashboard JS)
-		sessionBody := fmt.Sprintf(`{
-			"session_id": %q,
-			"agent_url": %q,
-			"task_id": %q,
-			"state": "working",
-			"prompt": "%s task"
-		}`, taskResp.SessionID, mockAgent.URL, taskResp.TaskID, browserName)
-
-		resp2, _ := authRequest("POST", "/api/sessions", sessionBody)
-		resp2.Body.Close()
-
 		return taskResp.TaskID, taskResp.SessionID, nil
 	}
 
 	t.Run("sequential tasks to same session work correctly", func(t *testing.T) {
 		// Browser A creates initial session
-		taskID1, sessionID, err := submitTaskAndSave("BrowserA", "")
+		taskID1, sessionID, err := submitTask("BrowserA", "")
 		require.NoError(t, err)
 		require.NotEmpty(t, sessionID)
 		t.Logf("Browser A created session %s with task %s", sessionID, taskID1)
 
 		// Browser B adds to existing session (simulating selecting from dropdown)
-		taskID2, returnedSessionID, err := submitTaskAndSave("BrowserB", sessionID)
+		taskID2, returnedSessionID, err := submitTask("BrowserB", sessionID)
 		require.NoError(t, err)
 		require.Equal(t, sessionID, returnedSessionID, "Browser B should get same session ID")
 		t.Logf("Browser B added task %s to session %s", taskID2, returnedSessionID)
 
 		// Browser A adds another task to same session
-		taskID3, returnedSessionID2, err := submitTaskAndSave("BrowserA", sessionID)
+		taskID3, returnedSessionID2, err := submitTask("BrowserA", sessionID)
 		require.NoError(t, err)
 		require.Equal(t, sessionID, returnedSessionID2, "Browser A should still use same session")
 		t.Logf("Browser A added task %s to session %s", taskID3, returnedSessionID2)
@@ -1074,7 +1029,7 @@ func TestIntegrationSessionBouncing(t *testing.T) {
 		// 4. Both tasks end up in the same session
 
 		// Browser A creates session
-		_, sessionA, _ := submitTaskAndSave("BrowserA", "")
+		_, sessionA, _ := submitTask("BrowserA", "")
 		t.Logf("Browser A created session: %s", sessionA)
 
 		// Browser B loads sessions, sees sessionA
@@ -1087,7 +1042,7 @@ func TestIntegrationSessionBouncing(t *testing.T) {
 
 		// Browser B selects sessionA from dropdown and submits WITH session_id
 		// (This is the correct behavior after the frontend fix)
-		_, sessionB, _ := submitTaskAndSave("BrowserB", sessionA) // <-- Uses session from dropdown
+		_, sessionB, _ := submitTask("BrowserB", sessionA) // <-- Uses session from dropdown
 		t.Logf("Browser B added to session: %s", sessionB)
 
 		// Both tasks should be in the same session

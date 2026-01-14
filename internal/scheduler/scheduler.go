@@ -3,11 +3,13 @@ package scheduler
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -166,15 +168,88 @@ func (s *Scheduler) checkAndRunJobs(now time.Time) {
 	}
 }
 
-// runJob executes a single job
+// runJob executes a single job, trying director first then falling back to agent
 func (s *Scheduler) runJob(js *jobState) {
 	log.Printf("job=%s action=triggered", js.Job.Name)
 
+	// Try director first (for session tracking in web UI)
+	if s.config.DirectorURL != "" {
+		taskID, err := s.submitViaDirector(js)
+		if err == nil {
+			log.Printf("job=%s action=submitted via=director task_id=%s", js.Job.Name, taskID)
+			s.updateJobState(js, "submitted", taskID)
+			return
+		}
+		log.Printf("job=%s warning=director_unavailable error=%q", js.Job.Name, err)
+	}
+
+	// Fallback to direct agent submission
+	taskID, status, err := s.submitViaAgent(js)
+	if err != nil {
+		log.Printf("job=%s action=skipped reason=%s error=%q", js.Job.Name, status, err)
+		s.updateJobState(js, status, "")
+		return
+	}
+
+	via := "agent"
+	if s.config.DirectorURL != "" {
+		via = "agent_fallback"
+	}
+	log.Printf("job=%s action=submitted via=%s task_id=%s", js.Job.Name, via, taskID)
+	s.updateJobState(js, "submitted", taskID)
+}
+
+// submitViaDirector submits a task through the web director for session tracking
+func (s *Scheduler) submitViaDirector(js *jobState) (string, error) {
 	agentURL := s.config.GetAgentURL(js.Job)
 	model := s.config.GetModel(js.Job)
 	timeout := s.config.GetTimeout(js.Job)
 
-	// Build task request
+	// Build director task request (includes agent_url and source)
+	taskReq := map[string]interface{}{
+		"agent_url":       agentURL,
+		"prompt":          js.Job.Prompt,
+		"model":           model,
+		"timeout_seconds": int(timeout.Seconds()),
+		"source":          "scheduler",
+		"source_job":      js.Job.Name,
+	}
+
+	body, _ := json.Marshal(taskReq)
+	client := s.createHTTPClient(s.config.DirectorURL)
+
+	resp, err := client.Post(s.config.DirectorURL+"/api/task", "application/json", bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("contacting director: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode == http.StatusConflict {
+		return "", fmt.Errorf("agent busy")
+	}
+
+	if resp.StatusCode != http.StatusCreated {
+		return "", fmt.Errorf("director returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var taskResp struct {
+		TaskID string `json:"task_id"`
+	}
+	if err := json.Unmarshal(respBody, &taskResp); err != nil {
+		return "", fmt.Errorf("parsing response: %w", err)
+	}
+
+	return taskResp.TaskID, nil
+}
+
+// submitViaAgent submits a task directly to the agent (fallback path)
+func (s *Scheduler) submitViaAgent(js *jobState) (taskID string, status string, err error) {
+	agentURL := s.config.GetAgentURL(js.Job)
+	model := s.config.GetModel(js.Job)
+	timeout := s.config.GetTimeout(js.Job)
+
 	taskReq := map[string]interface{}{
 		"prompt":          js.Job.Prompt,
 		"model":           model,
@@ -182,42 +257,50 @@ func (s *Scheduler) runJob(js *jobState) {
 	}
 
 	body, _ := json.Marshal(taskReq)
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := s.createHTTPClient(agentURL)
 
 	resp, err := client.Post(agentURL+"/task", "application/json", bytes.NewReader(body))
 	if err != nil {
-		log.Printf("job=%s action=skipped reason=error error=%q", js.Job.Name, err)
-		s.updateJobState(js, "skipped_error", "")
-		return
+		return "", "skipped_error", err
 	}
 	defer resp.Body.Close()
 
 	respBody, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode == http.StatusConflict {
-		log.Printf("job=%s action=skipped reason=agent_busy", js.Job.Name)
-		s.updateJobState(js, "skipped_busy", "")
-		return
+		return "", "skipped_busy", fmt.Errorf("agent busy")
 	}
 
 	if resp.StatusCode != http.StatusCreated {
-		log.Printf("job=%s action=skipped reason=error status=%d body=%q", js.Job.Name, resp.StatusCode, string(respBody))
-		s.updateJobState(js, "skipped_error", "")
-		return
+		return "", "skipped_error", fmt.Errorf("status %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	// Parse response
 	var taskResp struct {
 		TaskID string `json:"task_id"`
 	}
 	if err := json.Unmarshal(respBody, &taskResp); err != nil {
-		log.Printf("job=%s action=submitted warning=parse_error", js.Job.Name)
-		s.updateJobState(js, "submitted", "")
-		return
+		// Task was submitted but we couldn't parse the response
+		return "", "submitted", nil
 	}
 
-	log.Printf("job=%s action=submitted task_id=%s", js.Job.Name, taskResp.TaskID)
-	s.updateJobState(js, "submitted", taskResp.TaskID)
+	return taskResp.TaskID, "submitted", nil
+}
+
+// createHTTPClient creates an HTTP client, with TLS skip verification for localhost HTTPS
+func (s *Scheduler) createHTTPClient(targetURL string) *http.Client {
+	client := &http.Client{Timeout: 30 * time.Second}
+
+	// Skip TLS verification for localhost HTTPS (self-signed certs)
+	if strings.HasPrefix(targetURL, "https://localhost") ||
+		strings.HasPrefix(targetURL, "https://127.0.0.1") {
+		client.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		}
+	}
+
+	return client
 }
 
 // updateJobState updates job state after execution
@@ -262,16 +345,21 @@ func (s *Scheduler) handleStatus(w http.ResponseWriter, r *http.Request) {
 		js.mu.RUnlock()
 	}
 
+	configInfo := map[string]interface{}{
+		"agent_url": s.config.AgentURL,
+	}
+	if s.config.DirectorURL != "" {
+		configInfo["director_url"] = s.config.DirectorURL
+	}
+
 	resp := map[string]interface{}{
 		"type":           api.TypeHelper,
 		"interfaces":     []string{api.InterfaceStatusable, api.InterfaceObservable},
 		"version":        s.version,
 		"state":          "running",
 		"uptime_seconds": time.Since(s.startTime).Seconds(),
-		"config": map[string]interface{}{
-			"agent_url": s.config.AgentURL,
-		},
-		"jobs": jobStatuses,
+		"config":         configInfo,
+		"jobs":           jobStatuses,
 	}
 
 	api.WriteJSON(w, http.StatusOK, resp)

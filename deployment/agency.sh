@@ -11,6 +11,7 @@ PID_FILE="$PID_DIR/agency.pids"
 
 # Default ports
 WEB_PORT="${AG_WEB_PORT:-8443}"
+WEB_INTERNAL_PORT="${AG_WEB_INTERNAL_PORT:-8080}"  # Internal API for scheduler/CLI routing
 AGENT_PORT="${AG_AGENT_PORT:-9000}"
 SCHEDULER_PORT="${AG_SCHEDULER_PORT:-9100}"
 
@@ -43,9 +44,9 @@ if [ -f "$PID_FILE" ]; then
     "$SCRIPT_DIR/stop-agency.sh"
 fi
 
-# Start web view
-echo "Starting web view on port $WEB_PORT..."
-"$PROJECT_ROOT/bin/ag-view-web" -port "$WEB_PORT" -env "$PROJECT_ROOT/.env" -contexts "$PROJECT_ROOT/configs/contexts.yaml" > "$PID_DIR/view.log" 2>&1 &
+# Start web view (with internal API port for scheduler/CLI routing)
+echo "Starting web view on port $WEB_PORT (internal: $WEB_INTERNAL_PORT)..."
+"$PROJECT_ROOT/bin/ag-view-web" -port "$WEB_PORT" -internal-port "$WEB_INTERNAL_PORT" -env "$PROJECT_ROOT/.env" -contexts "$PROJECT_ROOT/configs/contexts.yaml" > "$PID_DIR/view.log" 2>&1 &
 VIEW_PID=$!
 
 # Start claude agent
@@ -123,14 +124,15 @@ fi
 
 echo ""
 echo "Agency started successfully!"
-echo "  Web View PID: $VIEW_PID"
-echo "  Claude Agent PID: $AGENT_PID"
+echo "  Web View PID: $VIEW_PID (HTTPS: $WEB_PORT, Internal: $WEB_INTERNAL_PORT)"
+echo "  Claude Agent PID: $AGENT_PID (port: $AGENT_PORT)"
 if [ -n "$SCHEDULER_PID" ]; then
-    echo "  Scheduler PID: $SCHEDULER_PID"
+    echo "  Scheduler PID: $SCHEDULER_PID (port: $SCHEDULER_PORT)"
 fi
 echo ""
 
 echo "Dashboard: https://localhost:$WEB_PORT/"
+echo "Internal API: http://localhost:$WEB_INTERNAL_PORT/ (scheduler/CLI routing)"
 echo ""
 echo "Logs:"
 echo "  View:      $PID_DIR/view.log"

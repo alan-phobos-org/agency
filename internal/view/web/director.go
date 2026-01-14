@@ -15,6 +15,7 @@ import (
 // Config holds web director configuration
 type Config struct {
 	Port            int
+	InternalPort    int    // Internal HTTP port for unauthenticated localhost API (optional)
 	Bind            string // Address to bind to (default: 0.0.0.0)
 	AuthStore       *AuthStore
 	PortStart       int // Discovery port range start
@@ -27,14 +28,15 @@ type Config struct {
 
 // Director is the web director server
 type Director struct {
-	config       *Config
-	version      string
-	discovery    *Discovery
-	handlers     *Handlers
-	server       *http.Server
-	rateLimiter  *RateLimiter
-	accessLogger *AccessLogger
-	authStore    *AuthStore
+	config         *Config
+	version        string
+	discovery      *Discovery
+	handlers       *Handlers
+	server         *http.Server
+	internalServer *http.Server // Internal HTTP server (no auth)
+	rateLimiter    *RateLimiter
+	accessLogger   *AccessLogger
+	authStore      *AuthStore
 }
 
 // New creates a new web director
@@ -162,6 +164,30 @@ func (d *Director) Router() chi.Router {
 	return r
 }
 
+// InternalRouter returns the internal HTTP router (no authentication).
+// This is used for service-to-service communication on localhost.
+func (d *Director) InternalRouter() chi.Router {
+	r := chi.NewRouter()
+	r.Use(middleware.Recoverer)
+
+	// Internal API endpoints (no auth required)
+	r.Route("/api", func(r chi.Router) {
+		r.Get("/status", d.handlers.HandleStatus)
+		r.Post("/task", d.handlers.HandleTaskSubmit)
+		r.Get("/task/{id}", func(w http.ResponseWriter, req *http.Request) {
+			taskID := chi.URLParam(req, "id")
+			d.handlers.HandleTaskStatus(w, req, taskID)
+		})
+		r.Get("/history/{id}", func(w http.ResponseWriter, req *http.Request) {
+			taskID := chi.URLParam(req, "id")
+			d.handlers.HandleTaskHistory(w, req, taskID)
+		})
+		r.Get("/sessions", d.handlers.HandleSessions)
+	})
+
+	return r
+}
+
 // Start starts the web director server
 func (d *Director) Start() error {
 	addr := fmt.Sprintf("%s:%d", d.config.Bind, d.config.Port)
@@ -182,6 +208,21 @@ func (d *Director) Start() error {
 	fmt.Fprintf(os.Stderr, "Web director starting on https://%s\n", addr)
 	fmt.Fprintf(os.Stderr, "Discovery scanning ports %d-%d\n", d.config.PortStart, d.config.PortEnd)
 
+	// Start internal HTTP server if port configured (localhost only, no auth)
+	if d.config.InternalPort > 0 {
+		internalAddr := fmt.Sprintf("127.0.0.1:%d", d.config.InternalPort)
+		d.internalServer = &http.Server{
+			Addr:    internalAddr,
+			Handler: d.InternalRouter(),
+		}
+		go func() {
+			fmt.Fprintf(os.Stderr, "Internal API starting on http://%s (localhost only, no auth)\n", internalAddr)
+			if err := d.internalServer.ListenAndServe(); err != http.ErrServerClosed {
+				fmt.Fprintf(os.Stderr, "Internal server error: %v\n", err)
+			}
+		}()
+	}
+
 	// Configure TLS
 	tlsCfg := &tls.Config{
 		MinVersion: tls.VersionTLS12,
@@ -196,6 +237,10 @@ func (d *Director) Shutdown(ctx context.Context) error {
 	d.discovery.Stop()
 	if d.accessLogger != nil {
 		d.accessLogger.Close()
+	}
+	// Shutdown internal server first
+	if d.internalServer != nil {
+		d.internalServer.Shutdown(ctx)
 	}
 	if d.server != nil {
 		return d.server.Shutdown(ctx)

@@ -106,6 +106,8 @@ type TaskSubmitRequest struct {
 	SessionID      string            `json:"session_id,omitempty"` // Continue existing session
 	Env            map[string]string `json:"env,omitempty"`
 	Thinking       *bool             `json:"thinking,omitempty"` // Enable extended thinking (default: true)
+	Source         string            `json:"source,omitempty"`   // "web", "scheduler", "cli" (default: "web")
+	SourceJob      string            `json:"source_job,omitempty"` // Job name for scheduler
 }
 
 // TaskSubmitResponse is returned after successful task submission
@@ -192,6 +194,20 @@ func (h *Handlers) HandleTaskSubmit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "parse_error", "Invalid agent response")
 		return
 	}
+
+	// Track session in session store
+	source := req.Source
+	if source == "" {
+		source = "web" // Default source is web UI
+	}
+	var opts []AddTaskOption
+	if source != "" {
+		opts = append(opts, WithSource(source))
+	}
+	if req.SourceJob != "" {
+		opts = append(opts, WithSourceJob(req.SourceJob))
+	}
+	h.sessionStore.AddTask(agentResp.SessionID, req.AgentURL, agentResp.TaskID, "working", req.Prompt, opts...)
 
 	writeJSON(w, http.StatusCreated, TaskSubmitResponse{
 		TaskID:    agentResp.TaskID,

@@ -2,6 +2,12 @@
 # Runs scheduled maintenance tasks across repositories
 
 port: 9100
+
+# Director URL for session tracking (sessions will be viewable in web UI)
+# Scheduler tries director first, falls back to agent if unavailable
+director_url: http://localhost:8080
+
+# Direct agent URL (fallback when director is unavailable)
 agent_url: http://localhost:9000
 
 jobs:

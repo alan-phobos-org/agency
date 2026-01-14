@@ -18,6 +18,8 @@ type Session struct {
 	ID        string        `json:"id"`
 	AgentURL  string        `json:"agent_url"`
 	Tasks     []SessionTask `json:"tasks"`
+	Source    string        `json:"source,omitempty"`     // "web", "scheduler", "cli"
+	SourceJob string        `json:"source_job,omitempty"` // Job name for scheduler
 	CreatedAt time.Time     `json:"created_at"`
 	UpdatedAt time.Time     `json:"updated_at"`
 }
@@ -61,9 +63,14 @@ func (s *SessionStore) GetAll() []*Session {
 }
 
 // AddTask adds a task to a session, creating the session if it doesn't exist
-func (s *SessionStore) AddTask(sessionID, agentURL, taskID, state, prompt string) {
+func (s *SessionStore) AddTask(sessionID, agentURL, taskID, state, prompt string, opts ...AddTaskOption) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	options := &addTaskOptions{}
+	for _, opt := range opts {
+		opt(options)
+	}
 
 	now := time.Now()
 	session, ok := s.sessions[sessionID]
@@ -72,6 +79,8 @@ func (s *SessionStore) AddTask(sessionID, agentURL, taskID, state, prompt string
 			ID:        sessionID,
 			AgentURL:  agentURL,
 			Tasks:     []SessionTask{},
+			Source:    options.source,
+			SourceJob: options.sourceJob,
 			CreatedAt: now,
 		}
 		s.sessions[sessionID] = session
@@ -83,6 +92,29 @@ func (s *SessionStore) AddTask(sessionID, agentURL, taskID, state, prompt string
 		Prompt: prompt,
 	})
 	session.UpdatedAt = now
+}
+
+// addTaskOptions holds optional parameters for AddTask
+type addTaskOptions struct {
+	source    string
+	sourceJob string
+}
+
+// AddTaskOption is a functional option for AddTask
+type AddTaskOption func(*addTaskOptions)
+
+// WithSource sets the source of the session (web, scheduler, cli)
+func WithSource(source string) AddTaskOption {
+	return func(o *addTaskOptions) {
+		o.source = source
+	}
+}
+
+// WithSourceJob sets the source job name (for scheduler)
+func WithSourceJob(sourceJob string) AddTaskOption {
+	return func(o *addTaskOptions) {
+		o.sourceJob = sourceJob
+	}
 }
 
 // UpdateTaskState updates the state of a specific task in a session
