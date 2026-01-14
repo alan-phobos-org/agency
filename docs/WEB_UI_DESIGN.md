@@ -616,46 +616,43 @@ document.addEventListener('visibilitychange', () => {
 
 ### Technology Stack
 
-**Recommended:** Vanilla JavaScript with Web Components
+**Selected:** Alpine.js
 
 **Rationale:**
-- Zero build step (maintainability)
-- Native browser APIs
-- No framework lock-in
-- Matches existing codebase style
-- Easy to update/modify
+- Declarative reactivity without build step
+- 15KB minified, loads from CDN
+- Simple directives (`x-data`, `x-show`, `x-for`, `x-on`)
+- Alpine stores for shared state
+- Easy to understand and modify
+- Better DX than vanilla JS for reactive UI
+- Good fit for dashboard complexity level
 
-**Alternative:** Preact (if more interactivity needed)
-- 3KB runtime
-- JSX syntax
-- Hooks for state
-- Still minimal build step
+**Not selected:**
+- *Vanilla JS* - More boilerplate for reactive state
+- *Preact/React* - Overkill, requires build step
+- *HTMX* - Better for server-rendered apps, not SPAs
 
 ### File Structure
 
+With Alpine.js, the entire UI lives in a single HTML file with inline styles and scripts:
+
 ```
 internal/view/web/
-├── static/
-│   ├── css/
-│   │   └── dashboard.css      # Design system + component styles
-│   ├── js/
-│   │   ├── app.js             # Main application
-│   │   ├── store.js           # State management
-│   │   ├── api.js             # API client
-│   │   └── components/
-│   │       ├── fleet-panel.js
-│   │       ├── session-list.js
-│   │       ├── session-card.js
-│   │       ├── task-detail.js
-│   │       └── task-modal.js
-│   └── icons/
-│       └── icons.svg          # SVG sprite
 ├── templates/
-│   ├── dashboard.html         # Main SPA shell
-│   ├── login.html
-│   └── pair.html
+│   ├── dashboard.html         # Single-file Alpine.js SPA (~1500 LOC)
+│   │                          # Contains: CSS, Alpine stores, components, HTML
+│   ├── login.html             # Existing auth page
+│   └── pair.html              # Existing device pairing
+├── handlers.go                # Simplified: just serve SPA + API endpoints
 └── embed.go                   # Go embed directives
 ```
+
+**Why single file:**
+- No build step or bundling
+- Easy to modify and deploy
+- All dependencies from CDN (Alpine.js)
+- Matches existing login.html/pair.html pattern
+- Mockup already demonstrates this works well
 
 ### CSS Architecture
 
@@ -747,6 +744,163 @@ All mockups demonstrate:
 2. **Offline support** - **None.** Dashboard is for real-time monitoring; cached data would be stale and misleading.
 
 3. **Session hierarchy** - **Flat.** Simple list of sessions, each containing one task. No nested trace trees.
+
+---
+
+## Implementation Plan
+
+### Implementation Decisions
+
+These decisions were made during design review:
+
+#### 1. UI Replacement Strategy: Full Replacement
+
+**Decision:** Complete replacement of existing `dashboard.html` (44KB).
+
+**Rationale:**
+- Existing UI has different architecture (server-rendered templates)
+- New design uses Alpine.js for reactivity
+- Clean slate avoids technical debt from mixing approaches
+- Mockup already implements full functionality
+
+**Implication:** Delete `internal/view/web/templates/dashboard.html` and related server-side rendering logic. New UI is a single-page application.
+
+#### 2. Fleet Summary Source: Agents Only
+
+**Decision:** Collapsed fleet panel shows agent counts only (not directors/helpers).
+
+**Rationale:**
+- Agents are the primary work executors
+- Simpler summary (e.g., "2 idle, 1 working")
+- Directors and helpers visible when fleet expanded
+- Matches user's mental model of "available workers"
+
+**Implication:** Fleet summary bar displays: `Fleet ▸ 2 idle · 1 working` counting only agents. Full breakdown (agents, directors, helpers) shown when expanded.
+
+#### 3. Output Display: Poll for Partial Output
+
+**Decision:** Poll `/task/:id` every 1s while task is working to show partial output.
+
+**Rationale:**
+- Users want to see progress during long-running tasks
+- Polling is consistent with overall architecture (no WebSocket)
+- Agent already returns partial output in `output` field
+- Simple implementation: same endpoint, just display incrementally
+
+**Implication:** When a task is in `working` state, poll every 1s and update the output display. Use CSS animation to indicate streaming. Add "live" indicator while task is active.
+
+#### 4. Frontend Framework: Alpine.js
+
+**Decision:** Use Alpine.js for reactive UI.
+
+**Rationale:**
+- Declarative, no build step required
+- 15KB minified, loads from CDN
+- Simple `x-data`, `x-show`, `x-for` directives
+- Easy to understand and modify
+- Good fit for dashboard complexity level
+- Better DX than vanilla JS for reactive state
+
+**Implication:** Include Alpine.js via CDN. State management via Alpine stores. No build tooling required.
+
+### Implementation Phases
+
+#### Phase 1: Foundation (1 PR)
+
+**Goal:** Replace existing UI with new Alpine.js-based dashboard.
+
+**Tasks:**
+1. Create new `dashboard.html` using mockup-final as base
+2. Add Alpine.js from CDN
+3. Implement API client (`/api/dashboard`, `/api/task`, `/api/agents`)
+4. Set up polling infrastructure with visibility API
+5. Delete old dashboard.html and related server templates
+6. Update handlers.go to serve new SPA
+
+**Files to create:**
+- `internal/view/web/templates/dashboard.html` (new, Alpine.js SPA)
+
+**Files to delete:**
+- `internal/view/web/templates/dashboard.html` (old, 44KB)
+- Related template partials if any
+
+**Files to modify:**
+- `internal/view/web/handlers.go` - Simplify to serve SPA
+- `internal/view/web/embed.go` - Update embed directives
+
+#### Phase 2: Fleet Panel
+
+**Goal:** Collapsible fleet with agent-only summary.
+
+**Tasks:**
+1. Implement collapsed state showing "2 idle · 1 working"
+2. Count agents only for summary stats
+3. Expanded state shows full breakdown (agents, directors, helpers)
+4. Persist collapse state in localStorage
+5. Add fleet refresh on interval (5s idle, 2s active)
+
+#### Phase 3: Session Management
+
+**Goal:** Accordion-style session list with flat hierarchy.
+
+**Tasks:**
+1. Fetch sessions from `/api/sessions`
+2. Implement accordion (single expanded at a time)
+3. Session card shows: status dot, summary, agent, timestamp
+4. Expanded view shows session metadata and task list
+5. Task cards within session (nested accordion)
+
+#### Phase 4: Live Task Output
+
+**Goal:** Poll and display partial output during task execution.
+
+**Tasks:**
+1. Detect when a task is in `working` state
+2. Poll `/task/:id` every 1s for that task
+3. Update output display incrementally
+4. Add "live" indicator with pulse animation
+5. Stop polling when state changes to completed/failed/cancelled
+
+#### Phase 5: Task Submission
+
+**Goal:** Full-screen modal for submitting new tasks.
+
+**Tasks:**
+1. Agent selector dropdown (filter to idle agents)
+2. Context picker from contexts.yaml
+3. Prompt textarea with markdown preview
+4. Options panel (model, timeout, thinking budget)
+5. Submit action with optimistic UI update
+6. Error handling and validation
+
+#### Phase 6: Polish
+
+**Goal:** Accessibility, keyboard shortcuts, and refinements.
+
+**Tasks:**
+1. Keyboard navigation (j/k, Enter, Escape, n, r, f)
+2. Focus management for modals
+3. ARIA labels and roles
+4. Screen reader testing
+5. Reduced motion support
+6. Error states and loading skeletons
+
+### Migration Notes
+
+**Backward Compatibility:**
+- No backward compatibility needed (internal tool)
+- Single deployment replaces old UI entirely
+- No feature flags or gradual rollout
+
+**Testing Approach:**
+1. Manual testing on iPhone 17 Pro (primary target)
+2. Desktop browser testing (Chrome, Firefox, Safari)
+3. Existing integration tests still pass (API unchanged)
+4. New E2E tests for critical flows
+
+**Rollback Plan:**
+- Git revert if issues found
+- Old dashboard.html preserved in git history
 
 ---
 
