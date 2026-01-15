@@ -20,6 +20,7 @@ type Session struct {
 	Tasks     []SessionTask `json:"tasks"`
 	Source    string        `json:"source,omitempty"`     // "web", "scheduler", "cli"
 	SourceJob string        `json:"source_job,omitempty"` // Job name for scheduler
+	Archived  bool          `json:"archived,omitempty"`   // Whether session is archived
 	CreatedAt time.Time     `json:"created_at"`
 	UpdatedAt time.Time     `json:"updated_at"`
 }
@@ -45,14 +46,16 @@ func (s *SessionStore) Get(id string) (*Session, bool) {
 	return session, ok
 }
 
-// GetAll returns all sessions sorted by UpdatedAt (newest first)
+// GetAll returns all non-archived sessions sorted by UpdatedAt (newest first)
 func (s *SessionStore) GetAll() []*Session {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	result := make([]*Session, 0, len(s.sessions))
 	for _, session := range s.sessions {
-		result = append(result, session)
+		if !session.Archived {
+			result = append(result, session)
+		}
 	}
 
 	sort.Slice(result, func(i, j int) bool {
@@ -142,4 +145,19 @@ func (s *SessionStore) Delete(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.sessions, id)
+}
+
+// Archive marks a session as archived (hidden from UI but kept in storage)
+func (s *SessionStore) Archive(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	session, ok := s.sessions[id]
+	if !ok {
+		return false
+	}
+
+	session.Archived = true
+	session.UpdatedAt = time.Now()
+	return true
 }

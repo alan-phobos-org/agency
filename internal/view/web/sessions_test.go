@@ -343,3 +343,140 @@ func TestSessionSourceInJSON(t *testing.T) {
 	_, hasSourceJob := parsed["source_job"]
 	require.False(t, hasSourceJob, "source_job should be omitted when empty")
 }
+
+func TestSessionStoreArchive(t *testing.T) {
+	t.Parallel()
+
+	store := NewSessionStore()
+
+	// Add a session
+	store.AddTask("session-1", "http://agent:9000", "task-1", "working", "prompt")
+
+	// Verify session exists and is not archived
+	session, ok := store.Get("session-1")
+	require.True(t, ok)
+	require.False(t, session.Archived)
+
+	// Archive the session
+	archived := store.Archive("session-1")
+	require.True(t, archived)
+
+	// Verify session is now archived
+	session, ok = store.Get("session-1")
+	require.True(t, ok)
+	require.True(t, session.Archived)
+
+	// Archive non-existent session
+	archived = store.Archive("session-999")
+	require.False(t, archived)
+}
+
+func TestSessionStoreGetAllExcludesArchived(t *testing.T) {
+	t.Parallel()
+
+	store := NewSessionStore()
+
+	// Add multiple sessions
+	store.AddTask("session-1", "http://agent:9000", "task-1", "completed", "prompt 1")
+	store.AddTask("session-2", "http://agent:9001", "task-2", "working", "prompt 2")
+	store.AddTask("session-3", "http://agent:9002", "task-3", "completed", "prompt 3")
+
+	// All sessions should be returned
+	sessions := store.GetAll()
+	require.Len(t, sessions, 3)
+
+	// Archive one session
+	store.Archive("session-2")
+
+	// GetAll should now return only 2 sessions
+	sessions = store.GetAll()
+	require.Len(t, sessions, 2)
+
+	// Verify archived session is not in the list
+	for _, s := range sessions {
+		require.NotEqual(t, "session-2", s.ID, "Archived session should not appear in GetAll")
+	}
+
+	// But archived session should still be accessible via Get
+	session, ok := store.Get("session-2")
+	require.True(t, ok)
+	require.True(t, session.Archived)
+}
+
+func TestHandleArchiveSession(t *testing.T) {
+	t.Parallel()
+
+	discovery := NewDiscovery(DiscoveryConfig{PortStart: 9900, PortEnd: 9900})
+	handlers, err := NewHandlers(discovery, "test", nil, nil, nil, false)
+	require.NoError(t, err)
+
+	// Create a session
+	handlers.sessionStore.AddTask("sess-1", "http://agent:9000", "task-1", "completed", "prompt")
+
+	req := httptest.NewRequest("POST", "/api/sessions/sess-1/archive", nil)
+	rec := httptest.NewRecorder()
+
+	handlers.HandleArchiveSession(rec, req, "sess-1")
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	// Verify session is archived
+	session, ok := handlers.sessionStore.Get("sess-1")
+	require.True(t, ok)
+	require.True(t, session.Archived)
+
+	// Verify session no longer appears in GetAll
+	sessions := handlers.sessionStore.GetAll()
+	require.Empty(t, sessions)
+}
+
+func TestHandleArchiveSessionNotFound(t *testing.T) {
+	t.Parallel()
+
+	discovery := NewDiscovery(DiscoveryConfig{PortStart: 9900, PortEnd: 9900})
+	handlers, err := NewHandlers(discovery, "test", nil, nil, nil, false)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("POST", "/api/sessions/nonexistent/archive", nil)
+	rec := httptest.NewRecorder()
+
+	handlers.HandleArchiveSession(rec, req, "nonexistent")
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestSessionArchivedFieldInJSON(t *testing.T) {
+	t.Parallel()
+
+	store := NewSessionStore()
+
+	// Add and archive a session
+	store.AddTask("session-1", "http://agent:9000", "task-1", "completed", "prompt")
+	store.Archive("session-1")
+
+	session, _ := store.Get("session-1")
+
+	// Marshal to JSON and verify archived field
+	data, err := json.Marshal(session)
+	require.NoError(t, err)
+
+	var parsed map[string]interface{}
+	err = json.Unmarshal(data, &parsed)
+	require.NoError(t, err)
+
+	require.Equal(t, true, parsed["archived"])
+
+	// Non-archived session should omit the field
+	store.AddTask("session-2", "http://agent:9000", "task-2", "working", "prompt 2")
+	session2, _ := store.Get("session-2")
+
+	data, err = json.Marshal(session2)
+	require.NoError(t, err)
+
+	var parsed2 map[string]interface{}
+	err = json.Unmarshal(data, &parsed2)
+	require.NoError(t, err)
+
+	_, hasArchived := parsed2["archived"]
+	require.False(t, hasArchived, "archived should be omitted when false")
+}

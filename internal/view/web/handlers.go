@@ -665,6 +665,16 @@ func (h *Handlers) HandleRevokeDevice(w http.ResponseWriter, r *http.Request, de
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// HandleArchiveSession archives a session (hides it from UI but keeps it in storage)
+func (h *Handlers) HandleArchiveSession(w http.ResponseWriter, r *http.Request, sessionID string) {
+	if !h.sessionStore.Archive(sessionID) {
+		writeError(w, http.StatusNotFound, "not_found", "Session not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 // HandleTriggerJob proxies a job trigger request to a scheduler
 func (h *Handlers) HandleTriggerJob(w http.ResponseWriter, r *http.Request, schedulerURL, jobName string) {
 	client := &http.Client{Timeout: 10 * time.Second}

@@ -153,6 +153,10 @@ func (d *Director) Router() chi.Router {
 			taskID := chi.URLParam(r, "taskId")
 			d.handlers.HandleUpdateSessionTask(w, r, sessionID, taskID)
 		})
+		r.Post("/sessions/{sessionId}/archive", func(w http.ResponseWriter, r *http.Request) {
+			sessionID := chi.URLParam(r, "sessionId")
+			d.handlers.HandleArchiveSession(w, r, sessionID)
+		})
 		// Device pairing and management
 		r.Post("/pair/code", d.handlers.HandleGeneratePairingCode)
 		r.Get("/devices", d.handlers.HandleListDevices)
