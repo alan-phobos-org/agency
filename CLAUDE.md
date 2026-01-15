@@ -32,6 +32,7 @@
 - Danish minimalism dark theme
 - Polling-based updates with ETag support
 - Confirmation dialogs use native `confirm()` for simplicity
+- Viewport uses `maximum-scale=1.0` to prevent iOS auto-zoom on input focus
 
 ## Testing Patterns
 
