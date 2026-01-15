@@ -85,38 +85,28 @@ case "${1:-help}" in
     deploy-local)
         $0 dist
         [ -f .env ] && cp .env dist/
-        echo "Deploying (dev mode)..."
+        echo "Deploying locally (dev mode)..."
         exec ./dist/deployment/agency.sh dev
-        ;;
-    deploy-prod)
-        $0 dist
-        [ -f .env ] && cp .env dist/
-        echo "Deploying (prod mode)..."
-        exec ./dist/deployment/agency.sh prod
         ;;
     stop-local)
         echo "Stopping local dev instance..."
         ./deployment/stop-agency.sh dev
         ;;
-    stop-prod)
-        echo "Stopping local prod instance..."
-        ./deployment/stop-agency.sh prod
-        ;;
-    deploy-remote)
-        # Usage: ./build.sh deploy-remote <host> [ssh-port] [ssh-key]
+    deploy-prod)
+        # Usage: ./build.sh deploy-prod <host> [ssh-port] [ssh-key]
         shift
         if [ $# -lt 1 ]; then
-            echo "Usage: $0 deploy-remote <host> [ssh-port] [ssh-key]"
+            echo "Usage: $0 deploy-prod <host> [ssh-port] [ssh-key]"
             echo "  Deploys to remote host in prod mode"
             exit 1
         fi
         exec ./deployment/deploy-agency.sh "$1" prod "${2:-22}" "${3:-}"
         ;;
-    stop-remote)
-        # Usage: ./build.sh stop-remote <host> [ssh-port] [ssh-key]
+    stop-prod)
+        # Usage: ./build.sh stop-prod <host> [ssh-port] [ssh-key]
         shift
         if [ $# -lt 1 ]; then
-            echo "Usage: $0 stop-remote <host> [ssh-port] [ssh-key]"
+            echo "Usage: $0 stop-prod <host> [ssh-port] [ssh-key]"
             echo "  Stops agency on remote host"
             exit 1
         fi
@@ -369,14 +359,10 @@ case "${1:-help}" in
         echo "  check           Run lint + unit tests (pre-commit check)"
         echo ""
         echo "Deployment:"
-        echo "  deploy-local    Run full test suite, build dist, and deploy locally (dev mode)"
-        echo "  deploy-prod     Run full test suite, build dist, and deploy locally (prod mode)"
-        echo "  stop-local      Stop local dev instance"
-        echo "  stop-prod       Stop local prod instance"
-        echo ""
-        echo "Remote deployment:"
-        echo "  deploy-remote <host> [ssh-port] [ssh-key]  Deploy to remote host (prod mode)"
-        echo "  stop-remote <host> [ssh-port] [ssh-key]    Stop agency on remote host"
+        echo "  deploy-local                               Deploy locally (dev mode)"
+        echo "  stop-local                                 Stop local dev instance"
+        echo "  deploy-prod <host> [ssh-port] [ssh-key]    Deploy to remote host (prod mode)"
+        echo "  stop-prod <host> [ssh-port] [ssh-key]      Stop agency on remote host"
         echo ""
         echo "Release workflow:"
         echo "  prepare-release Run all checks, tests, and show changes since last release"
