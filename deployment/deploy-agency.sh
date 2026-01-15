@@ -20,12 +20,13 @@ if [ $# -lt 1 ]; then
     echo "  ssh-key    Path to SSH private key (optional)"
     echo ""
     echo "Environment variables:"
-    echo "  AG_WEB_PORT        Web view port on remote (default: 8443)"
-    echo "  AG_AGENT_PORT      Agent port on remote (default: 9000)"
-    echo "  AG_SCHEDULER_PORT  Scheduler port on remote (default: 9100)"
-    echo "  AG_SCHEDULER_CONFIG Path to scheduler config (default: configs/scheduler.yaml)"
-    echo "  REMOTE_DIR         Installation directory (default: ~/agency)"
-    echo "  SSH_KEY            Path to SSH private key (alternative to argument)"
+    echo "  AG_WEB_PORT           Web view port on remote (default: 8443)"
+    echo "  AG_WEB_INTERNAL_PORT  Internal API port for scheduler/CLI (default: 8080)"
+    echo "  AG_AGENT_PORT         Agent port on remote (default: 9000)"
+    echo "  AG_SCHEDULER_PORT     Scheduler port on remote (default: 9100)"
+    echo "  AG_SCHEDULER_CONFIG   Path to scheduler config (default: configs/scheduler.yaml)"
+    echo "  REMOTE_DIR            Installation directory (default: ~/agency)"
+    echo "  SSH_KEY               Path to SSH private key (alternative to argument)"
     exit 1
 fi
 
@@ -42,6 +43,7 @@ if [ -n "$SSH_KEY" ]; then
 fi
 REMOTE_DIR="${REMOTE_DIR:-~/agency}"
 WEB_PORT="${AG_WEB_PORT:-8443}"
+WEB_INTERNAL_PORT="${AG_WEB_INTERNAL_PORT:-8080}"  # Internal API for scheduler/CLI routing
 AGENT_PORT="${AG_AGENT_PORT:-9000}"
 SCHEDULER_PORT="${AG_SCHEDULER_PORT:-9100}"
 SCHEDULER_CONFIG="${AG_SCHEDULER_CONFIG:-$PROJECT_ROOT/configs/scheduler.yaml}"
@@ -121,6 +123,7 @@ AGENCY_DIR="$(cd "$(dirname "$0")" && pwd)"
 PID_FILE="$AGENCY_DIR/agency.pids"
 
 WEB_PORT="${AG_WEB_PORT:-8443}"
+WEB_INTERNAL_PORT="${AG_WEB_INTERNAL_PORT:-8080}"  # Internal API for scheduler/CLI routing
 AGENT_PORT="${AG_AGENT_PORT:-9000}"
 SCHEDULER_PORT="${AG_SCHEDULER_PORT:-9100}"
 SCHEDULER_CONFIG="$AGENCY_DIR/configs/scheduler.yaml"
@@ -151,13 +154,13 @@ if [ -f "$PID_FILE" ]; then
     exit 1
 fi
 
-# Start web view
+# Start web view (with internal API port for scheduler/CLI routing)
 CONTEXTS_ARG=""
 if [ -f "$AGENCY_DIR/configs/contexts.yaml" ]; then
     CONTEXTS_ARG="-contexts $AGENCY_DIR/configs/contexts.yaml"
 fi
-echo "Starting web view on port $WEB_PORT..."
-"$AGENCY_DIR/bin/ag-view-web" -port "$WEB_PORT" -env "$AGENCY_DIR/.env" $CONTEXTS_ARG > "$AGENCY_DIR/web.log" 2>&1 &
+echo "Starting web view on port $WEB_PORT (internal: $WEB_INTERNAL_PORT)..."
+"$AGENCY_DIR/bin/ag-view-web" -port "$WEB_PORT" -internal-port "$WEB_INTERNAL_PORT" -env "$AGENCY_DIR/.env" $CONTEXTS_ARG > "$AGENCY_DIR/web.log" 2>&1 &
 WEB_PID=$!
 
 # Start claude agent
@@ -208,13 +211,14 @@ fi
 
 echo ""
 echo "Agency started!"
-echo "  Web View PID: $WEB_PID"
+echo "  Web View PID: $WEB_PID (HTTPS: $WEB_PORT, Internal: $WEB_INTERNAL_PORT)"
 echo "  Agent PID: $AGENT_PID"
 if [ -n "$SCHEDULER_PID" ]; then
     echo "  Scheduler PID: $SCHEDULER_PID"
 fi
 echo ""
 echo "Dashboard: https://$(hostname):$WEB_PORT"
+echo "Internal API: http://localhost:$WEB_INTERNAL_PORT (scheduler/CLI routing)"
 REMOTE_SCRIPT
 
 ssh $SSH_OPTS "$REMOTE_HOST" "chmod +x $REMOTE_DIR/start.sh"
