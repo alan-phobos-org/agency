@@ -6,11 +6,13 @@
   - `ag-agent-claude` - Task execution agent
   - `ag-cli` - Command-line interface
   - `ag-scheduler` - Cron job scheduler
+  - `ag-github-monitor` - GitHub repo event monitor
   - `ag-view-web` - Web dashboard (director)
 - `internal/` - Internal packages:
   - `view/web/` - Web UI handlers, sessions, auth, discovery
   - `agent/` - Agent implementation
   - `scheduler/` - Scheduler logic
+  - `github-monitor/` - GitHub repo monitor logic
   - `history/` - Task history storage
 - `docs/` - Design documents
 
@@ -74,5 +76,14 @@ go test ./internal/view/web/... -run "Archive"
 ```
 
 Port configuration is in `deployment/ports.conf`:
-- Dev (local): Web=8443, Agent=9000, Discovery=9000-9009
-- Prod (remote): Web=9443, Agent=9100, Discovery=9100-9109, Install=~/agency
+- Dev (local): Web=8443, Agent=9000, Discovery=9000-9009, GitHub Monitor=9020
+- Prod (remote): Web=9443, Agent=9100, Discovery=9100-9109, GitHub Monitor=9120, Install=~/agency
+
+## Helper Patterns
+
+### Event-Driven Helpers (github-monitor)
+- Quiet period pattern: delay action after events to batch rapid changes
+- Circuit breaker pattern: stop after N consecutive failures, require manual reset
+- Task queue: sequential per-repo to avoid conflicts, parallel across repos
+- Use `gh` CLI for GitHub API access (requires GITHUB_TOKEN in .env)
+- Model selection: Sonnet for reviews, Opus for fixes
