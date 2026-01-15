@@ -1,6 +1,6 @@
 #!/bin/bash
 # Deploy agency to a remote host
-# Usage: deploy-agency.sh <hostname> [port]
+# Usage: deploy-agency.sh <hostname> [mode] [ssh-port] [ssh-key]
 #
 # Builds binaries for Linux, copies them to the remote host along with .env,
 # configs, and starts the agency services (web view, agent, and scheduler).
@@ -10,29 +10,45 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Load port configuration
+if [ -f "$SCRIPT_DIR/ports.conf" ]; then
+    source "$SCRIPT_DIR/ports.conf"
+fi
+
 # Parse arguments
 if [ $# -lt 1 ]; then
-    echo "Usage: $0 <hostname> [ssh-port] [ssh-key]"
+    echo "Usage: $0 <hostname> [mode] [ssh-port] [ssh-key]"
     echo ""
     echo "Arguments:"
     echo "  hostname   Remote host (user@host or just host)"
+    echo "  mode       Deployment mode: dev (default) or prod"
     echo "  ssh-port   SSH port (default: 22)"
     echo "  ssh-key    Path to SSH private key (optional)"
     echo ""
-    echo "Environment variables:"
-    echo "  AG_WEB_PORT           Web view port on remote (default: 8443)"
-    echo "  AG_WEB_INTERNAL_PORT  Internal API port for scheduler/CLI (default: 8080)"
-    echo "  AG_AGENT_PORT         Agent port on remote (default: 9000)"
-    echo "  AG_SCHEDULER_PORT     Scheduler port on remote (default: 9100)"
+    echo "Mode determines port ranges:"
+    echo "  dev:  Web=$DEV_WEB_PORT, Agent=$DEV_AGENT_PORT, Discovery=$DEV_DISCOVERY_START-$DEV_DISCOVERY_END"
+    echo "  prod: Web=$PROD_WEB_PORT, Agent=$PROD_AGENT_PORT, Discovery=$PROD_DISCOVERY_START-$PROD_DISCOVERY_END"
+    echo ""
+    echo "Environment variables (override defaults):"
+    echo "  AG_WEB_PORT           Web view port on remote"
+    echo "  AG_WEB_INTERNAL_PORT  Internal API port for scheduler/CLI"
+    echo "  AG_AGENT_PORT         Agent port on remote"
+    echo "  AG_SCHEDULER_PORT     Scheduler port on remote"
+    echo "  AG_DISCOVERY_START    Discovery port range start"
+    echo "  AG_DISCOVERY_END      Discovery port range end"
     echo "  AG_SCHEDULER_CONFIG   Path to scheduler config (default: configs/scheduler.yaml)"
-    echo "  REMOTE_DIR            Installation directory (default: ~/agency)"
+    echo "  REMOTE_DIR            Installation directory (overrides mode default)"
     echo "  SSH_KEY               Path to SSH private key (alternative to argument)"
     exit 1
 fi
 
 REMOTE_HOST="$1"
-SSH_PORT="${2:-22}"
-SSH_KEY="${3:-${SSH_KEY:-}}"
+MODE="${2:-dev}"
+SSH_PORT="${3:-22}"
+SSH_KEY="${4:-${SSH_KEY:-}}"
+
+# Set environment based on mode
+set_agency_env "$MODE"
 
 # Build SSH options
 SSH_OPTS="-C -p $SSH_PORT"
@@ -41,17 +57,21 @@ if [ -n "$SSH_KEY" ]; then
     SSH_OPTS="$SSH_OPTS -i $SSH_KEY"
     SCP_OPTS="$SCP_OPTS -i $SSH_KEY"
 fi
-REMOTE_DIR="${REMOTE_DIR:-~/agency}"
-WEB_PORT="${AG_WEB_PORT:-8443}"
-WEB_INTERNAL_PORT="${AG_WEB_INTERNAL_PORT:-8080}"  # Internal API for scheduler/CLI routing
-AGENT_PORT="${AG_AGENT_PORT:-9000}"
-SCHEDULER_PORT="${AG_SCHEDULER_PORT:-9100}"
+
+# Ports are set by set_agency_env
+WEB_PORT="$AG_WEB_PORT"
+WEB_INTERNAL_PORT="$AG_WEB_INTERNAL_PORT"
+AGENT_PORT="$AG_AGENT_PORT"
+SCHEDULER_PORT="$AG_SCHEDULER_PORT"
+DISCOVERY_START="$AG_DISCOVERY_START"
+DISCOVERY_END="$AG_DISCOVERY_END"
 SCHEDULER_CONFIG="${AG_SCHEDULER_CONFIG:-$PROJECT_ROOT/configs/scheduler.yaml}"
 
-echo "=== Agency Remote Deployment ==="
+echo "=== Agency Remote Deployment ($MODE) ==="
 echo "Host: $REMOTE_HOST"
 echo "SSH Port: $SSH_PORT"
 echo "Remote Dir: $REMOTE_DIR"
+echo "Ports: Web=$WEB_PORT, Agent=$AGENT_PORT, Discovery=$DISCOVERY_START-$DISCOVERY_END"
 echo ""
 
 # Build Linux binaries
@@ -110,115 +130,123 @@ echo "Copying deployment scripts..."
 scp $SCP_OPTS \
     "$SCRIPT_DIR/agency.sh" \
     "$SCRIPT_DIR/stop-agency.sh" \
+    "$SCRIPT_DIR/ports.conf" \
     "$REMOTE_HOST:$REMOTE_DIR/deployment/"
 
-# Create a remote-specific start script that uses absolute paths
+# Create a remote-specific start script with baked-in port configuration
+# Note: Using unquoted REMOTE_SCRIPT to expand $WEB_PORT etc, but escaping
+# variables that should remain as shell variables on the remote side
 echo "Creating remote start script..."
-ssh $SSH_OPTS "$REMOTE_HOST" "cat > $REMOTE_DIR/start.sh" << 'REMOTE_SCRIPT'
+ssh $SSH_OPTS "$REMOTE_HOST" "cat > $REMOTE_DIR/start.sh" << REMOTE_SCRIPT
 #!/bin/bash
 # Start agency on remote host
+# Port configuration baked in at deploy time: mode=$MODE
 set -euo pipefail
 
-AGENCY_DIR="$(cd "$(dirname "$0")" && pwd)"
-PID_FILE="$AGENCY_DIR/agency.pids"
+AGENCY_DIR="\$(cd "\$(dirname "\$0")" && pwd)"
+PID_FILE="\$AGENCY_DIR/agency.pids"
 
-WEB_PORT="${AG_WEB_PORT:-8443}"
-WEB_INTERNAL_PORT="${AG_WEB_INTERNAL_PORT:-8080}"  # Internal API for scheduler/CLI routing
-AGENT_PORT="${AG_AGENT_PORT:-9000}"
-SCHEDULER_PORT="${AG_SCHEDULER_PORT:-9100}"
-SCHEDULER_CONFIG="$AGENCY_DIR/configs/scheduler.yaml"
+# Ports configured at deployment time
+WEB_PORT=$WEB_PORT
+WEB_INTERNAL_PORT=$WEB_INTERNAL_PORT
+AGENT_PORT=$AGENT_PORT
+SCHEDULER_PORT=$SCHEDULER_PORT
+DISCOVERY_START=$DISCOVERY_START
+DISCOVERY_END=$DISCOVERY_END
+SCHEDULER_CONFIG="\$AGENCY_DIR/configs/scheduler.yaml"
 
 # Load env vars from .env if not set
-if [ -f "$AGENCY_DIR/.env" ]; then
-    if [ -z "${AG_WEB_PASSWORD:-}" ]; then
-        AG_WEB_PASSWORD=$(grep '^AG_WEB_PASSWORD=' "$AGENCY_DIR/.env" | cut -d= -f2 || true)
+if [ -f "\$AGENCY_DIR/.env" ]; then
+    if [ -z "\${AG_WEB_PASSWORD:-}" ]; then
+        AG_WEB_PASSWORD=\$(grep '^AG_WEB_PASSWORD=' "\$AGENCY_DIR/.env" | cut -d= -f2 || true)
         export AG_WEB_PASSWORD
     fi
-    if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
-        CLAUDE_CODE_OAUTH_TOKEN=$(grep '^CLAUDE_CODE_OAUTH_TOKEN=' "$AGENCY_DIR/.env" | cut -d= -f2 || true)
+    if [ -z "\${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+        CLAUDE_CODE_OAUTH_TOKEN=\$(grep '^CLAUDE_CODE_OAUTH_TOKEN=' "\$AGENCY_DIR/.env" | cut -d= -f2 || true)
         export CLAUDE_CODE_OAUTH_TOKEN
     fi
-    if [ -z "${GITHUB_TOKEN:-}" ]; then
-        GITHUB_TOKEN=$(grep '^GITHUB_TOKEN=' "$AGENCY_DIR/.env" | cut -d= -f2 || true)
+    if [ -z "\${GITHUB_TOKEN:-}" ]; then
+        GITHUB_TOKEN=\$(grep '^GITHUB_TOKEN=' "\$AGENCY_DIR/.env" | cut -d= -f2 || true)
         export GITHUB_TOKEN
     fi
-    if [ -z "${GIT_SSH_KEY_FILE:-}" ]; then
-        GIT_SSH_KEY_FILE=$(grep '^GIT_SSH_KEY_FILE=' "$AGENCY_DIR/.env" | cut -d= -f2 || true)
+    if [ -z "\${GIT_SSH_KEY_FILE:-}" ]; then
+        GIT_SSH_KEY_FILE=\$(grep '^GIT_SSH_KEY_FILE=' "\$AGENCY_DIR/.env" | cut -d= -f2 || true)
         export GIT_SSH_KEY_FILE
     fi
 fi
 
 # Check if already running
-if [ -f "$PID_FILE" ]; then
+if [ -f "\$PID_FILE" ]; then
     echo "Agency appears to be running. Stop it first."
     exit 1
 fi
 
 # Start web view (with internal API port for scheduler/CLI routing)
 CONTEXTS_ARG=""
-if [ -f "$AGENCY_DIR/configs/contexts.yaml" ]; then
-    CONTEXTS_ARG="-contexts $AGENCY_DIR/configs/contexts.yaml"
+if [ -f "\$AGENCY_DIR/configs/contexts.yaml" ]; then
+    CONTEXTS_ARG="-contexts \$AGENCY_DIR/configs/contexts.yaml"
 fi
-echo "Starting web view on port $WEB_PORT (internal: $WEB_INTERNAL_PORT)..."
-"$AGENCY_DIR/bin/ag-view-web" -port "$WEB_PORT" -internal-port "$WEB_INTERNAL_PORT" -env "$AGENCY_DIR/.env" $CONTEXTS_ARG > "$AGENCY_DIR/web.log" 2>&1 &
-WEB_PID=$!
+echo "Starting web view on port \$WEB_PORT (internal: \$WEB_INTERNAL_PORT, discovery: \$DISCOVERY_START-\$DISCOVERY_END)..."
+"\$AGENCY_DIR/bin/ag-view-web" -port "\$WEB_PORT" -internal-port "\$WEB_INTERNAL_PORT" -port-start "\$DISCOVERY_START" -port-end "\$DISCOVERY_END" -env "\$AGENCY_DIR/.env" \$CONTEXTS_ARG > "\$AGENCY_DIR/web.log" 2>&1 &
+WEB_PID=\$!
 
 # Start claude agent
-echo "Starting claude agent on port $AGENT_PORT..."
-"$AGENCY_DIR/bin/ag-agent-claude" -port "$AGENT_PORT" > "$AGENCY_DIR/agent.log" 2>&1 &
-AGENT_PID=$!
+echo "Starting claude agent on port \$AGENT_PORT..."
+"\$AGENCY_DIR/bin/ag-agent-claude" -port "\$AGENT_PORT" > "\$AGENCY_DIR/agent.log" 2>&1 &
+AGENT_PID=\$!
 
 # Start scheduler (optional)
 SCHEDULER_PID=""
-if [ -f "$SCHEDULER_CONFIG" ]; then
-    echo "Starting scheduler on port $SCHEDULER_PORT..."
-    "$AGENCY_DIR/bin/ag-scheduler" -config "$SCHEDULER_CONFIG" -port "$SCHEDULER_PORT" > "$AGENCY_DIR/scheduler.log" 2>&1 &
-    SCHEDULER_PID=$!
+if [ -f "\$SCHEDULER_CONFIG" ]; then
+    echo "Starting scheduler on port \$SCHEDULER_PORT..."
+    "\$AGENCY_DIR/bin/ag-scheduler" -config "\$SCHEDULER_CONFIG" -port "\$SCHEDULER_PORT" > "\$AGENCY_DIR/scheduler.log" 2>&1 &
+    SCHEDULER_PID=\$!
 fi
 
 # Save PIDs
-echo "$WEB_PID" > "$PID_FILE"
-echo "$AGENT_PID" >> "$PID_FILE"
-if [ -n "$SCHEDULER_PID" ]; then
-    echo "$SCHEDULER_PID" >> "$PID_FILE"
+echo "\$WEB_PID" > "\$PID_FILE"
+echo "\$AGENT_PID" >> "\$PID_FILE"
+if [ -n "\$SCHEDULER_PID" ]; then
+    echo "\$SCHEDULER_PID" >> "\$PID_FILE"
 fi
 
 # Wait for services
 sleep 2
 
 # Check if processes are running
-if ! kill -0 "$WEB_PID" 2>/dev/null; then
+if ! kill -0 "\$WEB_PID" 2>/dev/null; then
     echo "ERROR: Web view failed to start. Check web.log"
-    rm -f "$PID_FILE"
+    rm -f "\$PID_FILE"
     exit 1
 fi
 
-if ! kill -0 "$AGENT_PID" 2>/dev/null; then
+if ! kill -0 "\$AGENT_PID" 2>/dev/null; then
     echo "ERROR: Agent failed to start. Check agent.log"
-    kill "$WEB_PID" 2>/dev/null || true
-    [ -n "$SCHEDULER_PID" ] && kill "$SCHEDULER_PID" 2>/dev/null || true
-    rm -f "$PID_FILE"
+    kill "\$WEB_PID" 2>/dev/null || true
+    [ -n "\$SCHEDULER_PID" ] && kill "\$SCHEDULER_PID" 2>/dev/null || true
+    rm -f "\$PID_FILE"
     exit 1
 fi
 
-if [ -n "$SCHEDULER_PID" ] && ! kill -0 "$SCHEDULER_PID" 2>/dev/null; then
+if [ -n "\$SCHEDULER_PID" ] && ! kill -0 "\$SCHEDULER_PID" 2>/dev/null; then
     echo "ERROR: Scheduler failed to start. Check scheduler.log"
-    kill "$WEB_PID" 2>/dev/null || true
-    kill "$AGENT_PID" 2>/dev/null || true
-    rm -f "$PID_FILE"
+    kill "\$WEB_PID" 2>/dev/null || true
+    kill "\$AGENT_PID" 2>/dev/null || true
+    rm -f "\$PID_FILE"
     exit 1
 fi
 
 echo ""
 echo "Agency started!"
-echo "  Web View PID: $WEB_PID (HTTPS: $WEB_PORT, Internal: $WEB_INTERNAL_PORT)"
-echo "  Agent PID: $AGENT_PID"
-if [ -n "$SCHEDULER_PID" ]; then
-    echo "  Scheduler PID: $SCHEDULER_PID"
+echo "  Web View PID: \$WEB_PID (HTTPS: \$WEB_PORT, Internal: \$WEB_INTERNAL_PORT)"
+echo "  Agent PID: \$AGENT_PID"
+if [ -n "\$SCHEDULER_PID" ]; then
+    echo "  Scheduler PID: \$SCHEDULER_PID"
 fi
+echo "  Discovery range: \$DISCOVERY_START-\$DISCOVERY_END"
 echo ""
-echo "Dashboard: https://$(hostname):$WEB_PORT"
-echo "Internal API: http://localhost:$WEB_INTERNAL_PORT (scheduler/CLI routing)"
+echo "Dashboard: https://\$(hostname):\$WEB_PORT"
+echo "Internal API: http://localhost:\$WEB_INTERNAL_PORT (scheduler/CLI routing)"
 REMOTE_SCRIPT
 
 ssh $SSH_OPTS "$REMOTE_HOST" "chmod +x $REMOTE_DIR/start.sh"
@@ -273,10 +301,10 @@ fi"
 # Start the agency on remote
 echo ""
 echo "Starting agency on remote host..."
-ssh $SSH_OPTS "$REMOTE_HOST" "cd $REMOTE_DIR && AG_WEB_PORT=$WEB_PORT AG_AGENT_PORT=$AGENT_PORT ./start.sh"
+ssh $SSH_OPTS "$REMOTE_HOST" "cd $REMOTE_DIR && ./start.sh"
 
 echo ""
-echo "=== Deployment Complete ==="
+echo "=== Deployment Complete ($MODE) ==="
 echo ""
 echo "Remote commands:"
 SSH_CMD="ssh $SSH_OPTS $REMOTE_HOST"

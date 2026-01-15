@@ -58,7 +58,7 @@ POST /api/task        # Submit task (proxies to selected agent)
 ### Discovery Protocol
 
 **Port scanning (current implementation):**
-1. Components start on ports 9000-9199 (configurable range)
+1. Components start on configurable port ranges (default: 9000-9009 for dev, 9100-9109 for prod)
 2. On startup, scan range for `/status` endpoints
 3. Cache discovered services, refresh periodically (1s for working, 5s for idle)
 4. `/status` returns `type` and `interfaces` for component identification

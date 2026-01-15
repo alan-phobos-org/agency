@@ -66,7 +66,7 @@ case "${1:-help}" in
         rm -rf dist/
         mkdir -p dist/bin dist/deployment dist/configs
         cp "${BINARIES[@]/#/bin/}" dist/bin/
-        cp deployment/agency.sh deployment/stop-agency.sh deployment/deploy-agency.sh dist/deployment/
+        cp deployment/agency.sh deployment/stop-agency.sh deployment/deploy-agency.sh deployment/ports.conf dist/deployment/
         cp configs/contexts.yaml configs/scheduler.yaml dist/configs/
         tar -czf "dist/agency-$VERSION.tar.gz" -C dist bin deployment configs
         echo "Created dist/agency-$VERSION.tar.gz"
@@ -85,8 +85,14 @@ case "${1:-help}" in
     deploy-local)
         $0 dist
         [ -f .env ] && cp .env dist/
-        echo "Deploying..."
-        exec ./dist/deployment/agency.sh
+        echo "Deploying (dev mode)..."
+        exec ./dist/deployment/agency.sh dev
+        ;;
+    deploy-prod)
+        $0 dist
+        [ -f .env ] && cp .env dist/
+        echo "Deploying (prod mode)..."
+        exec ./dist/deployment/agency.sh prod
         ;;
     test-smoke)
         echo "Running smoke test on non-standard ports..."
@@ -326,7 +332,8 @@ case "${1:-help}" in
         echo "  check           Run lint + unit tests (pre-commit check)"
         echo ""
         echo "Deployment:"
-        echo "  deploy-local    Run full test suite, build dist, and deploy locally"
+        echo "  deploy-local    Run full test suite, build dist, and deploy locally (dev mode)"
+        echo "  deploy-prod     Run full test suite, build dist, and deploy locally (prod mode)"
         echo ""
         echo "Release workflow:"
         echo "  prepare-release Run all checks, tests, and show changes since last release"

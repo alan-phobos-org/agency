@@ -107,7 +107,7 @@ Environment variables:
 
 Command-line flags:
 - `-port` - HTTPS port
-- `-port-start`, `-port-end` - Discovery scan range
+- `-port-start`, `-port-end` - Discovery scan range (default: 9000-9009)
 - `-contexts` - Path to contexts YAML file
 - `-access-log` - Path to access log file
 

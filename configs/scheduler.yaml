@@ -1,7 +1,14 @@
 # Agency Scheduler Configuration
 # Runs scheduled maintenance tasks across repositories
+#
+# Port configuration:
+#   Dev mode:  port=9010, director=8080, agent=9000
+#   Prod mode: port=9110, director=9080, agent=9100
+#
+# These defaults match dev mode. For prod, override with environment variables
+# or create a separate scheduler-prod.yaml.
 
-port: 9100
+port: 9010
 
 # Director URL for session tracking (sessions will be viewable in web UI)
 # Scheduler tries director first, falls back to agent if unavailable.

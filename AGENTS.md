@@ -186,7 +186,7 @@ The `release` target: validates semver, checks CHANGELOG.md entry, creates commi
 ### Key Behaviors
 
 - Agent returns 409 if busy (single-task only)
-- Web view discovers agents via port scanning (9000-9199)
+- Web view discovers agents via port scanning (9000-9009 dev, 9100-9109 prod)
 - Sessions persist in shared directories for multi-turn conversations
 - Task history stored at `~/.agency/history/<agent>/`
 

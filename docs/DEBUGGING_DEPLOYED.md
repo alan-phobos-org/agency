@@ -63,7 +63,7 @@ Expected: All three ports listening (may show as `:::` for IPv6).
 ### Agent Not Showing in UI
 
 1. **Check agent is running**: `curl http://localhost:9000/status`
-2. **Check discovery range**: Web view scans ports 9000-9199 by default
+2. **Check discovery range**: Web view scans ports 9000-9009 by default (dev) or 9100-9109 (prod)
 3. **Verify API returns agent**: Query `/api/agents` with valid session
 
 ### Task Stuck in "Working" State

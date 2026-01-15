@@ -211,7 +211,7 @@ func statusCmd(args []string) {
 func discoverCmd(args []string) {
 	fs := flag.NewFlagSet("discover", flag.ExitOnError)
 	portStart := fs.Int("port-start", 9000, "Start of port range")
-	portEnd := fs.Int("port-end", 9199, "End of port range")
+	portEnd := fs.Int("port-end", 9009, "End of port range")
 	fs.Parse(args)
 
 	client := &http.Client{Timeout: 500 * time.Millisecond}

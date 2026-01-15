@@ -1,18 +1,25 @@
 #!/bin/bash
 # Stop agency: terminates web view, claude agent, and scheduler
+#
+# Usage: stop-agency.sh [dev|prod]
+#   dev  - Stop development instance (default)
+#   prod - Stop production instance
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-PID_FILE="$SCRIPT_DIR/agency.pids"
+
+# Mode from argument (default: dev)
+MODE="${1:-dev}"
+PID_FILE="$SCRIPT_DIR/agency-${MODE}.pids"
 
 if [ ! -f "$PID_FILE" ]; then
-    echo "No agency.pids file found. Agency may not be running."
+    echo "No agency-${MODE}.pids file found. Agency ($MODE) may not be running."
     exit 0
 fi
 
-echo "Stopping agency..."
+echo "Stopping agency ($MODE)..."
 
 # Read PIDs and terminate
 while read -r PID; do
@@ -36,4 +43,4 @@ done < "$PID_FILE"
 # Clean up
 rm -f "$PID_FILE"
 
-echo "Agency stopped."
+echo "Agency ($MODE) stopped."

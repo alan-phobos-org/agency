@@ -22,7 +22,7 @@ func main() {
 	internalPort := flag.Int("internal-port", 0, "Internal HTTP port for unauthenticated localhost API (0=disabled)")
 	bind := flag.String("bind", "0.0.0.0", "Address to bind to")
 	portStart := flag.Int("port-start", 9000, "Discovery port range start")
-	portEnd := flag.Int("port-end", 9199, "Discovery port range end")
+	portEnd := flag.Int("port-end", 9009, "Discovery port range end")
 	envFile := flag.String("env", "", "Path to .env file for token (default: .env in current dir)")
 	certFile := flag.String("cert", "", "Path to TLS certificate")
 	keyFile := flag.String("key", "", "Path to TLS private key")

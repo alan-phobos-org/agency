@@ -53,7 +53,7 @@ func New(cfg *Config, version string) (*Director, error) {
 		cfg.PortStart = 9000
 	}
 	if cfg.PortEnd == 0 {
-		cfg.PortEnd = 9199
+		cfg.PortEnd = 9009
 	}
 
 	discovery := NewDiscovery(DiscoveryConfig{

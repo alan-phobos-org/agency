@@ -58,3 +58,25 @@ go test ./...
 # Run specific tests
 go test ./internal/view/web/... -run "Archive"
 ```
+
+## Deployment
+
+### Dev/Prod Mode
+
+Agency supports running dev and prod instances simultaneously on one machine:
+
+```bash
+# Dev mode (default) - ports 8443, 9000-9009
+./deployment/agency.sh dev
+./build.sh deploy-local
+
+# Prod mode - ports 9443, 9100-9109
+./deployment/agency.sh prod
+./build.sh deploy-prod
+```
+
+Port configuration is in `deployment/ports.conf`:
+- Dev: Web=8443, Agent=9000, Discovery=9000-9009, Install=~/agency-dev
+- Prod: Web=9443, Agent=9100, Discovery=9100-9109, Install=~/agency
+
+Mode-specific PID files (`agency-dev.pids`, `agency-prod.pids`) allow both to run concurrently.
