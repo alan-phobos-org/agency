@@ -480,3 +480,219 @@ func TestSessionArchivedFieldInJSON(t *testing.T) {
 	_, hasArchived := parsed2["archived"]
 	require.False(t, hasArchived, "archived should be omitted when false")
 }
+
+// Archive interaction tests
+
+func TestAddTaskToArchivedSession(t *testing.T) {
+	t.Parallel()
+
+	store := NewSessionStore()
+
+	// Create and archive a session
+	store.AddTask("session-1", "http://agent:9000", "task-1", "completed", "first task")
+	store.Archive("session-1")
+
+	// Add another task to the archived session
+	store.AddTask("session-1", "http://agent:9000", "task-2", "working", "second task")
+
+	// Session should still be accessible and have both tasks
+	session, ok := store.Get("session-1")
+	require.True(t, ok)
+	require.Len(t, session.Tasks, 2)
+	require.Equal(t, "task-2", session.Tasks[1].TaskID)
+
+	// Session should remain archived
+	require.True(t, session.Archived, "Session should remain archived after adding task")
+
+	// Session should still NOT appear in GetAll because it's archived
+	sessions := store.GetAll()
+	require.Empty(t, sessions, "Archived session should not appear in GetAll even after adding task")
+}
+
+func TestUpdateTaskStateOnArchivedSession(t *testing.T) {
+	t.Parallel()
+
+	store := NewSessionStore()
+
+	// Create session with a working task, then archive
+	store.AddTask("session-1", "http://agent:9000", "task-1", "working", "task prompt")
+	store.Archive("session-1")
+
+	// Update task state on archived session
+	updated := store.UpdateTaskState("session-1", "task-1", "completed")
+	require.True(t, updated, "Should be able to update task state on archived session")
+
+	// Verify the update
+	session, _ := store.Get("session-1")
+	require.Equal(t, "completed", session.Tasks[0].State)
+	require.True(t, session.Archived, "Session should remain archived")
+}
+
+func TestArchiveUpdatesTimestamp(t *testing.T) {
+	t.Parallel()
+
+	store := NewSessionStore()
+
+	store.AddTask("session-1", "http://agent:9000", "task-1", "completed", "prompt")
+	session, _ := store.Get("session-1")
+	originalTime := session.UpdatedAt
+
+	time.Sleep(10 * time.Millisecond)
+	store.Archive("session-1")
+
+	session, _ = store.Get("session-1")
+	require.True(t, session.UpdatedAt.After(originalTime), "Archive should update timestamp")
+}
+
+func TestArchiveIdempotent(t *testing.T) {
+	t.Parallel()
+
+	store := NewSessionStore()
+
+	store.AddTask("session-1", "http://agent:9000", "task-1", "completed", "prompt")
+
+	// Archive multiple times
+	archived1 := store.Archive("session-1")
+	require.True(t, archived1)
+
+	archived2 := store.Archive("session-1")
+	require.True(t, archived2, "Archiving already archived session should succeed")
+
+	session, _ := store.Get("session-1")
+	require.True(t, session.Archived)
+}
+
+func TestHandleSessionsExcludesArchived(t *testing.T) {
+	t.Parallel()
+
+	discovery := NewDiscovery(DiscoveryConfig{PortStart: 9900, PortEnd: 9900})
+	handlers, err := NewHandlers(discovery, "test", nil, nil, nil, false)
+	require.NoError(t, err)
+
+	// Add sessions, archive one
+	handlers.sessionStore.AddTask("sess-1", "http://agent:9000", "task-1", "completed", "prompt 1")
+	handlers.sessionStore.AddTask("sess-2", "http://agent:9001", "task-2", "working", "prompt 2")
+	handlers.sessionStore.Archive("sess-1")
+
+	req := httptest.NewRequest("GET", "/api/sessions", nil)
+	rec := httptest.NewRecorder()
+
+	handlers.HandleSessions(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var sessions []*Session
+	err = json.Unmarshal(rec.Body.Bytes(), &sessions)
+	require.NoError(t, err)
+	require.Len(t, sessions, 1)
+	require.Equal(t, "sess-2", sessions[0].ID)
+}
+
+func TestHandleAddSessionTaskToArchivedSession(t *testing.T) {
+	t.Parallel()
+
+	discovery := NewDiscovery(DiscoveryConfig{PortStart: 9900, PortEnd: 9900})
+	handlers, err := NewHandlers(discovery, "test", nil, nil, nil, false)
+	require.NoError(t, err)
+
+	// Create and archive a session
+	handlers.sessionStore.AddTask("sess-archived", "http://agent:9000", "task-1", "completed", "first")
+	handlers.sessionStore.Archive("sess-archived")
+
+	// Try adding task to archived session via API
+	body := `{
+		"session_id": "sess-archived",
+		"agent_url": "http://agent:9000",
+		"task_id": "task-2",
+		"state": "working",
+		"prompt": "second task"
+	}`
+
+	req := httptest.NewRequest("POST", "/api/sessions", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handlers.HandleAddSessionTask(rec, req)
+
+	// Should succeed - adding tasks to archived sessions is allowed
+	require.Equal(t, http.StatusCreated, rec.Code)
+
+	// Verify task was added
+	session, ok := handlers.sessionStore.Get("sess-archived")
+	require.True(t, ok)
+	require.Len(t, session.Tasks, 2)
+	require.True(t, session.Archived, "Session should remain archived")
+}
+
+func TestHandleUpdateSessionTaskOnArchivedSession(t *testing.T) {
+	t.Parallel()
+
+	discovery := NewDiscovery(DiscoveryConfig{PortStart: 9900, PortEnd: 9900})
+	handlers, err := NewHandlers(discovery, "test", nil, nil, nil, false)
+	require.NoError(t, err)
+
+	// Create session with working task, then archive
+	handlers.sessionStore.AddTask("sess-archived", "http://agent:9000", "task-1", "working", "prompt")
+	handlers.sessionStore.Archive("sess-archived")
+
+	// Update task state via API
+	body := `{"state": "completed"}`
+	req := httptest.NewRequest("PUT", "/api/sessions/sess-archived/tasks/task-1", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handlers.HandleUpdateSessionTask(rec, req, "sess-archived", "task-1")
+
+	// Should succeed - updating tasks on archived sessions is allowed
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	// Verify state was updated
+	session, _ := handlers.sessionStore.Get("sess-archived")
+	require.Equal(t, "completed", session.Tasks[0].State)
+	require.True(t, session.Archived, "Session should remain archived")
+}
+
+func TestArchiveDoesNotAffectOtherSessions(t *testing.T) {
+	t.Parallel()
+
+	store := NewSessionStore()
+
+	// Add multiple sessions
+	store.AddTask("session-1", "http://agent:9000", "task-1", "completed", "prompt 1")
+	store.AddTask("session-2", "http://agent:9001", "task-2", "working", "prompt 2")
+	store.AddTask("session-3", "http://agent:9002", "task-3", "completed", "prompt 3")
+
+	// Archive one
+	store.Archive("session-2")
+
+	// Verify other sessions are unaffected
+	sess1, _ := store.Get("session-1")
+	sess3, _ := store.Get("session-3")
+	require.False(t, sess1.Archived)
+	require.False(t, sess3.Archived)
+
+	// GetAll should return the non-archived ones
+	sessions := store.GetAll()
+	require.Len(t, sessions, 2)
+}
+
+func TestArchiveAlreadyArchivedSession(t *testing.T) {
+	t.Parallel()
+
+	discovery := NewDiscovery(DiscoveryConfig{PortStart: 9900, PortEnd: 9900})
+	handlers, err := NewHandlers(discovery, "test", nil, nil, nil, false)
+	require.NoError(t, err)
+
+	// Create and archive a session
+	handlers.sessionStore.AddTask("sess-1", "http://agent:9000", "task-1", "completed", "prompt")
+	handlers.sessionStore.Archive("sess-1")
+
+	// Try to archive again via API
+	req := httptest.NewRequest("POST", "/api/sessions/sess-1/archive", nil)
+	rec := httptest.NewRecorder()
+
+	handlers.HandleArchiveSession(rec, req, "sess-1")
+
+	// Should succeed (idempotent)
+	require.Equal(t, http.StatusOK, rec.Code)
+}

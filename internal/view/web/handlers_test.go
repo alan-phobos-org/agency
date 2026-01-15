@@ -805,3 +805,100 @@ func TestHandleContextsWithContexts(t *testing.T) {
 	require.Equal(t, 1800, contexts[1].TimeoutSeconds)
 	require.Equal(t, "Dev prefix", contexts[1].PromptPrefix)
 }
+
+// Archive interaction tests for dashboard
+
+func TestHandleDashboardDataExcludesArchivedSessions(t *testing.T) {
+	t.Parallel()
+
+	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
+	h := newTestHandlers(t, d, "test", nil)
+
+	// Add sessions, archive one
+	h.sessionStore.AddTask("sess-1", "http://agent:9000", "task-1", "completed", "prompt 1")
+	h.sessionStore.AddTask("sess-2", "http://agent:9001", "task-2", "working", "prompt 2")
+	h.sessionStore.AddTask("sess-3", "http://agent:9002", "task-3", "completed", "prompt 3")
+	h.sessionStore.Archive("sess-2")
+
+	req := httptest.NewRequest("GET", "/api/dashboard", nil)
+	rec := httptest.NewRecorder()
+
+	h.HandleDashboardData(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var data DashboardData
+	err := json.Unmarshal(rec.Body.Bytes(), &data)
+	require.NoError(t, err)
+
+	// Should only have 2 sessions (archived one excluded)
+	require.Len(t, data.Sessions, 2)
+
+	// Verify archived session is not included
+	for _, s := range data.Sessions {
+		require.NotEqual(t, "sess-2", s.ID, "Archived session should not appear in dashboard data")
+	}
+}
+
+func TestHandleDashboardDataETagChangesOnArchive(t *testing.T) {
+	t.Parallel()
+
+	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
+	h := newTestHandlers(t, d, "test", nil)
+
+	// Add sessions
+	h.sessionStore.AddTask("sess-1", "http://agent:9000", "task-1", "completed", "prompt 1")
+	h.sessionStore.AddTask("sess-2", "http://agent:9001", "task-2", "working", "prompt 2")
+
+	// Get initial ETag
+	req1 := httptest.NewRequest("GET", "/api/dashboard", nil)
+	rec1 := httptest.NewRecorder()
+	h.HandleDashboardData(rec1, req1)
+	etag1 := rec1.Header().Get("ETag")
+
+	// Archive a session
+	h.sessionStore.Archive("sess-1")
+
+	// ETag should change
+	req2 := httptest.NewRequest("GET", "/api/dashboard", nil)
+	rec2 := httptest.NewRecorder()
+	h.HandleDashboardData(rec2, req2)
+	etag2 := rec2.Header().Get("ETag")
+
+	require.NotEqual(t, etag1, etag2, "ETag should change when session is archived")
+
+	// Old ETag should not match
+	req3 := httptest.NewRequest("GET", "/api/dashboard", nil)
+	req3.Header.Set("If-None-Match", etag1)
+	rec3 := httptest.NewRecorder()
+	h.HandleDashboardData(rec3, req3)
+
+	require.Equal(t, http.StatusOK, rec3.Code, "Old ETag should not match after archive")
+}
+
+func TestHandleDashboardDataAllSessionsArchived(t *testing.T) {
+	t.Parallel()
+
+	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
+	h := newTestHandlers(t, d, "test", nil)
+
+	// Add and archive all sessions
+	h.sessionStore.AddTask("sess-1", "http://agent:9000", "task-1", "completed", "prompt 1")
+	h.sessionStore.AddTask("sess-2", "http://agent:9001", "task-2", "completed", "prompt 2")
+	h.sessionStore.Archive("sess-1")
+	h.sessionStore.Archive("sess-2")
+
+	req := httptest.NewRequest("GET", "/api/dashboard", nil)
+	rec := httptest.NewRecorder()
+
+	h.HandleDashboardData(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var data DashboardData
+	err := json.Unmarshal(rec.Body.Bytes(), &data)
+	require.NoError(t, err)
+
+	// Should have empty sessions list
+	require.Empty(t, data.Sessions)
+}
