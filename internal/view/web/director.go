@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"phobos.org.uk/agency/internal/api"
 )
 
 // Config holds web director configuration
@@ -158,6 +159,16 @@ func (d *Director) Router() chi.Router {
 		r.Delete("/devices/{id}", func(w http.ResponseWriter, r *http.Request) {
 			deviceID := chi.URLParam(r, "id")
 			d.handlers.HandleRevokeDevice(w, r, deviceID)
+		})
+		// Scheduler job trigger (proxies to scheduler component)
+		r.Post("/scheduler/trigger", func(w http.ResponseWriter, req *http.Request) {
+			schedulerURL := req.URL.Query().Get("scheduler_url")
+			jobName := req.URL.Query().Get("job")
+			if schedulerURL == "" || jobName == "" {
+				api.WriteError(w, http.StatusBadRequest, "validation_error", "scheduler_url and job query parameters are required")
+				return
+			}
+			d.handlers.HandleTriggerJob(w, req, schedulerURL, jobName)
 		})
 	})
 

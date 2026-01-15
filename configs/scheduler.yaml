@@ -4,7 +4,9 @@
 port: 9100
 
 # Director URL for session tracking (sessions will be viewable in web UI)
-# Scheduler tries director first, falls back to agent if unavailable
+# Scheduler tries director first, falls back to agent if unavailable.
+# Use the web director's internal HTTP port for unauthenticated localhost API.
+# Start the web director with: ag-view-web -internal-port=8080
 director_url: http://localhost:8080
 
 # Direct agent URL (fallback when director is unavailable)

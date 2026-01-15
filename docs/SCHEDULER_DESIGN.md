@@ -79,8 +79,30 @@ jobs:
 |-------|------|----------|---------|-------------|
 | `port` | int | No | 9100 | Status endpoint port |
 | `log_level` | string | No | info | Log verbosity |
-| `agent_url` | string | No | http://localhost:9000 | Default agent URL |
+| `director_url` | string | No | - | Web director internal API URL for session tracking |
+| `agent_url` | string | No | http://localhost:9000 | Default agent URL (fallback if director unavailable) |
 | `jobs` | []Job | Yes | - | List of scheduled jobs |
+
+### Web UI Integration
+
+For scheduled jobs to appear in the web UI with proper session tracking:
+
+1. Start the web director with an internal HTTP port:
+   ```bash
+   ag-view-web -internal-port=8080
+   ```
+
+2. Configure the scheduler to use this internal port:
+   ```yaml
+   director_url: http://localhost:8080
+   ```
+
+When `director_url` is configured, the scheduler routes task submissions through the web director, which:
+- Creates sessions tracked in the SessionStore
+- Tags sessions with `source: scheduler` and `source_job: <job-name>`
+- Makes jobs visible in the web dashboard
+
+If the director is unavailable, the scheduler falls back to direct agent submission (sessions won't appear in web UI).
 
 ### Job Fields
 
@@ -129,7 +151,8 @@ Returns scheduler status and job information.
   "state": "running",
   "uptime_seconds": 3600,
   "config": {
-    "agent_url": "http://localhost:9000"
+    "agent_url": "http://localhost:9000",
+    "director_url": "http://localhost:8080"
   },
   "jobs": [
     {
@@ -137,11 +160,28 @@ Returns scheduler status and job information.
       "schedule": "0 1 * * *",
       "next_run": "2025-01-14T01:00:00Z",
       "last_run": "2025-01-13T01:00:00Z",
-      "last_status": "submitted"
+      "last_status": "submitted",
+      "last_task_id": "task-abc123"
     }
   ]
 }
 ```
+
+### POST /trigger/{job}
+
+Manually triggers a job by name. Useful for testing scheduled jobs without waiting for the cron schedule.
+
+**Response (200):**
+```json
+{
+  "name": "nightly-maintenance",
+  "last_status": "submitted",
+  "last_task_id": "task-abc123"
+}
+```
+
+**Response (404):** Job not found
+**Response (409):** Job already running
 
 ### POST /shutdown
 
@@ -275,7 +315,6 @@ Not in scope for v1, but may be added later:
 - **Job dependencies** - Run job B after job A completes
 - **Config reload** - Reload config without restart via SIGHUP
 - **Job history** - Track past executions in memory/disk
-- **Web UI integration** - Show scheduled jobs in dashboard
 - **Multiple agents** - Round-robin or load-balanced submission
 
 ---

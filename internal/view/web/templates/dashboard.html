@@ -385,6 +385,83 @@
             color: var(--text-tertiary);
         }
 
+        /* Helper/Scheduler section */
+        .helper-section {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-md);
+            padding: var(--space-3);
+            margin-bottom: var(--space-2);
+        }
+
+        .helper-header {
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+            margin-bottom: var(--space-2);
+        }
+
+        .helper-name {
+            font-weight: 500;
+            font-size: 0.8125rem;
+        }
+
+        .helper-status {
+            color: var(--text-tertiary);
+            font-size: 0.75rem;
+        }
+
+        .job-list {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-2);
+            margin-top: var(--space-2);
+            padding-top: var(--space-2);
+            border-top: 1px solid var(--border-muted);
+        }
+
+        .job-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--space-3);
+            padding: var(--space-2);
+            background: var(--bg-elevated);
+            border-radius: var(--radius-sm);
+        }
+
+        .job-info {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: var(--space-2);
+            font-size: 0.75rem;
+            min-width: 0;
+        }
+
+        .job-name {
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        .job-schedule {
+            font-family: var(--font-mono);
+            color: var(--text-secondary);
+        }
+
+        .job-next {
+            color: var(--text-tertiary);
+        }
+
+        .job-status {
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 0.6875rem;
+            text-transform: uppercase;
+            background: var(--accent-muted);
+            color: var(--accent);
+        }
+
         /* Session list - full width */
         .session-list {
             display: flex;
@@ -1267,15 +1344,33 @@
                     </div>
                     <div class="fleet-category" x-show="helpers.length > 0">
                         <div class="fleet-category-label">Helpers</div>
-                        <div class="fleet-grid">
-                            <template x-for="helper in helpers" :key="helper.url">
-                                <div class="fleet-chip">
+                        <template x-for="helper in helpers" :key="helper.url">
+                            <div class="helper-section">
+                                <div class="helper-header">
                                     <span class="fleet-chip-dot fleet-chip-dot--idle"></span>
-                                    <span class="fleet-chip-name" x-text="getComponentName(helper.url)"></span>
-                                    <span class="fleet-chip-status" x-text="helper.jobs ? helper.jobs.length + ' jobs' : 'helper'"></span>
+                                    <span class="helper-name" x-text="getComponentName(helper.url)"></span>
+                                    <span class="helper-status" x-text="helper.jobs ? 'scheduler' : 'helper'"></span>
                                 </div>
-                            </template>
-                        </div>
+                                <div class="job-list" x-show="helper.jobs && helper.jobs.length > 0">
+                                    <template x-for="job in helper.jobs" :key="job.name">
+                                        <div class="job-item">
+                                            <div class="job-info">
+                                                <span class="job-name" x-text="job.name"></span>
+                                                <span class="job-schedule" x-text="job.schedule"></span>
+                                                <span class="job-next" x-text="'Next: ' + formatRelativeTime(job.next_run)"></span>
+                                                <span class="job-status" x-show="job.last_status" x-text="job.last_status"></span>
+                                            </div>
+                                            <button class="btn btn-sm"
+                                                    @click="triggerJob(helper.url, job.name)"
+                                                    :disabled="triggeringJob === job.name">
+                                                <span x-show="triggeringJob !== job.name">Run Now</span>
+                                                <span x-show="triggeringJob === job.name">Running...</span>
+                                            </button>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
                     </div>
                     <div x-show="agents.length === 0 && directors.length === 0 && helpers.length === 0" class="empty-state">
                         No components discovered
@@ -1728,6 +1823,9 @@
                 settingsOpen: false,
                 devices: { loading: false, error: null, list: [] },
                 pairingCode: { loading: false, code: '', expiresIn: 0 },
+
+                // Scheduler trigger state
+                triggeringJob: null,
 
                 // Polling state
                 isPolling: true,
@@ -2190,6 +2288,29 @@
                         this.loadDevices();
                     } catch (err) {
                         console.error('Failed to revoke device:', err);
+                    }
+                },
+
+                // Scheduler job trigger
+                async triggerJob(schedulerUrl, jobName) {
+                    this.triggeringJob = jobName;
+                    try {
+                        const params = new URLSearchParams({
+                            scheduler_url: schedulerUrl,
+                            job: jobName
+                        });
+                        const resp = await this.api(`/api/scheduler/trigger?${params}`, {
+                            method: 'POST'
+                        });
+                        const result = await resp.json();
+                        console.log('Job triggered:', result);
+                        // Refresh to pick up new session/task
+                        setTimeout(() => this.refresh(), 1000);
+                    } catch (err) {
+                        console.error('Failed to trigger job:', err);
+                        alert('Failed to trigger job: ' + err.message);
+                    } finally {
+                        this.triggeringJob = null;
                     }
                 },
 

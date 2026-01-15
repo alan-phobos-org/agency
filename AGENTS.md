@@ -275,3 +275,31 @@ The web UI (`internal/view/web/templates/dashboard.html`) uses Alpine.js for rea
 - Token usage aggregation per session (needs history API enhancement)
 - Cost estimation (requires pricing data)
 - Step/trace visualization (requires expanded history API)
+
+---
+
+## Scheduler Integration [READ IF: working with scheduled jobs]
+
+### Session Tracking for Scheduled Jobs
+
+For scheduled jobs to appear in the web UI with proper session tracking:
+
+1. Start the web director with an internal HTTP port:
+   ```bash
+   ag-view-web -internal-port=8080
+   ```
+
+2. Configure the scheduler to use this internal port in `configs/scheduler.yaml`:
+   ```yaml
+   director_url: http://localhost:8080
+   ```
+
+**Why this matters:** The scheduler routes tasks through the director to create tracked sessions. Without `director_url`, tasks fall back to direct agent submission and sessions won't appear in the web UI.
+
+### Manual Job Triggering
+
+Jobs can be triggered manually via `POST /trigger/{job}` on the scheduler. The web UI exposes this through the Fleet panel when helpers with jobs are discovered.
+
+**Web UI endpoint:** `POST /api/scheduler/trigger?scheduler_url=<url>&job=<name>`
+
+This is useful for testing scheduled jobs without waiting for the cron schedule.

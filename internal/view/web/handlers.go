@@ -664,3 +664,26 @@ func (h *Handlers) HandleRevokeDevice(w http.ResponseWriter, r *http.Request, de
 	h.authStore.DeleteSession(deviceID)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
+
+// HandleTriggerJob proxies a job trigger request to a scheduler
+func (h *Handlers) HandleTriggerJob(w http.ResponseWriter, r *http.Request, schedulerURL, jobName string) {
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	req, err := http.NewRequest(http.MethodPost, schedulerURL+"/trigger/"+jobName, nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "request_error", "Failed to create request: "+err.Error())
+		return
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "scheduler_error", "Failed to contact scheduler: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	// Forward the scheduler's response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
+}
