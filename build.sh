@@ -102,10 +102,34 @@ case "${1:-help}" in
         echo "Stopping local prod instance..."
         ./deployment/stop-agency.sh prod
         ;;
-    stop-all)
-        echo "Stopping all local instances..."
-        ./deployment/stop-agency.sh dev
-        ./deployment/stop-agency.sh prod
+    deploy-remote)
+        # Usage: ./build.sh deploy-remote <host> [ssh-port] [ssh-key]
+        shift
+        if [ $# -lt 1 ]; then
+            echo "Usage: $0 deploy-remote <host> [ssh-port] [ssh-key]"
+            echo "  Deploys to remote host in prod mode"
+            exit 1
+        fi
+        exec ./deployment/deploy-agency.sh "$1" prod "${2:-22}" "${3:-}"
+        ;;
+    stop-remote)
+        # Usage: ./build.sh stop-remote <host> [ssh-port] [ssh-key]
+        shift
+        if [ $# -lt 1 ]; then
+            echo "Usage: $0 stop-remote <host> [ssh-port] [ssh-key]"
+            echo "  Stops agency on remote host"
+            exit 1
+        fi
+        HOST="$1"
+        SSH_PORT="${2:-22}"
+        SSH_KEY="${3:-}"
+        SSH_OPTS="-C -p $SSH_PORT"
+        [ -n "$SSH_KEY" ] && SSH_OPTS="$SSH_OPTS -i $SSH_KEY"
+        # Load ports.conf to get REMOTE_DIR
+        source ./deployment/ports.conf
+        set_agency_env prod
+        echo "Stopping agency on $HOST..."
+        ssh $SSH_OPTS "$HOST" "$REMOTE_DIR/stop.sh"
         ;;
     test-smoke)
         echo "Running smoke test on non-standard ports..."
@@ -349,7 +373,10 @@ case "${1:-help}" in
         echo "  deploy-prod     Run full test suite, build dist, and deploy locally (prod mode)"
         echo "  stop-local      Stop local dev instance"
         echo "  stop-prod       Stop local prod instance"
-        echo "  stop-all        Stop all local instances (dev and prod)"
+        echo ""
+        echo "Remote deployment:"
+        echo "  deploy-remote <host> [ssh-port] [ssh-key]  Deploy to remote host (prod mode)"
+        echo "  stop-remote <host> [ssh-port] [ssh-key]    Stop agency on remote host"
         echo ""
         echo "Release workflow:"
         echo "  prepare-release Run all checks, tests, and show changes since last release"
