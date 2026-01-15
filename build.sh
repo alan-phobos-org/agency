@@ -94,6 +94,19 @@ case "${1:-help}" in
         echo "Deploying (prod mode)..."
         exec ./dist/deployment/agency.sh prod
         ;;
+    stop-local)
+        echo "Stopping local dev instance..."
+        ./deployment/stop-agency.sh dev
+        ;;
+    stop-prod)
+        echo "Stopping local prod instance..."
+        ./deployment/stop-agency.sh prod
+        ;;
+    stop-all)
+        echo "Stopping all local instances..."
+        ./deployment/stop-agency.sh dev
+        ./deployment/stop-agency.sh prod
+        ;;
     test-smoke)
         echo "Running smoke test on non-standard ports..."
         build_all
@@ -334,6 +347,9 @@ case "${1:-help}" in
         echo "Deployment:"
         echo "  deploy-local    Run full test suite, build dist, and deploy locally (dev mode)"
         echo "  deploy-prod     Run full test suite, build dist, and deploy locally (prod mode)"
+        echo "  stop-local      Stop local dev instance"
+        echo "  stop-prod       Stop local prod instance"
+        echo "  stop-all        Stop all local instances (dev and prod)"
         echo ""
         echo "Release workflow:"
         echo "  prepare-release Run all checks, tests, and show changes since last release"
