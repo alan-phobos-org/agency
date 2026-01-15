@@ -141,7 +141,7 @@ func (h *Handlers) HandleTaskSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if agent.State != "idle" {
-		writeError(w, http.StatusConflict, "agent_busy", fmt.Sprintf("Agent is %s, not idle", agent.State))
+		writeError(w, http.StatusConflict, api.ErrorAgentBusy, fmt.Sprintf("Agent is %s, not idle", agent.State))
 		return
 	}
 
@@ -245,7 +245,7 @@ func (h *Handlers) HandleTaskStatus(w http.ResponseWriter, r *http.Request, task
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)
 			json.NewEncoder(w).Encode(map[string]string{
-				"error":   "not_found",
+				"error":   api.ErrorNotFound,
 				"message": "Task not found",
 			})
 			return
@@ -256,7 +256,7 @@ func (h *Handlers) HandleTaskStatus(w http.ResponseWriter, r *http.Request, task
 			// Read history response to parse state and return
 			body, err := io.ReadAll(historyResp.Body)
 			if err != nil {
-				writeError(w, http.StatusInternalServerError, "read_error", "Failed to read history response")
+				writeError(w, http.StatusInternalServerError, api.ErrorReadError, "Failed to read history response")
 				return
 			}
 
@@ -282,7 +282,7 @@ func (h *Handlers) HandleTaskStatus(w http.ResponseWriter, r *http.Request, task
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(map[string]string{
-			"error":   "not_found",
+			"error":   api.ErrorNotFound,
 			"message": "Task not found",
 		})
 		return
@@ -294,7 +294,7 @@ func (h *Handlers) HandleTaskStatus(w http.ResponseWriter, r *http.Request, task
 	if resp.StatusCode == http.StatusOK && sessionID != "" {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "read_error", "Failed to read task response")
+			writeError(w, http.StatusInternalServerError, api.ErrorReadError, "Failed to read task response")
 			return
 		}
 		var taskData struct {
@@ -384,7 +384,7 @@ func (h *Handlers) HandleUpdateSessionTask(w http.ResponseWriter, r *http.Reques
 	}
 
 	if !h.sessionStore.UpdateTaskState(sessionID, taskID, req.State) {
-		writeError(w, http.StatusNotFound, "not_found", "Session or task not found")
+		writeError(w, http.StatusNotFound, api.ErrorNotFound, "Session or task not found")
 		return
 	}
 
@@ -480,7 +480,7 @@ func (h *Handlers) HandleLogin(w http.ResponseWriter, r *http.Request) {
 
 	// Check rate limiting
 	if h.rateLimiter != nil && h.rateLimiter.IsBlocked(ip) {
-		writeError(w, http.StatusTooManyRequests, "rate_limited", "Too many failed attempts. Try again later.")
+		writeError(w, http.StatusTooManyRequests, api.ErrorRateLimited, "Too many failed attempts. Try again later.")
 		return
 	}
 
@@ -500,7 +500,7 @@ func (h *Handlers) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		if h.rateLimiter != nil {
 			h.rateLimiter.RecordFailure(ip)
 		}
-		writeError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid password")
+		writeError(w, http.StatusUnauthorized, api.ErrorUnauthorized, "Invalid password")
 		return
 	}
 
@@ -554,7 +554,7 @@ func (h *Handlers) HandlePair(w http.ResponseWriter, r *http.Request) {
 
 	// Check rate limiting
 	if h.rateLimiter != nil && h.rateLimiter.IsBlocked(ip) {
-		writeError(w, http.StatusTooManyRequests, "rate_limited", "Too many failed attempts. Try again later.")
+		writeError(w, http.StatusTooManyRequests, api.ErrorRateLimited, "Too many failed attempts. Try again later.")
 		return
 	}
 
@@ -657,7 +657,7 @@ func (h *Handlers) HandleRevokeDevice(w http.ResponseWriter, r *http.Request, de
 	// Check if device exists
 	session := h.authStore.GetSession(deviceID)
 	if session == nil {
-		writeError(w, http.StatusNotFound, "not_found", "Device not found")
+		writeError(w, http.StatusNotFound, api.ErrorNotFound, "Device not found")
 		return
 	}
 
@@ -668,7 +668,7 @@ func (h *Handlers) HandleRevokeDevice(w http.ResponseWriter, r *http.Request, de
 // HandleArchiveSession archives a session (hides it from UI but keeps it in storage)
 func (h *Handlers) HandleArchiveSession(w http.ResponseWriter, r *http.Request, sessionID string) {
 	if !h.sessionStore.Archive(sessionID) {
-		writeError(w, http.StatusNotFound, "not_found", "Session not found")
+		writeError(w, http.StatusNotFound, api.ErrorNotFound, "Session not found")
 		return
 	}
 

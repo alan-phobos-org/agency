@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"phobos.org.uk/agency/internal/api"
 )
 
 // RateLimiter tracks failed auth attempts per IP
@@ -168,7 +170,7 @@ func SessionMiddlewareWithRateLimiter(store *AuthStore, accessLogger *AccessLogg
 				if accessLogger != nil {
 					accessLogger.Log(ip, r.Method, r.URL.Path, http.StatusTooManyRequests, false)
 				}
-				http.Error(w, `{"error":"rate_limited","message":"Too many failed attempts. Try again later."}`, http.StatusTooManyRequests)
+				http.Error(w, `{"error":"`+api.ErrorRateLimited+`","message":"Too many failed attempts. Try again later."}`, http.StatusTooManyRequests)
 				return
 			}
 
@@ -181,7 +183,7 @@ func SessionMiddlewareWithRateLimiter(store *AuthStore, accessLogger *AccessLogg
 					if accessLogger != nil {
 						accessLogger.Log(ip, r.Method, r.URL.Path, http.StatusUnauthorized, false)
 					}
-					http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+					http.Error(w, `{"error":"`+api.ErrorUnauthorized+`"}`, http.StatusUnauthorized)
 				} else {
 					if accessLogger != nil {
 						accessLogger.Log(ip, r.Method, r.URL.Path, http.StatusFound, false)

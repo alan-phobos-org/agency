@@ -268,7 +268,7 @@ func (a *Agent) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		}
 		a.mu.Unlock()
 		api.WriteJSON(w, http.StatusConflict, map[string]interface{}{
-			"error":        "agent_busy",
+			"error":        api.ErrorAgentBusy,
 			"message":      fmt.Sprintf("Agent is currently processing %s", currentTaskID),
 			"current_task": currentTaskID,
 		})
@@ -386,7 +386,7 @@ func (a *Agent) handleCancelTask(w http.ResponseWriter, r *http.Request) {
 	if task.State == TaskStateCompleted || task.State == TaskStateFailed || task.State == TaskStateCancelled {
 		a.mu.Unlock()
 		api.WriteJSON(w, http.StatusConflict, map[string]interface{}{
-			"error":       "already_completed",
+			"error":       api.ErrorAlreadyCompleted,
 			"message":     fmt.Sprintf("Task %s has already completed", taskID),
 			"final_state": task.State,
 		})
@@ -429,7 +429,7 @@ func (a *Agent) handleShutdown(w http.ResponseWriter, r *http.Request) {
 
 	if hasTask && !req.Force {
 		api.WriteJSON(w, http.StatusConflict, map[string]interface{}{
-			"error":   "task_in_progress",
+			"error":   api.ErrorTaskInProgress,
 			"message": fmt.Sprintf("Task %s is running. Use force=true to terminate.", taskID),
 			"task_id": taskID,
 		})

@@ -403,7 +403,7 @@ func (s *Scheduler) handleTrigger(w http.ResponseWriter, r *http.Request) {
 
 	if target == nil {
 		api.WriteJSON(w, http.StatusNotFound, map[string]string{
-			"error": "job_not_found",
+			"error": api.ErrorJobNotFound,
 			"name":  jobName,
 		})
 		return
@@ -414,7 +414,7 @@ func (s *Scheduler) handleTrigger(w http.ResponseWriter, r *http.Request) {
 	if target.isRunning {
 		target.mu.Unlock()
 		api.WriteJSON(w, http.StatusConflict, map[string]string{
-			"error": "job_already_running",
+			"error": api.ErrorJobAlreadyRunning,
 			"name":  jobName,
 		})
 		return
