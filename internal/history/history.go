@@ -263,11 +263,6 @@ func (s *Store) load() error {
 	}
 
 	for _, path := range files {
-		// Skip debug files
-		if filepath.Ext(filepath.Base(path[:len(path)-5])) == ".debug" {
-			continue
-		}
-
 		data, err := os.ReadFile(path)
 		if err != nil {
 			continue // Skip unreadable files
