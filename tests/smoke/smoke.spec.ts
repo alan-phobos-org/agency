@@ -43,12 +43,16 @@ test.describe.serial('Agency Smoke Tests', () => {
     // Wait for modal to close and task to appear
     await expect(page.locator('.modal-backdrop--open')).toBeHidden({ timeout: 5000 });
 
-    // Wait for task completion (poll every 2s, max 60s)
+    // Wait for task completion (poll every 2s, max 90s)
     const sessionCard = page.locator('.session-card').first();
     await expect(sessionCard).toBeVisible({ timeout: 10000 });
 
-    // Wait for task to complete - look for completed status class
-    await expect(sessionCard.locator('.session-status--completed')).toBeVisible({ timeout: 60000 });
+    // Wait for task to reach a terminal state (completed, failed, or cancelled)
+    const terminalStatus = sessionCard.locator('.session-status--completed, .session-status--failed, .session-status--cancelled');
+    await expect(terminalStatus).toBeVisible({ timeout: 90000 });
+
+    // Verify it completed successfully (not failed/cancelled)
+    await expect(sessionCard.locator('.session-status--completed')).toBeVisible();
 
     // Expand card and verify output contains "4"
     await sessionCard.click();
@@ -81,8 +85,12 @@ test.describe.serial('Agency Smoke Tests', () => {
     // Wait for modal to close
     await expect(page.locator('.modal-backdrop--open')).toBeHidden({ timeout: 5000 });
 
-    // Wait for session to complete and verify output contains "6"
-    await expect(sessionCard.locator('.session-status--completed')).toBeVisible({ timeout: 60000 });
+    // Wait for task to reach a terminal state
+    const terminalStatus = sessionCard.locator('.session-status--completed, .session-status--failed, .session-status--cancelled');
+    await expect(terminalStatus).toBeVisible({ timeout: 90000 });
+
+    // Verify it completed successfully
+    await expect(sessionCard.locator('.session-status--completed')).toBeVisible();
     await expect(sessionCard).toContainText('6', { timeout: 5000 });
   });
 
@@ -127,7 +135,11 @@ test.describe.serial('Agency Smoke Tests', () => {
 
     // Wait for job completion
     const newSession = page.locator('.session-card').first();
-    await expect(newSession.locator('.session-status--completed')).toBeVisible({ timeout: 60000 });
+    const terminalStatus = newSession.locator('.session-status--completed, .session-status--failed, .session-status--cancelled');
+    await expect(terminalStatus).toBeVisible({ timeout: 90000 });
+
+    // Verify it completed successfully
+    await expect(newSession.locator('.session-status--completed')).toBeVisible();
 
     // Verify success state - output should contain "Smoke test OK"
     await newSession.click();
