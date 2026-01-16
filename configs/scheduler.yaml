@@ -1,12 +1,9 @@
 # Agency Scheduler Configuration
 # Runs scheduled maintenance tasks across repositories
 #
-# Port configuration:
-#   Dev mode:  port=9010, director=8080, agent=9000
-#   Prod mode: port=9110, director=9080, agent=9100
-#
-# These defaults match dev mode. For prod, override with environment variables
-# or create a separate scheduler-prod.yaml.
+# Port configuration (dev defaults below, deploy-agency.sh adjusts for prod):
+#   Dev:  director=8080, agent=9000
+#   Prod: director=9080, agent=9100
 
 port: 9010
 
@@ -35,6 +32,7 @@ jobs:
       # Nightly Maintenance Run
 
       Perform maintenance tasks across the specified repositories.
+      Do lots of work, not just one change.
       Work through each repository sequentially.
 
       ## Target Repositories

@@ -242,6 +242,15 @@
             background: rgba(248, 81, 73, 0.1);
         }
 
+        .btn-muted {
+            color: var(--text-tertiary);
+            font-size: 0.6875rem;
+        }
+
+        .btn-muted:hover {
+            color: var(--text-secondary);
+        }
+
         /* Main content - full width, no sidebar */
         .main {
             min-height: calc(100vh - 40px);
@@ -707,6 +716,14 @@
             border-radius: var(--radius-sm);
             margin-bottom: var(--space-2);
             overflow: hidden;
+        }
+
+        .io-block--prompt {
+            background: rgba(136, 146, 176, 0.04);
+        }
+
+        .io-block--output {
+            background: rgba(62, 175, 124, 0.04);
         }
 
         .io-block:last-child {
@@ -1485,7 +1502,7 @@
                                             :aria-controls="'panel-metrics-' + session.id">Metrics</button>
                                 </div>
                                 <div class="session-header-actions">
-                                    <button class="btn btn-sm btn-ghost btn-danger"
+                                    <button class="btn btn-sm btn-ghost btn-muted"
                                             @click="archiveSession(session.id)"
                                             :disabled="archivingSession === session.id"
                                             title="Archive session">
@@ -1513,14 +1530,14 @@
                                     <div>
                                         <template x-for="(task, idx) in (session.tasks || [])" :key="task.task_id">
                                             <div class="io-task-block">
-                                                <div class="io-block">
+                                                <div class="io-block io-block--prompt">
                                                     <div class="io-header">
                                                         <span>#<span x-text="idx + 1"></span> Prompt</span>
                                                     </div>
                                                     <div class="io-content io-content-md"
                                                          x-html="renderMarkdown(stripPromptPrefix(task.prompt || getTaskHistoryData(session.id, task.task_id)?.prompt || 'No prompt'))"></div>
                                                 </div>
-                                                <div class="io-block" x-show="getTaskOutput(session.id, task)">
+                                                <div class="io-block io-block--output" x-show="getTaskOutput(session.id, task)">
                                                     <div class="io-header">
                                                         <span>
                                                             Output

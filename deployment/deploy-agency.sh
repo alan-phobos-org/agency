@@ -121,8 +121,11 @@ if [ -f "$PROJECT_ROOT/configs/contexts.yaml" ]; then
 fi
 
 if [ -n "$SCHEDULER_CONFIG" ] && [ -f "$SCHEDULER_CONFIG" ]; then
-    echo "Copying scheduler config..."
-    scp $SCP_OPTS "$SCHEDULER_CONFIG" "$REMOTE_HOST:$REMOTE_DIR/configs/scheduler.yaml"
+    echo "Copying scheduler config (adjusting ports for $MODE mode)..."
+    # Transform director_url and agent_url ports to match deployment mode
+    sed -e "s|director_url: http://localhost:[0-9]*|director_url: http://localhost:$WEB_INTERNAL_PORT|" \
+        -e "s|agent_url: http://localhost:[0-9]*|agent_url: http://localhost:$AGENT_PORT|" \
+        "$SCHEDULER_CONFIG" | ssh $SSH_OPTS "$REMOTE_HOST" "cat > $REMOTE_DIR/configs/scheduler.yaml"
 fi
 
 # Copy deployment scripts

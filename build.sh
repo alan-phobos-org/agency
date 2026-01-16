@@ -93,26 +93,33 @@ case "${1:-help}" in
         ./deployment/stop-agency.sh dev
         ;;
     deploy-prod)
-        # Usage: ./build.sh deploy-prod <host> [ssh-port] [ssh-key]
+        # Usage: ./build.sh deploy-prod [host] [ssh-port] [ssh-key]
+        # Reads DEPLOY_HOST, DEPLOY_PORT, DEPLOY_KEY from .env as defaults
         shift
-        if [ $# -lt 1 ]; then
-            echo "Usage: $0 deploy-prod <host> [ssh-port] [ssh-key]"
-            echo "  Deploys to remote host in prod mode"
+        [ -f .env ] && source .env
+        HOST="${1:-$DEPLOY_HOST}"
+        PORT="${2:-${DEPLOY_PORT:-22}}"
+        KEY="${3:-$DEPLOY_KEY}"
+        if [ -z "$HOST" ]; then
+            echo "Usage: $0 deploy-prod [host] [ssh-port] [ssh-key]"
+            echo "  Or set DEPLOY_HOST, DEPLOY_PORT, DEPLOY_KEY in .env"
             exit 1
         fi
-        exec ./deployment/deploy-agency.sh "$1" prod "${2:-22}" "${3:-}"
+        exec ./deployment/deploy-agency.sh "$HOST" prod "$PORT" "$KEY"
         ;;
     stop-prod)
-        # Usage: ./build.sh stop-prod <host> [ssh-port] [ssh-key]
+        # Usage: ./build.sh stop-prod [host] [ssh-port] [ssh-key]
+        # Reads DEPLOY_HOST, DEPLOY_PORT, DEPLOY_KEY from .env as defaults
         shift
-        if [ $# -lt 1 ]; then
-            echo "Usage: $0 stop-prod <host> [ssh-port] [ssh-key]"
-            echo "  Stops agency on remote host"
+        [ -f .env ] && source .env
+        HOST="${1:-$DEPLOY_HOST}"
+        SSH_PORT="${2:-${DEPLOY_PORT:-22}}"
+        SSH_KEY="${3:-$DEPLOY_KEY}"
+        if [ -z "$HOST" ]; then
+            echo "Usage: $0 stop-prod [host] [ssh-port] [ssh-key]"
+            echo "  Or set DEPLOY_HOST, DEPLOY_PORT, DEPLOY_KEY in .env"
             exit 1
         fi
-        HOST="$1"
-        SSH_PORT="${2:-22}"
-        SSH_KEY="${3:-}"
         SSH_OPTS="-C -p $SSH_PORT"
         [ -n "$SSH_KEY" ] && SSH_OPTS="$SSH_OPTS -i $SSH_KEY"
         # Load ports.conf to get REMOTE_DIR
@@ -383,8 +390,8 @@ case "${1:-help}" in
         echo "Deployment:"
         echo "  deploy-local                               Deploy locally (dev mode)"
         echo "  stop-local                                 Stop local dev instance"
-        echo "  deploy-prod <host> [ssh-port] [ssh-key]    Deploy to remote host (prod mode)"
-        echo "  stop-prod <host> [ssh-port] [ssh-key]      Stop agency on remote host"
+        echo "  deploy-prod [host] [ssh-port] [ssh-key]    Deploy to remote (uses .env DEPLOY_* vars)"
+        echo "  stop-prod [host] [ssh-port] [ssh-key]      Stop remote agency (uses .env DEPLOY_* vars)"
         echo ""
         echo "Release workflow:"
         echo "  prepare-release Run all checks, tests, and show changes since last release"
