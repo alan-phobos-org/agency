@@ -114,7 +114,7 @@ The agent inherits environment variables and passes them to the Claude CLI. Supp
 | `ANTHROPIC_API_KEY` | Direct API key authentication (pay-per-use billing) |
 | `CLAUDE_CODE_OAUTH_TOKEN` | OAuth token from Max subscription or similar |
 
-For CI/GitHub Actions, use `ANTHROPIC_API_KEY` as a repository secret.
+For CI/GitHub Actions, use `CLAUDE_CODE_OAUTH_TOKEN` as a repository secret.
 For production deployments, the `.env` file should contain `CLAUDE_CODE_OAUTH_TOKEN`.
 
 The agent uses `--model` flag with shorthand names: `haiku`, `sonnet`, `opus`.
