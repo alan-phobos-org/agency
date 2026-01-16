@@ -1387,7 +1387,7 @@
                                 <div class="helper-header">
                                     <span class="fleet-chip-dot fleet-chip-dot--idle"></span>
                                     <span class="helper-name" x-text="getComponentName(helper.url)"></span>
-                                    <span class="helper-status" x-text="helper.jobs ? 'scheduler' : 'helper'"></span>
+                                    <span class="helper-status" x-text="helper.jobs ? (helper.jobs.length + ' jobs') : 'helper'"></span>
                                 </div>
                                 <div class="job-list" x-show="helper.jobs && helper.jobs.length > 0">
                                     <template x-for="job in helper.jobs" :key="job.name">
@@ -1395,8 +1395,8 @@
                                             <div class="job-info">
                                                 <span class="job-name" x-text="job.name"></span>
                                                 <span class="job-schedule" x-text="job.schedule"></span>
-                                                <span class="job-next" x-text="'Next: ' + formatRelativeTime(job.next_run)"></span>
-                                                <span class="job-status" x-show="job.last_status" x-text="job.last_status"></span>
+                                                <span class="job-next" x-text="'Next: ' + formatRelativeTime(job.next_run, true)"></span>
+                                                <span class="job-status" x-show="getJobDisplayStatus(job)" x-text="getJobDisplayStatus(job)"></span>
                                             </div>
                                             <button class="btn btn-sm"
                                                     @click="triggerJob(helper.url, job.name)"
@@ -2474,6 +2474,26 @@
                     return lastTask.state || 'unknown';
                 },
 
+                getJobDisplayStatus(job) {
+                    // If no last_task_id, use last_status as-is
+                    if (!job.last_task_id) {
+                        return job.last_status || '';
+                    }
+
+                    // Look up the task in sessions to get actual state
+                    for (const session of this.sessions) {
+                        for (const task of (session.tasks || [])) {
+                            if (task.task_id === job.last_task_id) {
+                                // Return actual task state instead of just "submitted"
+                                return task.state || job.last_status;
+                            }
+                        }
+                    }
+
+                    // Task not found in sessions - use last_status
+                    return job.last_status || '';
+                },
+
                 getSessionSummary(session) {
                     const tasks = session.tasks || [];
                     if (tasks.length === 0) return 'Empty session';
@@ -2582,15 +2602,23 @@
                     this.expandedOutputs[key] = !this.expandedOutputs[key];
                 },
 
-                formatRelativeTime(dateStr) {
+                formatRelativeTime(dateStr, isFuture = false) {
                     if (!dateStr) return '';
                     const date = new Date(dateStr);
                     const now = new Date();
-                    const diffMs = now - date;
+                    const diffMs = isFuture ? (date - now) : (now - date);
                     const diffSec = Math.floor(diffMs / 1000);
                     const diffMin = Math.floor(diffSec / 60);
                     const diffHour = Math.floor(diffMin / 60);
                     const diffDay = Math.floor(diffHour / 24);
+
+                    if (isFuture) {
+                        if (diffSec < 0) return 'now';
+                        if (diffSec < 60) return `in ${diffSec}s`;
+                        if (diffMin < 60) return `in ${diffMin}m`;
+                        if (diffHour < 24) return `in ${diffHour}h`;
+                        return `in ${diffDay}d`;
+                    }
 
                     if (diffSec < 60) return 'just now';
                     if (diffMin < 60) return `${diffMin}m ago`;
@@ -2621,23 +2649,39 @@
 
                 stripPromptPrefix(text) {
                     if (!text) return '';
-                    // Strip context prefixes - look for "## Task" marker first
-                    const taskMarker = /^[\s\S]*?## Task\n*/;
-                    const taskMatch = text.match(taskMarker);
-                    if (taskMatch) {
-                        return text.slice(taskMatch[0].length).trim();
+
+                    // Look for "## Task" marker - everything after it is the user's prompt
+                    const taskMarkerIdx = text.indexOf('## Task');
+                    if (taskMarkerIdx !== -1) {
+                        // Find end of the "## Task" line (skip past the header and any whitespace)
+                        let startIdx = taskMarkerIdx + '## Task'.length;
+                        while (startIdx < text.length && (text[startIdx] === '\n' || text[startIdx] === '\r')) {
+                            startIdx++;
+                        }
+                        return text.slice(startIdx).trim();
                     }
+
+                    // Fallback: strip "# Agent Instructions" if present
+                    if (text.startsWith('# Agent Instructions')) {
+                        // Look for the start of user content - typically after a separator
+                        const separators = ['---\n', '\n\n# '];
+                        for (const sep of separators) {
+                            const sepIdx = text.indexOf(sep);
+                            if (sepIdx !== -1) {
+                                return text.slice(sepIdx + sep.length).trim();
+                            }
+                        }
+                    }
+
                     // Fallback: strip "# Project Context" prefixes
-                    const prefixPatterns = [
-                        /^# Project Context\n+## Repository Source[\s\S]*?(?=\n\n[^#\n])/,
-                        /^# Project Context[\s\S]*?(?=\n\n[^#\n])/,
-                    ];
-                    for (const pattern of prefixPatterns) {
-                        const match = text.match(pattern);
+                    if (text.startsWith('# Project Context')) {
+                        // Look for double newline followed by non-header content
+                        const match = text.match(/^# Project Context[\s\S]*?\n\n(?=[^#\n])/);
                         if (match) {
                             return text.slice(match[0].length).trim();
                         }
                     }
+
                     return text;
                 },
 

@@ -33,3 +33,4 @@ deployment/*.log
 # Smoke tests
 tests/smoke/node_modules/
 tests/smoke/test-results/
+tests/smoke/screenshots/
