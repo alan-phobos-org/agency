@@ -33,7 +33,8 @@ type Handlers struct {
 	contexts     *ContextsConfig
 	authStore    *AuthStore
 	rateLimiter  *RateLimiter
-	secureCookie bool // Whether to set Secure flag on cookies (HTTPS)
+	secureCookie bool   // Whether to set Secure flag on cookies (HTTPS)
+	shutdownFunc func() // Callback to trigger graceful shutdown
 }
 
 // NewHandlers creates handlers with dependencies
@@ -54,6 +55,11 @@ func NewHandlers(discovery *Discovery, version string, contexts *ContextsConfig,
 		rateLimiter:  rateLimiter,
 		secureCookie: secureCookie,
 	}, nil
+}
+
+// SetShutdownFunc sets the callback for graceful shutdown
+func (h *Handlers) SetShutdownFunc(fn func()) {
+	h.shutdownFunc = fn
 }
 
 // HandleDashboard serves the main dashboard HTML page
@@ -696,4 +702,67 @@ func (h *Handlers) HandleTriggerJob(w http.ResponseWriter, r *http.Request, sche
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)
+}
+
+// HandleShutdown initiates graceful shutdown of all services.
+// Sends shutdown requests to discovered agents and helpers, then shuts down self.
+func (h *Handlers) HandleShutdown(w http.ResponseWriter, r *http.Request) {
+	if h.shutdownFunc == nil {
+		writeError(w, http.StatusServiceUnavailable, "shutdown_unavailable", "Shutdown not configured")
+		return
+	}
+
+	// Collect all discovered services
+	agents := h.discovery.Agents()
+	helpers := h.discovery.Helpers()
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	var shutdownErrors []string
+
+	// Send shutdown to agents
+	for _, agent := range agents {
+		req, err := http.NewRequest(http.MethodPost, agent.URL+"/shutdown", nil)
+		if err != nil {
+			shutdownErrors = append(shutdownErrors, fmt.Sprintf("agent %s: %v", agent.URL, err))
+			continue
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			shutdownErrors = append(shutdownErrors, fmt.Sprintf("agent %s: %v", agent.URL, err))
+			continue
+		}
+		resp.Body.Close()
+	}
+
+	// Send shutdown to helpers (schedulers, etc.)
+	for _, helper := range helpers {
+		req, err := http.NewRequest(http.MethodPost, helper.URL+"/shutdown", nil)
+		if err != nil {
+			shutdownErrors = append(shutdownErrors, fmt.Sprintf("helper %s: %v", helper.URL, err))
+			continue
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			shutdownErrors = append(shutdownErrors, fmt.Sprintf("helper %s: %v", helper.URL, err))
+			continue
+		}
+		resp.Body.Close()
+	}
+
+	// Respond before shutting down self
+	resp := map[string]interface{}{
+		"status":           "shutting_down",
+		"agents_notified":  len(agents),
+		"helpers_notified": len(helpers),
+	}
+	if len(shutdownErrors) > 0 {
+		resp["errors"] = shutdownErrors
+	}
+	writeJSON(w, http.StatusOK, resp)
+
+	// Trigger self-shutdown in background (allows response to be sent)
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		h.shutdownFunc()
+	}()
 }

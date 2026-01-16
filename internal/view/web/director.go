@@ -200,6 +200,9 @@ func (d *Director) InternalRouter() chi.Router {
 		r.Get("/sessions", d.handlers.HandleSessions)
 	})
 
+	// Shutdown endpoint (internal only, cascades to all services)
+	r.Post("/shutdown", d.handlers.HandleShutdown)
+
 	return r
 }
 
@@ -211,6 +214,14 @@ func (d *Director) Start() error {
 		Addr:    addr,
 		Handler: d.Router(),
 	}
+
+	// Set shutdown callback for API-triggered shutdown
+	d.handlers.SetShutdownFunc(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		d.Shutdown(ctx)
+		os.Exit(0)
+	})
 
 	// Start discovery in background
 	go d.discovery.Start(context.Background())

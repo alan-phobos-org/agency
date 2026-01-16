@@ -122,23 +122,45 @@ case "${1:-help}" in
         ssh $SSH_OPTS "$HOST" "$REMOTE_DIR/stop.sh"
         ;;
     test-smoke)
-        echo "Running smoke test on non-standard ports..."
-        build_all
+        echo "=== Smoke Test ==="
+        START_TIME=$(date +%s)
 
-        # Use non-standard ports to avoid conflicts
+        # Isolated ports to avoid conflicts
         export AG_WEB_PORT=18443
+        export AG_WEB_INTERNAL_PORT=18080
         export AG_AGENT_PORT=19000
-        export AG_SCHEDULER_PORT=19100
+        export AG_SCHEDULER_PORT=19010
+        export AG_DISCOVERY_START=19000
+        export AG_DISCOVERY_END=19010
+        export AG_SCHEDULER_CONFIG="$PWD/tests/smoke/fixtures/scheduler-smoke.yaml"
+        export AG_WEB_PASSWORD="${AG_WEB_PASSWORD:-smoketest}"
 
-        ./deployment/agency.sh
-        sleep 1
+        # Cleanup on any exit
+        cleanup() {
+            echo "Stopping services..."
+            ./deployment/stop-agency.sh smoke 2>/dev/null || true
+        }
+        trap cleanup EXIT
 
-        check_service "http://localhost:$AG_AGENT_PORT/status" "Agent"
-        check_service "https://localhost:$AG_WEB_PORT/status" "Web view"
-        check_service "http://localhost:$AG_SCHEDULER_PORT/status" "Scheduler"
+        # Build and start
+        build_all
+        ./deployment/agency.sh smoke
 
-        ./deployment/stop-agency.sh
-        echo "✓ Smoke test passed"
+        # Run Playwright tests
+        cd tests/smoke
+        npm ci --silent
+        npx playwright test --reporter=list
+        TEST_EXIT=$?
+        cd ../..
+
+        # Report timing
+        END_TIME=$(date +%s)
+        DURATION=$((END_TIME - START_TIME))
+        echo ""
+        echo "=== Smoke Test Results ==="
+        echo "Duration: ${DURATION}s"
+        [ $TEST_EXIT -eq 0 ] && echo "Status: PASSED" || echo "Status: FAILED"
+        exit $TEST_EXIT
         ;;
     prepare-release)
         echo "=== Preparing release ==="
@@ -351,7 +373,7 @@ case "${1:-help}" in
         echo "  test-all        Run unit tests + integration tests"
         echo "  test-int        Run integration tests only"
         echo "  test-sys        Run system tests (builds first)"
-        echo "  test-smoke      Start services on non-standard ports and verify they respond"
+        echo "  test-smoke      Full E2E smoke tests with Playwright and real Claude API"
         echo "  test-release    Run full test suite: unit + integration + system tests"
         echo ""
         echo "Code quality:"

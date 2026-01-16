@@ -40,6 +40,20 @@ Deploying agents should feel like reliable infrastructure, not babysitting exper
 | `AG_WEB_PASSWORD` | Web view login (required) |
 | `AGENCY_ROOT` | Config directory (default: ~/.agency) |
 | `CLAUDE_BIN` | Claude CLI path (default: from PATH) |
+| `GITHUB_TOKEN` | GitHub API access for github-monitor |
+
+### API Endpoints (Session)
+
+- `GET /api/sessions` - List non-archived sessions
+- `POST /api/sessions` - Add task to session
+- `PUT /api/sessions/{sessionId}/tasks/{taskId}` - Update task state
+- `POST /api/sessions/{sessionId}/archive` - Archive session
+
+### Port Configuration
+
+From `deployment/ports.conf`:
+- **Dev**: Web=8443, Agent=9000, Scheduler=9010, Discovery=9000-9010, GitHub Monitor=9020
+- **Prod**: Web=9443, Agent=9100, Scheduler=9110, Discovery=9100-9110, GitHub Monitor=9120
 
 ## Workflows
 
@@ -76,21 +90,24 @@ Write commit messages as a human developer would:
 ```
 agency/
 ├── cmd/
-│   ├── ag-agent-claude/  # Agent binary (wraps Claude CLI)
-│   ├── ag-cli/           # CLI tool (task, status, discover)
-│   ├── ag-scheduler/     # Scheduler binary (cron-style task triggering)
-│   └── ag-view-web/      # Web view binary (HTTPS dashboard)
-├── configs/              # Configuration files (contexts.yaml, scheduler.yaml)
-├── deployment/           # Local and remote deployment scripts
+│   ├── ag-agent-claude/    # Agent binary (wraps Claude CLI)
+│   ├── ag-cli/             # CLI tool (task, status, discover)
+│   ├── ag-github-monitor/  # GitHub repo event monitor
+│   ├── ag-scheduler/       # Scheduler binary (cron-style task triggering)
+│   └── ag-view-web/        # Web view binary (HTTPS dashboard)
+├── configs/                # Configuration files (contexts.yaml, scheduler.yaml)
+├── deployment/             # Local and remote deployment scripts
 ├── internal/
-│   ├── agent/      # Agent logic + REST API handlers
-│   ├── api/        # Shared types and constants
-│   ├── config/     # YAML parsing, validation
-│   ├── history/    # Task history storage and outline extraction
-│   ├── scheduler/  # Scheduler logic, cron parsing, job runner
-│   ├── view/web/   # Web view (dashboard + discovery)
-│   └── testutil/   # Test helpers
-└── testdata/       # Test fixtures and mock Claude scripts
+│   ├── agent/          # Agent logic + REST API handlers
+│   ├── api/            # Shared types and constants
+│   ├── config/         # YAML parsing, validation
+│   ├── github-monitor/ # GitHub repo monitor logic
+│   ├── history/        # Task history storage and outline extraction
+│   ├── scheduler/      # Scheduler logic, cron parsing, job runner
+│   ├── view/web/       # Web view (dashboard + discovery)
+│   └── testutil/       # Test helpers
+├── tests/smoke/            # E2E smoke tests with Playwright
+└── testdata/               # Test fixtures and mock Claude scripts
 ```
 
 ---
@@ -102,6 +119,17 @@ agency/
 - Mock Claude CLI via `CLAUDE_BIN` env var pointing to `testdata/mock-claude`
 - Print progress to stderr, not t.Log()
 - Use production-style IDs in tests (e.g., `task-abc123` not `test123`)
+- Create fresh `NewHandlers()` instance per test
+- Use `httptest.NewRequest` and `httptest.NewRecorder` for handler tests
+
+### Test Levels
+
+| Level | Speed | Claude | Purpose |
+|-------|-------|--------|---------|
+| Unit | Fast | Mock | Individual functions |
+| Integration | Fast | Mock | Component interactions |
+| System | Fast | Mock | Binary execution, API contracts |
+| Smoke | Slow | Real (haiku) | Full E2E with Playwright |
 
 ### Race Condition Prevention
 
@@ -303,3 +331,23 @@ Jobs can be triggered manually via `POST /trigger/{job}` on the scheduler. The w
 **Web UI endpoint:** `POST /api/scheduler/trigger?scheduler_url=<url>&job=<name>`
 
 This is useful for testing scheduled jobs without waiting for the cron schedule.
+
+---
+
+## Helper Patterns [READ IF: working with github-monitor]
+
+### Event-Driven Helpers (github-monitor)
+
+- Quiet period pattern: delay action after events to batch rapid changes
+- Circuit breaker pattern: stop after N consecutive failures, require manual reset
+- Task queue: sequential per-repo to avoid conflicts, parallel across repos
+- Use `gh` CLI for GitHub API access (requires GITHUB_TOKEN in .env)
+- Model selection: Sonnet for reviews, Opus for fixes
+
+### Handler Conventions (internal/view/web)
+
+- HTTP handlers with chi router parameters passed explicitly
+- Use `api.WriteJSON` and `api.WriteError` for responses
+- Pattern: `HandleX(w, r, ...params)` for handlers with URL params
+- Session store: in-memory thread-safe with `sync.RWMutex`
+- Sessions can be archived (hidden from UI but kept in storage)

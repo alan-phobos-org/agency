@@ -1,0 +1,18 @@
+# Smoke Test Scheduler Configuration
+# Lightweight config with only the smoke test job
+
+port: 19010
+
+# Director URL for session tracking
+director_url: http://localhost:18080
+
+# Direct agent URL (fallback)
+agent_url: http://localhost:19000
+
+jobs:
+  - name: smoke-test
+    schedule: "0 0 31 2 *"  # Never auto-runs (Feb 31)
+    model: haiku
+    timeout: 60s
+    prompt: |
+      This is a smoke test. Reply with exactly: "Smoke test OK"
