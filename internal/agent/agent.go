@@ -230,7 +230,7 @@ func (a *Agent) handleStatus(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	if a.currentTask != nil {
+	if a.currentTask != nil && a.currentTask.StartedAt != nil {
 		preview := a.currentTask.Prompt
 		if len(preview) > 50 {
 			preview = preview[:50] + "..."
