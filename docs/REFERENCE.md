@@ -105,6 +105,20 @@ Environment variables:
 - `AGENCY_ROOT` - Override config directory (default: ~/.agency)
 - `CLAUDE_BIN` - Path to Claude CLI (default: claude from PATH)
 
+### Claude Code CLI Authentication
+
+The agent inherits environment variables and passes them to the Claude CLI. Supported auth methods:
+
+| Variable | Purpose |
+|----------|---------|
+| `ANTHROPIC_API_KEY` | Direct API key authentication (pay-per-use billing) |
+| `CLAUDE_CODE_OAUTH_TOKEN` | OAuth token from Max subscription or similar |
+
+For CI/GitHub Actions, use `ANTHROPIC_API_KEY` as a repository secret.
+For production deployments, the `.env` file should contain `CLAUDE_CODE_OAUTH_TOKEN`.
+
+The agent uses `--model` flag with shorthand names: `haiku`, `sonnet`, `opus`.
+
 Command-line flags:
 - `-port` - HTTPS port
 - `-port-start`, `-port-end` - Discovery scan range (default: 9000-9009)
