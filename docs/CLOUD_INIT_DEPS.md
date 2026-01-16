@@ -23,6 +23,9 @@ runcmd:
   - curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
   - apt-get install -y nodejs
 
+  # Claude Code CLI (for smoke tests - agent task execution)
+  - npm install -g @anthropic-ai/claude-code
+
   # Playwright system dependencies (for smoke tests)
   - npx playwright install-deps chromium
 
@@ -32,12 +35,12 @@ runcmd:
 
 ## Dependencies by Test Level
 
-| Level | Go | Node | Playwright | API Key |
-|-------|-----|------|------------|---------|
-| Build | Yes | No | No | No |
-| Unit/Integration | Yes | No | No | No |
-| System | Yes | No | No | No |
-| Smoke | Yes | Yes | Yes | Yes |
+| Level | Go | Node | Playwright | Claude CLI | API Key |
+|-------|-----|------|------------|------------|---------|
+| Build | Yes | No | No | No | No |
+| Unit/Integration | Yes | No | No | No | No |
+| System | Yes | No | No | No | No |
+| Smoke | Yes | Yes | Yes | Yes | Yes |
 
 ## Manual Installation
 
@@ -62,6 +65,9 @@ go version  # should show go1.24.0+
 # Node.js 20 LTS
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt-get install -y nodejs
+
+# Claude Code CLI (required for agent task execution)
+npm install -g @anthropic-ai/claude-code
 
 # Playwright browsers + system deps
 cd tests/smoke
