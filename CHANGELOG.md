@@ -7,8 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-01-17
+
+### Added
+- **Work Queue**: Task queuing system for handling multiple concurrent requests
+  - FIFO queue with 50-task limit for backpressure management
+  - Automatic task dispatch to idle agents via background dispatcher (1s polling)
+  - Queue API endpoints for task submission, status, and cancellation
+  - File-based persistence for queue state across restarts
+  - Web UI integration for queue visibility and management
+  - Support for all task submitters (Web UI, Scheduler, CLI)
+- Documentation: Work Queue Design document with architecture details
+- Documentation: Claude Code CLI authentication reference
+
+### Changed
+- Enhanced web UI with improved dashboard and queue management interface
+- Improved Playwright smoke test robustness with better error handling
+
 ### Fixed
 - Fixed potential panic in `/status` endpoint when task is queued but not yet started
+- Fixed scheduler UI bugs in job display and status updates
+
+### Infrastructure
+- CI: Use CLAUDE_CODE_OAUTH_TOKEN for smoke test authentication
+- CI: Upload logs and artifacts on smoke test failures for debugging
+- CI: Add Claude Code CLI installation step for smoke tests
+- Testing: Add smoke test screenshots for better documentation
 
 ## [1.1.0] - 2026-01-13
 
@@ -78,7 +102,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit, integration, component, and system tests
 - Race condition detection in tests
 
-[Unreleased]: https://github.com/alan-phobos-org/agency/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/alan-phobos-org/agency/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/alan-phobos-org/agency/compare/v2.1.0...v2.2.0
 [1.1.0]: https://github.com/alan-phobos-org/agency/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/alan-phobos-org/agency/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/alan-phobos-org/agency/releases/tag/v1.0.0
