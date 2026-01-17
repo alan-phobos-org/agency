@@ -16,6 +16,7 @@ Deploying agents should feel like reliable infrastructure, not babysitting exper
 | [docs/DESIGN.md](docs/DESIGN.md) | Architecture, patterns | Major refactoring |
 | [docs/SCHEDULER_DESIGN.md](docs/SCHEDULER_DESIGN.md) | Scheduler architecture | Modifying scheduler |
 | [docs/SESSION_ROUTING_DESIGN.md](docs/SESSION_ROUTING_DESIGN.md) | Centralized session routing | Implementing session routing |
+| [docs/WORK_QUEUE_DESIGN.md](docs/WORK_QUEUE_DESIGN.md) | Task queue architecture | Implementing work queue |
 | [docs/PLAN.md](docs/PLAN.md) | Vision, phases, backlog | Planning work |
 | [docs/DEBUGGING_DEPLOYED.md](docs/DEBUGGING_DEPLOYED.md) | Remote system diagnostics | Debugging deployed systems |
 | [CHANGELOG.md](CHANGELOG.md) | Release history | Preparing releases |
@@ -48,6 +49,13 @@ Deploying agents should feel like reliable infrastructure, not babysitting exper
 - `POST /api/sessions` - Add task to session
 - `PUT /api/sessions/{sessionId}/tasks/{taskId}` - Update task state
 - `POST /api/sessions/{sessionId}/archive` - Archive session
+
+### API Endpoints (Queue) - Planned
+
+- `POST /api/queue/task` - Submit task to queue
+- `GET /api/queue` - Get queue status and pending tasks
+- `GET /api/queue/{id}` - Get queued task status
+- `POST /api/queue/{id}/cancel` - Cancel queued task
 
 ### Port Configuration
 
@@ -224,7 +232,7 @@ For detailed endpoint specs, see [docs/REFERENCE.md](docs/REFERENCE.md).
 
 ## Known Limitations
 
-- Single-task agent (returns 409 if busy)
+- Single-task agent (returns 409 if busy) - see [docs/WORK_QUEUE_DESIGN.md](docs/WORK_QUEUE_DESIGN.md) for planned queue
 - No structured logging (stderr only)
 - Task session data stored in memory (not persisted across web view restarts)
 - Tasks can appear stuck in "working" state - see [docs/TASK_STATE_SYNC_DESIGN.md](docs/TASK_STATE_SYNC_DESIGN.md)
@@ -351,3 +359,41 @@ This is useful for testing scheduled jobs without waiting for the cron schedule.
 - Pattern: `HandleX(w, r, ...params)` for handlers with URL params
 - Session store: in-memory thread-safe with `sync.RWMutex`
 - Sessions can be archived (hidden from UI but kept in storage)
+
+---
+
+## Work Queue [READ IF: implementing task queue]
+
+See [docs/WORK_QUEUE_DESIGN.md](docs/WORK_QUEUE_DESIGN.md) for the full design.
+
+### Key Decisions
+
+- **Persistence**: JSON file-based (`~/.agency/queue/pending/`, `~/.agency/queue/dispatched/`)
+- **Ordering**: FIFO (no priority)
+- **Agent selection**: First available idle agent
+- **Queue limit**: Reject at 50 tasks (503 Service Unavailable)
+- **TTL**: None (tasks wait indefinitely)
+
+### New Task States
+
+```go
+TaskStatePending     TaskState = "pending"     // In queue, waiting for agent
+TaskStateDispatching TaskState = "dispatching" // Being sent to agent
+```
+
+### Component Responsibilities
+
+| Component | Responsibility |
+|-----------|----------------|
+| WorkQueue | Stores pending tasks, enforces FIFO, persists to JSON files |
+| Dispatcher | Background loop that finds idle agents and dispatches tasks |
+| Queue API | HTTP endpoints for queue operations |
+| Submitters | Web UI, Scheduler, CLI - all submit via queue API |
+
+### Scheduler Changes
+
+When work queue is implemented:
+- Scheduler requires `director_url` in config
+- Removes `agent_url` (queue handles dispatch)
+- Job status changes from "submitted" to "queued"
+- Uses `POST /api/queue/task` instead of direct agent submission
