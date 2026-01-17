@@ -136,14 +136,17 @@ test.describe.serial('Agency Smoke Tests', () => {
 
     // Verify it completed successfully
     await expect(sessionCard.locator('.session-status--completed')).toBeVisible();
+
+    // Wait for I/O content to fully load (history loading to complete)
+    // Use text locator for exact match to avoid multiple element issue
+    await expect(sessionCard.getByText('Loading history...', { exact: true })).toBeHidden({ timeout: 10000 });
+
+    // Now check for the expected output
     await expect(sessionCard).toContainText('6', { timeout: 5000 });
     await screenshot(page, '09-second-task-completed');
   });
 
-  // TODO: Job list not rendering in UI - needs investigation
-  // The helper shows "1 jobs" but the job-item list with "Run Now" button isn't displayed
-  // This may be an Alpine.js template rendering issue
-  test.skip('4. Trigger Scheduled Job', async ({ page }) => {
+  test('4. Trigger Scheduled Job', async ({ page }) => {
     // Login first
     await page.goto('/login');
     await page.fill('#password', PASSWORD);
@@ -216,5 +219,157 @@ test.describe.serial('Agency Smoke Tests', () => {
     await newSession.click();
     await expect(newSession).toContainText('Smoke test OK', { timeout: 5000 });
     await screenshot(page, '13-scheduler-job-completed');
+  });
+
+  test('5. UI Navigation and Interactions', async ({ page }) => {
+    // Login first
+    await page.goto('/login');
+    await page.fill('#password', PASSWORD);
+    await page.click('button[type="submit"]');
+    await expect(page).toHaveURL('/');
+
+    // Wait for dashboard to load with sessions
+    const sessionCard = page.locator('.session-card').first();
+    await expect(sessionCard).toBeVisible({ timeout: 10000 });
+    await screenshot(page, '14-dashboard-with-sessions');
+
+    // --- Fleet Section: Expand/Collapse ---
+    const fleetTrigger = page.locator('.fleet-trigger');
+    const fleetContent = page.locator('.fleet-content');
+
+    // Initially fleet may be closed, ensure it's closed for test
+    if (await fleetContent.isVisible()) {
+      await fleetTrigger.click();
+      await expect(fleetContent).toBeHidden();
+    }
+    await screenshot(page, '15-fleet-collapsed');
+
+    // Expand fleet section
+    await fleetTrigger.click();
+    await expect(fleetContent).toBeVisible();
+    await screenshot(page, '16-fleet-expanded');
+
+    // Verify agent and helpers are shown
+    await expect(page.locator('.fleet-category-label:has-text("Agents")')).toBeVisible();
+    await expect(page.locator('.fleet-chip:has-text("idle"), .fleet-chip:has-text("working")')).toBeVisible();
+
+    // Collapse fleet section
+    await fleetTrigger.click();
+    await expect(fleetContent).toBeHidden();
+    await screenshot(page, '17-fleet-collapsed-again');
+
+    // --- Session Card: Expand/Collapse ---
+    // Session should be collapsed initially (from prior tests it might be expanded)
+    const sessionBody = sessionCard.locator('.session-body');
+    if (await sessionBody.isVisible()) {
+      await sessionCard.locator('.session-header').click();
+      await expect(sessionBody).toBeHidden();
+    }
+    await screenshot(page, '18-session-collapsed');
+
+    // Expand session
+    await sessionCard.locator('.session-header').click();
+    await expect(sessionBody).toBeVisible();
+    await screenshot(page, '19-session-expanded');
+
+    // --- Session Tabs: Switch between I/O, Details, and Metrics ---
+    const ioTab = sessionCard.locator('.session-tab:has-text("I/O")');
+    const detailsTab = sessionCard.locator('.session-tab:has-text("Details")');
+    const metricsTab = sessionCard.locator('.session-tab:has-text("Metrics")');
+
+    // Verify I/O tab is active by default
+    await expect(ioTab).toHaveClass(/session-tab--active/);
+    await screenshot(page, '20-io-tab-active');
+
+    // Switch to Details tab
+    await detailsTab.click();
+    await expect(detailsTab).toHaveClass(/session-tab--active/);
+    await expect(ioTab).not.toHaveClass(/session-tab--active/);
+    await screenshot(page, '21-details-tab-active');
+
+    // Switch to Metrics tab
+    await metricsTab.click();
+    await expect(metricsTab).toHaveClass(/session-tab--active/);
+    await expect(detailsTab).not.toHaveClass(/session-tab--active/);
+    await screenshot(page, '22-metrics-tab-active');
+
+    // Switch back to I/O tab
+    await ioTab.click();
+    await expect(ioTab).toHaveClass(/session-tab--active/);
+    await screenshot(page, '23-back-to-io-tab');
+
+    // Collapse session
+    await sessionCard.locator('.session-header').click();
+    await expect(sessionBody).toBeHidden();
+    await screenshot(page, '24-session-collapsed-final');
+
+    // --- Settings Modal: Open/Close ---
+    // Settings button is in bottom nav bar (only visible on mobile viewport)
+    // Temporarily switch to mobile viewport to access settings
+    const originalViewport = page.viewportSize();
+    await page.setViewportSize({ width: 375, height: 667 }); // iPhone SE size
+    await screenshot(page, '25-mobile-viewport');
+
+    const settingsButton = page.locator('.nav-item:has-text("Settings")');
+    await expect(settingsButton).toBeVisible({ timeout: 5000 });
+    await settingsButton.click();
+
+    // Wait for settings modal
+    const settingsModal = page.locator('.modal-backdrop--open');
+    await expect(settingsModal).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('.modal-title:has-text("Settings")')).toBeVisible();
+    await screenshot(page, '26-settings-modal-open');
+
+    // Close settings via backdrop click
+    await settingsModal.click({ position: { x: 10, y: 10 } }); // Click near edge (backdrop)
+    await expect(settingsModal).toBeHidden({ timeout: 5000 });
+    await screenshot(page, '27-settings-modal-closed');
+
+    // Restore desktop viewport
+    if (originalViewport) {
+      await page.setViewportSize(originalViewport);
+    }
+    await screenshot(page, '28-back-to-desktop');
+
+    // --- Task Modal: Open/Close with Escape ---
+    await page.click('button:has-text("New Task")');
+    await expect(page.locator('.modal-title:has-text("New Task")')).toBeVisible({ timeout: 5000 });
+    await screenshot(page, '29-task-modal-open');
+
+    // Close via Escape key
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.modal-backdrop--open')).toBeHidden({ timeout: 5000 });
+    await screenshot(page, '30-task-modal-closed-via-escape');
+
+    // --- Keyboard Shortcuts ---
+    // Click on main content to ensure no form element is focused
+    await page.click('.main');
+
+    // 'n' should open new task modal
+    await page.keyboard.press('n');
+    await expect(page.locator('.modal-title:has-text("New Task")')).toBeVisible({ timeout: 5000 });
+    await screenshot(page, '31-task-modal-via-n-key');
+
+    // Close it
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.modal-backdrop--open')).toBeHidden({ timeout: 5000 });
+
+    // Click again to unfocus any element after modal closes
+    await page.click('.main');
+
+    // 'f' should toggle fleet section (fleet is currently hidden from earlier test)
+    await page.keyboard.press('f');
+    await expect(fleetContent).toBeVisible({ timeout: 5000 });
+    await screenshot(page, '32-fleet-toggled-via-f-key');
+
+    await page.keyboard.press('f');
+    await expect(fleetContent).toBeHidden({ timeout: 5000 });
+    await screenshot(page, '33-fleet-toggled-again');
+
+    // 'r' should refresh (we can verify by checking the data reloads)
+    await page.keyboard.press('r');
+    // Just verify page is still functional
+    await expect(sessionCard).toBeVisible();
+    await screenshot(page, '34-after-refresh');
   });
 });

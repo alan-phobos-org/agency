@@ -128,6 +128,14 @@
             color: white;
         }
 
+        .logo-version {
+            color: var(--text-tertiary);
+            font-weight: 400;
+            font-size: 0.625rem;
+            margin-left: var(--space-1);
+            opacity: 0.7;
+        }
+
         .topbar-actions {
             margin-left: auto;
             display: flex;
@@ -471,15 +479,6 @@
             color: var(--text-tertiary);
         }
 
-        .job-status {
-            padding: 1px 6px;
-            border-radius: 3px;
-            font-size: 0.6875rem;
-            text-transform: uppercase;
-            background: var(--accent-muted);
-            color: var(--accent);
-        }
-
         /* Session list - full width */
         .session-list {
             display: flex;
@@ -667,6 +666,166 @@
 
         .io-task-block:last-of-type {
             margin-bottom: 0;
+        }
+
+        /* Inline new task form */
+        .io-block--new-task {
+            background: var(--bg-surface);
+        }
+
+        .new-task-input {
+            display: block;
+            width: 100%;
+            min-height: 120px;
+            padding: var(--space-2) var(--space-3);
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            font-family: var(--font-sans);
+            font-size: 0.875rem;
+            line-height: 1.5;
+            resize: vertical;
+            outline: none;
+        }
+
+        .new-task-input::placeholder {
+            color: var(--text-tertiary);
+        }
+
+        .new-task-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: var(--space-2) var(--space-3);
+            border-top: 1px solid var(--border-muted);
+            background: var(--bg-elevated);
+        }
+
+        .new-task-error {
+            color: var(--status-error);
+            font-size: 0.75rem;
+            padding: 0 var(--space-3) var(--space-2);
+        }
+
+        /* Collapsed add task button */
+        .collapsed-btn {
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+            width: 100%;
+            padding: var(--space-2) var(--space-3);
+            background: var(--bg-surface);
+            border: 1px dashed var(--border-default);
+            border-radius: var(--radius-sm);
+            color: var(--text-tertiary);
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .collapsed-btn:hover {
+            background: var(--bg-hover);
+            color: var(--text-secondary);
+            border-color: var(--accent);
+        }
+
+        /* Inline form options - compact version */
+        .inline-form-options {
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-sm);
+            overflow: hidden;
+            margin-right: auto;
+        }
+
+        .inline-form-options-trigger {
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+            padding: var(--space-1) var(--space-2);
+            background: transparent;
+            border: none;
+            color: var(--text-tertiary);
+            font-size: 0.6875rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .inline-form-options-trigger:hover {
+            color: var(--text-secondary);
+        }
+
+        .inline-form-options-content {
+            display: none;
+            padding: var(--space-2) var(--space-3);
+            border-top: 1px solid var(--border-muted);
+            background: var(--bg-base);
+        }
+
+        .inline-form-options--open .inline-form-options-content {
+            display: block;
+        }
+
+        .inline-form-options--open .form-options-icon {
+            transform: rotate(180deg);
+        }
+
+        .inline-form-row {
+            display: flex;
+            gap: var(--space-3);
+            align-items: center;
+        }
+
+        .inline-form-group {
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+        }
+
+        .inline-form-label {
+            font-size: 0.6875rem;
+            font-weight: 500;
+            color: var(--text-tertiary);
+            white-space: nowrap;
+        }
+
+        .inline-form-select,
+        .inline-form-input {
+            padding: var(--space-1) var(--space-2);
+            background: var(--bg-surface);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-family: var(--font-sans);
+            font-size: 0.75rem;
+            min-height: 24px;
+        }
+
+        .inline-form-select:focus,
+        .inline-form-input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .inline-form-input {
+            width: 70px;
+        }
+
+        .inline-form-checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: var(--space-1);
+            font-size: 0.6875rem;
+            color: var(--text-tertiary);
+            cursor: pointer;
+        }
+
+        .inline-form-checkbox-label input {
+            accent-color: var(--accent);
+        }
+
+        .inline-form-actions {
+            display: flex;
+            gap: var(--space-2);
         }
 
         .session-tab {
@@ -1310,6 +1469,7 @@
             <div class="logo">
                 <div class="logo-icon" aria-hidden="true">A</div>
                 <span>Agency</span>
+                <span class="logo-version">{{.Version}}</span>
             </div>
             <div class="topbar-actions">
                 <div class="topbar-status" :title="isPolling ? 'Live updates active' : 'Updates paused'">
@@ -1396,7 +1556,6 @@
                                                 <span class="job-name" x-text="job.name"></span>
                                                 <span class="job-schedule" x-text="job.schedule"></span>
                                                 <span class="job-next" x-text="'Next: ' + formatRelativeTime(job.next_run, true)"></span>
-                                                <span class="job-status" x-show="getJobDisplayStatus(job)" x-text="getJobDisplayStatus(job)"></span>
                                             </div>
                                             <button class="btn btn-sm"
                                                     @click="triggerJob(helper.url, job.name)"
@@ -1410,9 +1569,60 @@
                             </div>
                         </template>
                     </div>
-                    <div x-show="agents.length === 0 && directors.length === 0 && helpers.length === 0" class="empty-state">
+                    <div x-show="agents.length === 0 && directors.length === 0 && helpers.length === 0 && initialLoadComplete" class="empty-state">
                         No components discovered
                     </div>
+                </div>
+            </div>
+
+            <!-- Queue Panel - shows pending and dispatched tasks -->
+            <div x-show="queue && queue.tasks && queue.tasks.length > 0" class="queue-panel">
+                <div class="queue-header" @click="toggleQueue()" style="cursor: pointer; padding: 12px 16px; display: flex; align-items: center; gap: 8px; background: var(--surface-2); border-bottom: 1px solid var(--border);">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" :style="{ transform: queueOpen ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }">
+                        <path d="M9 18l6-6-6-6"></path>
+                    </svg>
+                    <span style="font-weight: 500;">Queue</span>
+                    <span class="badge" style="background: var(--warning); color: var(--text); font-size: 11px; padding: 2px 6px; border-radius: 4px;" x-text="queue.depth + ' pending'"></span>
+                    <span x-show="queue.dispatched_count > 0" class="badge" style="background: var(--info); color: var(--text); font-size: 11px; padding: 2px 6px; border-radius: 4px;" x-text="queue.dispatched_count + ' dispatched'"></span>
+                </div>
+                <div x-show="queueOpen" class="queue-tasks" style="padding: 8px;">
+                    <template x-for="task in queue.tasks" :key="task.queue_id">
+                        <div class="queue-task" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--surface); border-radius: 4px; margin-bottom: 4px;">
+                            <div :class="'session-status session-status--' + (task.state === 'pending' ? 'pending' : 'working')" style="flex-shrink: 0;">
+                                <template x-if="task.state === 'pending'">
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <path d="M12 6v6l4 2"></path>
+                                    </svg>
+                                </template>
+                                <template x-if="task.state !== 'pending'">
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                                        <circle cx="12" cy="12" r="6"></circle>
+                                    </svg>
+                                </template>
+                            </div>
+                            <div style="flex: 1; min-width: 0;">
+                                <div style="font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" x-text="task.prompt_preview"></div>
+                                <div style="font-size: 11px; color: var(--text-muted);">
+                                    <span x-text="task.state"></span>
+                                    <template x-if="task.position">
+                                        <span x-text="' #' + task.position"></span>
+                                    </template>
+                                    <span x-text="' | ' + (task.source || 'unknown')"></span>
+                                    <template x-if="task.source_job">
+                                        <span x-text="' (' + task.source_job + ')'"></span>
+                                    </template>
+                                </div>
+                            </div>
+                            <button x-show="task.state === 'pending'"
+                                    @click.stop="cancelQueuedTask(task.queue_id)"
+                                    class="btn btn-sm"
+                                    style="padding: 4px 8px; font-size: 11px;"
+                                    title="Cancel task">
+                                Cancel
+                            </button>
+                        </div>
+                    </template>
                 </div>
             </div>
 
@@ -1546,12 +1756,15 @@
                                                             </template>
                                                         </span>
                                                         <button class="io-expand-btn"
+                                                                x-show="outputOverflows[session.id + '-' + task.task_id]"
                                                                 @click="toggleOutputExpand(session.id + '-' + task.task_id)"
                                                                 x-text="expandedOutputs[session.id + '-' + task.task_id] ? 'Collapse' : 'Expand'"></button>
                                                     </div>
                                                     <div class="io-content io-content-md"
+                                                         :data-output-key="session.id + '-' + task.task_id"
                                                          :class="{ 'io-content--expanded': expandedOutputs[session.id + '-' + task.task_id] }"
-                                                         x-html="renderMarkdown(getTaskOutput(session.id, task))">
+                                                         x-html="renderMarkdown(getTaskOutput(session.id, task))"
+                                                         x-effect="checkOutputOverflow(session.id + '-' + task.task_id)">
                                                     </div>
                                                 </div>
                                                 <div class="io-block" x-show="getTaskError(session.id, task)">
@@ -1565,8 +1778,79 @@
                                         <div x-show="!session.tasks || session.tasks.length === 0" class="empty-state">
                                             No tasks in this session
                                         </div>
-                                        <div class="session-actions-bottom">
-                                            <button class="btn btn-sm btn-ghost" @click="openTaskModal(session.id)">+ New task in session</button>
+                                        <!-- Inline New Task Form -->
+                                        <div class="io-task-block" style="margin-top: var(--space-2);">
+                                            <!-- Collapsed State -->
+                                            <button class="collapsed-btn"
+                                                    x-show="!getInlineForm(session.id).expanded"
+                                                    @click="toggleInlineForm(session.id)">
+                                                <span>+</span> Add task to session
+                                            </button>
+
+                                            <!-- Expanded Form -->
+                                            <div class="io-block io-block--new-task"
+                                                 x-show="getInlineForm(session.id).expanded"
+                                                 x-cloak>
+                                                <div class="io-header">New Task</div>
+                                                <textarea class="new-task-input"
+                                                          placeholder="Enter your prompt for the next task..."
+                                                          x-model="getInlineForm(session.id).prompt"
+                                                          @keydown.meta.enter="submitInlineTask(session.id)"
+                                                          @keydown.ctrl.enter="submitInlineTask(session.id)"></textarea>
+                                                <div class="new-task-error" x-show="getInlineForm(session.id).error" x-text="getInlineForm(session.id).error"></div>
+                                                <div class="new-task-footer" :style="getInlineForm(session.id).optionsOpen ? 'flex-wrap: wrap; gap: var(--space-2);' : ''">
+                                                    <div class="inline-form-options"
+                                                         :class="{ 'inline-form-options--open': getInlineForm(session.id).optionsOpen }"
+                                                         :style="getInlineForm(session.id).optionsOpen ? 'width: 100%;' : ''">
+                                                        <button type="button"
+                                                                class="inline-form-options-trigger"
+                                                                @click="getInlineForm(session.id).optionsOpen = !getInlineForm(session.id).optionsOpen">
+                                                            Options <span class="form-options-icon" aria-hidden="true">&#9662;</span>
+                                                        </button>
+                                                        <div class="inline-form-options-content">
+                                                            <div class="inline-form-row">
+                                                                <div class="inline-form-group">
+                                                                    <label class="inline-form-label">Model</label>
+                                                                    <select class="inline-form-select" x-model="getInlineForm(session.id).model">
+                                                                        <option value="opus">opus</option>
+                                                                        <option value="sonnet">sonnet</option>
+                                                                        <option value="haiku">haiku</option>
+                                                                    </select>
+                                                                </div>
+                                                                <div class="inline-form-group">
+                                                                    <label class="inline-form-label">Timeout</label>
+                                                                    <input type="number"
+                                                                           class="inline-form-input"
+                                                                           x-model.number="getInlineForm(session.id).timeout"
+                                                                           min="60"
+                                                                           max="7200">
+                                                                </div>
+                                                                <label class="inline-form-checkbox-label">
+                                                                    <input type="checkbox" x-model="getInlineForm(session.id).thinking">
+                                                                    Extended Thinking
+                                                                </label>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="inline-form-actions" :style="getInlineForm(session.id).optionsOpen ? 'margin-left: auto;' : ''">
+                                                        <button type="button"
+                                                                class="btn btn-sm btn-ghost"
+                                                                @click="cancelInlineForm(session.id)"
+                                                                :disabled="getInlineForm(session.id).submitting">
+                                                            Cancel
+                                                        </button>
+                                                        <button type="button"
+                                                                class="btn btn-sm btn-primary"
+                                                                @click="submitInlineTask(session.id)"
+                                                                :disabled="getInlineForm(session.id).submitting || !getInlineForm(session.id).prompt.trim()">
+                                                            <template x-if="getInlineForm(session.id).submitting">
+                                                                <div class="loading-spinner"></div>
+                                                            </template>
+                                                            <span x-text="getInlineForm(session.id).submitting ? 'Submitting...' : 'Submit'"></span>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -1629,10 +1913,10 @@
                         </div>
                     </div>
                 </template>
-                <div x-show="sessions.length === 0 && !isRefreshing" class="empty-state">
+                <div x-show="sessions.length === 0 && initialLoadComplete && !isRefreshing" class="empty-state">
                     No sessions yet. Submit a task to get started.
                 </div>
-                <div x-show="sessions.length === 0 && isRefreshing" class="empty-state">
+                <div x-show="sessions.length === 0 && !initialLoadComplete" class="empty-state">
                     <div class="loading-spinner" style="margin: 0 auto;"></div>
                     <div style="margin-top: var(--space-2);">Loading...</div>
                 </div>
@@ -1840,12 +2124,17 @@
                 helpers: [],
                 fleetOpen: false,
 
+                // Queue state
+                queue: null, // { depth, max_size, oldest_age_seconds, dispatched_count, tasks: [] }
+                queueOpen: false,
+
                 // Sessions state
                 sessions: [],
                 expandedSession: null,
                 sessionTab: 'io',
                 sessionHistory: {}, // { sessionId: { loading, error, tasks: { taskId: historyData } } }
                 expandedOutputs: {},
+                outputOverflows: {}, // { key: boolean } - tracks which outputs need expand button
 
                 // Active task polling (for streaming output)
                 activeTaskPolling: {}, // { taskId: pollingIntervalId }
@@ -1870,6 +2159,9 @@
                 taskSubmitting: false,
                 taskError: '',
 
+                // Inline task forms (per-session)
+                inlineTaskForms: {}, // { sessionId: { expanded, optionsOpen, prompt, model, timeout, thinking, submitting, error } }
+
                 // Settings modal
                 settingsOpen: false,
                 devices: { loading: false, error: null, list: [] },
@@ -1884,6 +2176,7 @@
                 // Polling state
                 isPolling: true,
                 isRefreshing: false,
+                initialLoadComplete: false,
                 pollInterval: 5000,
                 pollTimer: null,
                 etag: null,
@@ -2036,6 +2329,9 @@
                         this.directors = data.directors || [];
                         this.helpers = data.helpers || [];
 
+                        // Update queue data
+                        this.queue = data.queue || null;
+
                         // Update sessions (preserving expansion state)
                         this.sessions = data.sessions || [];
                         if (this.taskForm.sessionId) {
@@ -2060,6 +2356,7 @@
                         console.error('Refresh failed:', err);
                     } finally {
                         this.isRefreshing = false;
+                        this.initialLoadComplete = true;
                     }
                 },
 
@@ -2307,6 +2604,87 @@
                     }
                 },
 
+                // Inline task form management
+                getInlineForm(sessionId) {
+                    if (!this.inlineTaskForms[sessionId]) {
+                        this.inlineTaskForms[sessionId] = {
+                            expanded: false,
+                            optionsOpen: false,
+                            prompt: '',
+                            model: 'opus',
+                            timeout: 1800,
+                            thinking: true,
+                            submitting: false,
+                            error: ''
+                        };
+                    }
+                    return this.inlineTaskForms[sessionId];
+                },
+
+                toggleInlineForm(sessionId) {
+                    const form = this.getInlineForm(sessionId);
+                    form.expanded = !form.expanded;
+                    if (!form.expanded) {
+                        // Reset form when closing
+                        form.optionsOpen = false;
+                        form.prompt = '';
+                        form.error = '';
+                    }
+                },
+
+                cancelInlineForm(sessionId) {
+                    const form = this.getInlineForm(sessionId);
+                    form.expanded = false;
+                    form.optionsOpen = false;
+                    form.prompt = '';
+                    form.error = '';
+                },
+
+                async submitInlineTask(sessionId) {
+                    const form = this.getInlineForm(sessionId);
+                    const session = this.sessions.find(s => s.id === sessionId);
+                    if (!session) return;
+
+                    form.submitting = true;
+                    form.error = '';
+
+                    try {
+                        const prompt = form.prompt.trim();
+                        if (!prompt) {
+                            throw new Error('Prompt is required');
+                        }
+
+                        const body = {
+                            agent_url: session.agent_url,
+                            session_id: sessionId,
+                            prompt: prompt,
+                            model: form.model,
+                            timeout_seconds: form.timeout,
+                            thinking: form.thinking
+                        };
+
+                        const resp = await this.api('/api/task', {
+                            method: 'POST',
+                            body: JSON.stringify(body)
+                        });
+
+                        await resp.json();
+
+                        // Close form and reset
+                        form.expanded = false;
+                        form.optionsOpen = false;
+                        form.prompt = '';
+
+                        // Refresh to show new task
+                        await this.refresh();
+
+                    } catch (err) {
+                        form.error = err.message;
+                    } finally {
+                        form.submitting = false;
+                    }
+                },
+
                 // Settings / Device management
                 async loadDevices() {
                     this.devices.loading = true;
@@ -2392,6 +2770,28 @@
                     }
                 },
 
+                // Cancel queued task
+                async cancelQueuedTask(queueId) {
+                    if (!confirm('Cancel this queued task?')) {
+                        return;
+                    }
+
+                    try {
+                        await this.api(`/api/queue/${queueId}/cancel`, {
+                            method: 'POST'
+                        });
+                        await this.refresh();
+                    } catch (err) {
+                        console.error('Failed to cancel queued task:', err);
+                        alert('Failed to cancel task: ' + err.message);
+                    }
+                },
+
+                // Toggle queue panel
+                toggleQueue() {
+                    this.queueOpen = !this.queueOpen;
+                },
+
                 // Keyboard shortcuts
                 handleKeydown(e) {
                     // Ignore if in input/textarea or modal is open
@@ -2472,26 +2872,6 @@
                     if (tasks.length === 0) return 'unknown';
                     const lastTask = tasks[tasks.length - 1];
                     return lastTask.state || 'unknown';
-                },
-
-                getJobDisplayStatus(job) {
-                    // If no last_task_id, use last_status as-is
-                    if (!job.last_task_id) {
-                        return job.last_status || '';
-                    }
-
-                    // Look up the task in sessions to get actual state
-                    for (const session of this.sessions) {
-                        for (const task of (session.tasks || [])) {
-                            if (task.task_id === job.last_task_id) {
-                                // Return actual task state instead of just "submitted"
-                                return task.state || job.last_status;
-                            }
-                        }
-                    }
-
-                    // Task not found in sessions - use last_status
-                    return job.last_status || '';
                 },
 
                 getSessionSummary(session) {
@@ -2600,6 +2980,15 @@
 
                 toggleOutputExpand(key) {
                     this.expandedOutputs[key] = !this.expandedOutputs[key];
+                },
+
+                checkOutputOverflow(key) {
+                    this.$nextTick(() => {
+                        const el = document.querySelector(`[data-output-key="${key}"]`);
+                        if (el) {
+                            this.outputOverflows[key] = el.scrollHeight > el.clientHeight;
+                        }
+                    });
                 },
 
                 formatRelativeTime(dateStr, isFuture = false) {

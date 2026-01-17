@@ -42,7 +42,7 @@ func TestHandleStatus(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, "view", resp["type"])
-	require.Equal(t, []interface{}{"statusable", "observable"}, resp["interfaces"])
+	require.Equal(t, []interface{}{"statusable", "observable", "taskable"}, resp["interfaces"])
 	require.Equal(t, "test-version", resp["version"])
 	require.Equal(t, "running", resp["state"])
 	require.NotNil(t, resp["uptime_seconds"])
@@ -901,4 +901,130 @@ func TestHandleDashboardDataAllSessionsArchived(t *testing.T) {
 
 	// Should have empty sessions list
 	require.Empty(t, data.Sessions)
+}
+
+func TestHandleDashboardDataWithHelpers(t *testing.T) {
+	t.Parallel()
+
+	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
+	h := newTestHandlers(t, d, "test", nil)
+
+	// Manually add a helper with jobs to the discovery
+	helperURL := "http://localhost:9001"
+	d.mu.Lock()
+	d.components[helperURL] = &ComponentStatus{
+		URL:     helperURL,
+		Type:    "helper",
+		State:   "running",
+		Version: "test-scheduler-v1",
+		Jobs: []JobStatus{
+			{
+				Name:       "test-job",
+				Schedule:   "0 * * * *",
+				NextRun:    time.Now().Add(time.Hour),
+				LastStatus: "",
+			},
+		},
+	}
+	d.mu.Unlock()
+
+	// First request - should include helper with jobs
+	req1 := httptest.NewRequest("GET", "/api/dashboard", nil)
+	rec1 := httptest.NewRecorder()
+	h.HandleDashboardData(rec1, req1)
+
+	require.Equal(t, http.StatusOK, rec1.Code)
+
+	var data1 DashboardData
+	err := json.Unmarshal(rec1.Body.Bytes(), &data1)
+	require.NoError(t, err)
+
+	require.Len(t, data1.Helpers, 1)
+	require.Len(t, data1.Helpers[0].Jobs, 1)
+	require.Equal(t, "test-job", data1.Helpers[0].Jobs[0].Name)
+	require.Empty(t, data1.Helpers[0].Jobs[0].LastStatus)
+
+	etag1 := rec1.Header().Get("ETag")
+
+	// Update job status (simulating job execution)
+	d.mu.Lock()
+	d.components[helperURL].Jobs[0].LastStatus = "submitted"
+	d.components[helperURL].Jobs[0].LastTaskID = "task-123"
+	d.mu.Unlock()
+
+	// Second request - should return updated data with different ETag
+	req2 := httptest.NewRequest("GET", "/api/dashboard", nil)
+	rec2 := httptest.NewRecorder()
+	h.HandleDashboardData(rec2, req2)
+
+	require.Equal(t, http.StatusOK, rec2.Code)
+
+	var data2 DashboardData
+	err = json.Unmarshal(rec2.Body.Bytes(), &data2)
+	require.NoError(t, err)
+
+	require.Len(t, data2.Helpers, 1)
+	require.Equal(t, "submitted", data2.Helpers[0].Jobs[0].LastStatus)
+	require.Equal(t, "task-123", data2.Helpers[0].Jobs[0].LastTaskID)
+
+	etag2 := rec2.Header().Get("ETag")
+	require.NotEqual(t, etag1, etag2, "ETag should change when job status changes")
+}
+
+func TestHandleDashboardDataHelperJobStatusETagBehavior(t *testing.T) {
+	t.Parallel()
+
+	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
+	h := newTestHandlers(t, d, "test", nil)
+
+	// Add a helper with a job
+	helperURL := "http://localhost:9002"
+	d.mu.Lock()
+	d.components[helperURL] = &ComponentStatus{
+		URL:     helperURL,
+		Type:    "helper",
+		State:   "running",
+		Version: "v1",
+		Jobs: []JobStatus{
+			{
+				Name:       "cron-job",
+				Schedule:   "*/5 * * * *",
+				NextRun:    time.Now().Add(5 * time.Minute),
+				LastStatus: "pending",
+			},
+		},
+	}
+	d.mu.Unlock()
+
+	// Get initial ETag
+	req1 := httptest.NewRequest("GET", "/api/dashboard", nil)
+	rec1 := httptest.NewRecorder()
+	h.HandleDashboardData(rec1, req1)
+	etag1 := rec1.Header().Get("ETag")
+
+	// Request with same data - should return 304
+	req2 := httptest.NewRequest("GET", "/api/dashboard", nil)
+	req2.Header.Set("If-None-Match", etag1)
+	rec2 := httptest.NewRecorder()
+	h.HandleDashboardData(rec2, req2)
+
+	require.Equal(t, http.StatusNotModified, rec2.Code, "Same data should return 304")
+
+	// Update job status
+	d.mu.Lock()
+	d.components[helperURL].Jobs[0].LastStatus = "queued"
+	d.mu.Unlock()
+
+	// Request with old ETag after job status change - should return 200
+	req3 := httptest.NewRequest("GET", "/api/dashboard", nil)
+	req3.Header.Set("If-None-Match", etag1)
+	rec3 := httptest.NewRecorder()
+	h.HandleDashboardData(rec3, req3)
+
+	require.Equal(t, http.StatusOK, rec3.Code, "Changed data should return 200 with new data")
+
+	var data3 DashboardData
+	err := json.Unmarshal(rec3.Body.Bytes(), &data3)
+	require.NoError(t, err)
+	require.Equal(t, "queued", data3.Helpers[0].Jobs[0].LastStatus)
 }

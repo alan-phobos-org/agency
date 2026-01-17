@@ -55,7 +55,7 @@ The scheduler is a **Helper** component (Statusable + Observable) that triggers 
 
 ```yaml
 # ag-scheduler configuration
-port: 9100                    # Port for /status endpoint
+port: 9010                    # Port for /status endpoint (dev default)
 log_level: info               # debug, info, warn, error
 agent_url: http://localhost:9000  # Default agent to submit tasks to
 
@@ -77,7 +77,7 @@ jobs:
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `port` | int | No | 9100 | Status endpoint port |
+| `port` | int | No | 9100 | Status endpoint port (deployments use 9010/9110) |
 | `log_level` | string | No | info | Log verbosity |
 | `director_url` | string | No | - | Web director internal API URL for session tracking |
 | `agent_url` | string | No | http://localhost:9000 | Default agent URL (fallback if director unavailable) |
@@ -97,12 +97,7 @@ For scheduled jobs to appear in the web UI with proper session tracking:
    director_url: http://localhost:8080
    ```
 
-When `director_url` is configured, the scheduler routes task submissions through the web director, which:
-- Creates sessions tracked in the SessionStore
-- Tags sessions with `source: scheduler` and `source_job: <job-name>`
-- Makes jobs visible in the web dashboard
-
-If the director is unavailable, the scheduler falls back to direct agent submission (sessions won't appear in web UI).
+When `director_url` is configured, the scheduler submits to the director queue (`/api/queue/task`), which creates tracked sessions and tags jobs with `source` metadata. If the director is unavailable, the scheduler falls back to direct agent submission (sessions won't appear in web UI).
 
 ### Job Fields
 
@@ -200,7 +195,7 @@ Graceful shutdown with optional drain period.
 
 ### Task Submission
 
-1. When a job triggers, scheduler submits task to agent via `POST /task`
+1. When a job triggers, scheduler submits to `POST /api/queue/task` on `director_url` if configured; otherwise `POST /task` to the agent
 2. Scheduler logs the submission result but does not track completion
 3. If agent is busy (409), scheduler logs warning and skips this run
 4. If agent is unreachable, scheduler logs error and skips this run
@@ -251,7 +246,7 @@ cmd/ag-scheduler/
 
 ```yaml
 # configs/scheduler.yaml
-port: 9100
+port: 9010
 agent_url: http://localhost:9000
 
 jobs:

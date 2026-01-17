@@ -99,7 +99,7 @@ const (
 
 // NewStore creates a new history store at the given directory.
 func NewStore(dir string) (*Store, error) {
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, fmt.Errorf("creating history directory: %w", err)
 	}
 
@@ -146,7 +146,7 @@ func (s *Store) SaveDebugLog(taskID string, debugLog []byte) error {
 	defer s.mu.Unlock()
 
 	debugPath := s.debugPath(taskID)
-	if err := os.WriteFile(debugPath, debugLog, 0644); err != nil {
+	if err := os.WriteFile(debugPath, debugLog, 0600); err != nil {
 		return fmt.Errorf("saving debug log: %w", err)
 	}
 
@@ -343,5 +343,5 @@ func writeJSON(path string, v interface{}) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0600)
 }

@@ -22,6 +22,12 @@ func main() {
 	switch os.Args[1] {
 	case "task":
 		taskCmd(os.Args[2:])
+	case "queue":
+		queueCmd(os.Args[2:])
+	case "queue-status":
+		queueStatusCmd(os.Args[2:])
+	case "queue-cancel":
+		queueCancelCmd(os.Args[2:])
 	case "status":
 		statusCmd(os.Args[2:])
 	case "discover":
@@ -44,11 +50,14 @@ Usage:
   ag-cli <command> [flags]
 
 Commands:
-  task       Submit a task to an agent
-  status     Get status of an agent or component
-  discover   Discover running components
-  version    Show version
-  help       Show this help
+  task          Submit a task to an agent (direct)
+  queue         Submit a task to the queue (via director)
+  queue-status  Get queue status or specific queued task
+  queue-cancel  Cancel a queued task
+  status        Get status of an agent or component
+  discover      Discover running components
+  version       Show version
+  help          Show this help
 
 Run 'ag-cli <command> -h' for command-specific help.`)
 }
@@ -250,5 +259,195 @@ func discoverCmd(args []string) {
 		fmt.Println("No components found.")
 	} else {
 		fmt.Printf("\nFound %d component(s)\n", found)
+	}
+}
+
+// queueCmd handles the 'queue' subcommand - submit task to queue
+func queueCmd(args []string) {
+	fs := flag.NewFlagSet("queue", flag.ExitOnError)
+	directorURL := fs.String("director", "http://localhost:8080", "Director URL")
+	model := fs.String("model", "", "Model override (opus, sonnet, haiku)")
+	timeout := fs.Duration("timeout", 30*time.Minute, "Task timeout")
+	source := fs.String("source", "cli", "Source identifier")
+	fs.Parse(args)
+
+	remaining := fs.Args()
+	if len(remaining) == 0 {
+		fmt.Fprintf(os.Stderr, "Usage: ag-cli queue [flags] <prompt>\n")
+		fs.PrintDefaults()
+		os.Exit(1)
+	}
+	prompt := remaining[0]
+
+	client := &http.Client{Timeout: 30 * time.Second}
+
+	// Submit to queue
+	queueReq := map[string]interface{}{
+		"prompt":          prompt,
+		"timeout_seconds": int(timeout.Seconds()),
+		"source":          *source,
+	}
+	if *model != "" {
+		queueReq["model"] = *model
+	}
+	body, _ := json.Marshal(queueReq)
+
+	resp, err := client.Post(*directorURL+"/api/queue/task", "application/json", bytes.NewReader(body))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error submitting to queue: %v\n", err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode == http.StatusServiceUnavailable {
+		fmt.Fprintf(os.Stderr, "Error: queue is at capacity\n")
+		os.Exit(1)
+	}
+
+	if resp.StatusCode != http.StatusCreated {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", respBody)
+		os.Exit(1)
+	}
+
+	var queueResp struct {
+		QueueID  string `json:"queue_id"`
+		Position int    `json:"position"`
+		State    string `json:"state"`
+	}
+	if err := json.Unmarshal(respBody, &queueResp); err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing response: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Queued: %s (position %d)\n", queueResp.QueueID, queueResp.Position)
+}
+
+// queueStatusCmd handles the 'queue-status' subcommand
+func queueStatusCmd(args []string) {
+	fs := flag.NewFlagSet("queue-status", flag.ExitOnError)
+	directorURL := fs.String("director", "http://localhost:8080", "Director URL")
+	fs.Parse(args)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	// Check if specific queue ID provided
+	remaining := fs.Args()
+	if len(remaining) > 0 {
+		// Get specific queued task
+		queueID := remaining[0]
+		resp, err := client.Get(*directorURL + "/api/queue/" + queueID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusNotFound {
+			fmt.Fprintf(os.Stderr, "Queued task not found: %s\n", queueID)
+			os.Exit(1)
+		}
+
+		var task map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&task); err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing response: %v\n", err)
+			os.Exit(1)
+		}
+
+		output, _ := json.MarshalIndent(task, "", "  ")
+		fmt.Println(string(output))
+		return
+	}
+
+	// Get full queue status
+	resp, err := client.Get(*directorURL + "/api/queue")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	var queue struct {
+		Depth            int     `json:"depth"`
+		MaxSize          int     `json:"max_size"`
+		OldestAgeSeconds float64 `json:"oldest_age_seconds"`
+		DispatchedCount  int     `json:"dispatched_count"`
+		Tasks            []struct {
+			QueueID       string `json:"queue_id"`
+			State         string `json:"state"`
+			Position      int    `json:"position"`
+			PromptPreview string `json:"prompt_preview"`
+			Source        string `json:"source"`
+		} `json:"tasks"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&queue); err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing response: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Queue: %d/%d pending, %d dispatched\n", queue.Depth, queue.MaxSize, queue.DispatchedCount)
+	if queue.OldestAgeSeconds > 0 {
+		fmt.Printf("Oldest task age: %.1fs\n", queue.OldestAgeSeconds)
+	}
+	fmt.Println()
+
+	if len(queue.Tasks) == 0 {
+		fmt.Println("No tasks in queue.")
+		return
+	}
+
+	for _, task := range queue.Tasks {
+		posStr := ""
+		if task.Position > 0 {
+			posStr = fmt.Sprintf("#%d ", task.Position)
+		}
+		fmt.Printf("  %s[%s] %s%s\n", task.QueueID, task.State, posStr, task.PromptPreview)
+	}
+}
+
+// queueCancelCmd handles the 'queue-cancel' subcommand
+func queueCancelCmd(args []string) {
+	fs := flag.NewFlagSet("queue-cancel", flag.ExitOnError)
+	directorURL := fs.String("director", "http://localhost:8080", "Director URL")
+	fs.Parse(args)
+
+	remaining := fs.Args()
+	if len(remaining) == 0 {
+		fmt.Fprintf(os.Stderr, "Usage: ag-cli queue-cancel [flags] <queue_id>\n")
+		fs.PrintDefaults()
+		os.Exit(1)
+	}
+	queueID := remaining[0]
+
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	req, _ := http.NewRequest(http.MethodPost, *directorURL+"/api/queue/"+queueID+"/cancel", nil)
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		fmt.Fprintf(os.Stderr, "Queued task not found: %s\n", queueID)
+		os.Exit(1)
+	}
+
+	var result struct {
+		QueueID       string `json:"queue_id"`
+		State         string `json:"state"`
+		WasDispatched bool   `json:"was_dispatched"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing response: %v\n", err)
+		os.Exit(1)
+	}
+
+	if result.WasDispatched {
+		fmt.Printf("Cancelled %s (was dispatched to agent)\n", result.QueueID)
+	} else {
+		fmt.Printf("Cancelled %s\n", result.QueueID)
 	}
 }

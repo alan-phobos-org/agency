@@ -5,7 +5,6 @@ This document describes the design for a task queue system that allows work to b
 **Related docs:**
 - [DESIGN.md](DESIGN.md) - Core architecture
 - [SCHEDULER_DESIGN.md](SCHEDULER_DESIGN.md) - Scheduler architecture (cron-style triggering)
-- [SESSION_ROUTING_DESIGN.md](SESSION_ROUTING_DESIGN.md) - Centralized session routing
 - [TASK_STATE_SYNC_DESIGN.md](TASK_STATE_SYNC_DESIGN.md) - State synchronization
 
 ---
@@ -87,7 +86,7 @@ The queue lives in the **Web Director** component. All task submitters (Web UI, 
                         |         |         |              v
          +--------------+-+ +-----+-----+ +-+--------+ +-------+
          |    Scheduler   | |  Web UI   | |   CLI    | | Agent |
-         |     (9100)     | | (browser) | | ag-cli   | | (9000)|
+         |                | | (browser) | | ag-cli   | |       |
          +----------------+ +-----------+ +----------+ +-------+
 ```
 
@@ -317,155 +316,12 @@ func (q *WorkQueue) loadFromDisk() error {
 
 ## Queue API
 
-### Submit Task to Queue
+The queue API surface (submit, status, detail, cancel) is specified in [REFERENCE.md](REFERENCE.md). This document focuses on queue behavior and data model rather than duplicating request/response examples.
 
-**POST /api/queue/task**
-
-Submit a task to the queue. Returns immediately with queue position.
-
-**Request:**
-```json
-{
-  "prompt": "Task prompt here",
-  "model": "sonnet",
-  "timeout_seconds": 1800,
-  "session_id": "optional-session-id",
-  "source": "scheduler",
-  "source_job": "nightly-maintenance"
-}
-```
-
-**Response (201 Created):**
-```json
-{
-  "queue_id": "queue-abc12345",
-  "position": 3,
-  "state": "pending"
-}
-```
-
-**Error Responses:**
-- `400 Bad Request` - Invalid request (missing prompt)
-- `503 Service Unavailable` - Queue full (50 tasks)
-
-```go
-func (h *Handlers) HandleQueueSubmit(w http.ResponseWriter, r *http.Request) {
-    var req QueueSubmitRequest
-    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-        api.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
-        return
-    }
-
-    if req.Prompt == "" {
-        api.WriteError(w, http.StatusBadRequest, "validation_error", "prompt is required")
-        return
-    }
-
-    task, position, err := h.queue.Add(req)
-    if err == ErrQueueFull {
-        api.WriteError(w, http.StatusServiceUnavailable, "queue_full",
-            fmt.Sprintf("Queue is at capacity (%d tasks)", DefaultMaxSize))
-        return
-    }
-
-    api.WriteJSON(w, http.StatusCreated, map[string]interface{}{
-        "queue_id": task.QueueID,
-        "position": position,
-        "state":    task.State,
-    })
-}
-```
-
-### Get Queue Status
-
-**GET /api/queue**
-
-Returns queue state and pending tasks.
-
-**Response:**
-```json
-{
-  "depth": 5,
-  "max_size": 50,
-  "oldest_age_seconds": 300,
-  "tasks": [
-    {
-      "queue_id": "queue-abc12345",
-      "state": "pending",
-      "position": 1,
-      "created_at": "2025-01-17T10:00:00Z",
-      "prompt_preview": "Perform nightly maintenance...",
-      "source": "scheduler"
-    },
-    {
-      "queue_id": "queue-def67890",
-      "state": "dispatching",
-      "position": 2,
-      "created_at": "2025-01-17T10:01:00Z",
-      "prompt_preview": "Review pull request...",
-      "source": "web"
-    }
-  ]
-}
-```
-
-### Get Queued Task Status
-
-**GET /api/queue/{queue_id}**
-
-Returns detailed status of a queued task.
-
-**Response (pending):**
-```json
-{
-  "queue_id": "queue-abc12345",
-  "state": "pending",
-  "position": 2,
-  "created_at": "2025-01-17T10:00:00Z",
-  "attempts": 0,
-  "source": "scheduler"
-}
-```
-
-**Response (dispatched/working):**
-```json
-{
-  "queue_id": "queue-abc12345",
-  "state": "working",
-  "task_id": "task-xyz789",
-  "agent_url": "http://localhost:9000",
-  "dispatched_at": "2025-01-17T10:05:00Z",
-  "source": "scheduler"
-}
-```
-
-**Response (404):** Task not found (completed or never existed)
-
-### Cancel Queued Task
-
-**POST /api/queue/{queue_id}/cancel**
-
-Removes a task from the queue or cancels it on the agent if already dispatched.
-
-**Response:**
-```json
-{
-  "queue_id": "queue-abc12345",
-  "state": "cancelled",
-  "was_dispatched": false
-}
-```
-
-If the task was already dispatched:
-```json
-{
-  "queue_id": "queue-abc12345",
-  "state": "cancelled",
-  "was_dispatched": true,
-  "agent_url": "http://localhost:9000",
-  "task_id": "task-xyz789"
-}
-```
+Key behaviors:
+- Submit returns `queue_id`, `position`, and initial `state` (`pending`).
+- Queue full returns `503 Service Unavailable`.
+- Positions apply only to pending tasks; dispatched tasks include `agent_url` and `task_id`.
 
 ---
 
@@ -473,100 +329,17 @@ If the task was already dispatched:
 
 ### Dispatcher Loop
 
-The dispatcher runs as a background goroutine, polling every second:
-
-```go
-func (d *Dispatcher) Start(stop <-chan struct{}) {
-    ticker := time.NewTicker(time.Second)
-    defer ticker.Stop()
-
-    for {
-        select {
-        case <-stop:
-            return
-        case <-ticker.C:
-            d.dispatchNext()
-        }
-    }
-}
-
-func (d *Dispatcher) dispatchNext() {
-    // Find first idle agent
-    agent := d.findFirstIdleAgent()
-    if agent == nil {
-        return // No idle agents
-    }
-
-    // Get next pending task (FIFO)
-    task := d.queue.NextPending()
-    if task == nil {
-        return // Queue empty
-    }
-
-    // Mark as dispatching and persist
-    d.queue.SetState(task, TaskStateDispatching)
-
-    // Submit to agent
-    taskID, sessionID, err := d.submitToAgent(agent, task)
-
-    if err != nil {
-        d.handleDispatchError(task, err)
-        return
-    }
-
-    // Success - update task with agent info
-    d.queue.SetDispatched(task, agent.URL, taskID, sessionID)
-}
-
-func (d *Dispatcher) findFirstIdleAgent() *AgentInfo {
-    agents := d.discovery.GetAgents()
-    for _, agent := range agents {
-        if agent.State == "idle" && agent.Healthy {
-            return agent
-        }
-    }
-    return nil
-}
-```
+The dispatcher runs in the background (1s cadence):
+- Find the first idle, healthy agent.
+- Pop the next pending task (FIFO).
+- Mark task as `dispatching`, submit to agent, then persist agent URL/task ID on success.
+- On errors, route to dispatch error handling (requeue or fail).
 
 ### Dispatch Error Handling
 
-```go
-func (d *Dispatcher) handleDispatchError(task *QueuedTask, err error) {
-    task.Attempts++
-    task.LastError = err.Error()
-
-    // Check if it's a retryable error
-    if isAgentBusy(err) {
-        // Agent became busy between check and submit - re-queue at back
-        d.queue.RequeueAtBack(task)
-        return
-    }
-
-    if task.Attempts >= d.config.MaxAttempts {
-        // Max attempts reached - fail the task
-        d.queue.SetState(task, TaskStateFailed)
-        d.queue.Remove(task)
-        log.Printf("queue=dispatch_failed queue_id=%s error=%q attempts=%d",
-            task.QueueID, err, task.Attempts)
-        return
-    }
-
-    // Retryable error - back to pending
-    d.queue.SetState(task, TaskStatePending)
-    log.Printf("queue=dispatch_retry queue_id=%s error=%q attempt=%d/%d",
-        task.QueueID, err, task.Attempts, d.config.MaxAttempts)
-}
-
-func isAgentBusy(err error) bool {
-    // Check for 409 Conflict response
-    var httpErr *HTTPError
-    if errors.As(err, &httpErr) {
-        return httpErr.StatusCode == http.StatusConflict
-    }
-    return false
-}
-```
+- 409 from agent: requeue at back (agent raced to busy).
+- Retryable errors: increment attempts and return to pending.
+- Max attempts reached: mark failed and remove from queue.
 
 ### Task Completion Tracking
 
@@ -638,71 +411,17 @@ Browser                    Web Director                Agent
 
 #### Handler Changes
 
-```go
-// HandleTaskSubmit now routes through queue
-func (h *Handlers) HandleTaskSubmit(w http.ResponseWriter, r *http.Request) {
-    var req TaskSubmitRequest
-    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-        api.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
-        return
-    }
-
-    // Convert to queue request
-    queueReq := QueueSubmitRequest{
-        Prompt:         req.Prompt,
-        Model:          req.Model,
-        TimeoutSeconds: req.TimeoutSeconds,
-        SessionID:      req.SessionID,
-        Project:        req.Project,
-        Env:            req.Env,
-        Thinking:       req.Thinking,
-        Source:         "web",
-    }
-
-    task, position, err := h.queue.Add(queueReq)
-    if err == ErrQueueFull {
-        api.WriteError(w, http.StatusServiceUnavailable, "queue_full",
-            "Queue is at capacity. Please try again later.")
-        return
-    }
-
-    // Return queue info (different from direct submission)
-    api.WriteJSON(w, http.StatusAccepted, map[string]interface{}{
-        "queue_id": task.QueueID,
-        "position": position,
-        "state":    "pending",
-        "message":  "Task queued for execution",
-    })
-}
-```
+- `/api/task` should enqueue and return `queue_id`, `position`, and `state` instead of a direct `task_id`.
+- `queue_full` returns 503 with a user-facing error.
+- Request fields map 1:1 from task submission to queue submission, with `source: web`.
 
 #### Dashboard Changes
 
-The dashboard needs to:
-1. Show queue depth in the header/status area
-2. Display pending tasks in a "Queue" panel
-3. Allow cancellation of queued tasks
-4. Update task status as it moves through states
-
-```javascript
-// Alpine.js additions to dashboard
-{
-    queue: [],
-    queueDepth: 0,
-
-    async fetchQueue() {
-        const resp = await fetch('/api/queue');
-        const data = await resp.json();
-        this.queue = data.tasks;
-        this.queueDepth = data.depth;
-    },
-
-    async cancelQueued(queueId) {
-        await fetch(`/api/queue/${queueId}/cancel`, { method: 'POST' });
-        this.fetchQueue();
-    }
-}
-```
+Dashboard updates:
+1. Show queue depth in the header/status area.
+2. Display pending tasks in a Queue panel.
+3. Allow cancellation of queued tasks.
+4. Update task status as it moves through queue states.
 
 ### Scheduler Integration
 
@@ -728,83 +447,15 @@ func (s *Scheduler) runJob(js *jobState) {
 
 #### New Flow (Queue)
 
-```go
-func (s *Scheduler) runJob(js *jobState) {
-    // Always use queue via director
-    if s.config.DirectorURL == "" {
-        log.Printf("job=%s action=skipped reason=no_director_url", js.Job.Name)
-        s.updateJobState(js, "skipped_no_director", "")
-        return
-    }
-
-    queueID, err := s.submitViaQueue(js)
-    if err != nil {
-        if isQueueFull(err) {
-            log.Printf("job=%s action=skipped reason=queue_full", js.Job.Name)
-            s.updateJobState(js, "skipped_queue_full", "")
-        } else {
-            log.Printf("job=%s action=skipped reason=error error=%q", js.Job.Name, err)
-            s.updateJobState(js, "skipped_error", "")
-        }
-        return
-    }
-
-    log.Printf("job=%s action=queued queue_id=%s", js.Job.Name, queueID)
-    s.updateJobState(js, "queued", queueID)
-}
-
-func (s *Scheduler) submitViaQueue(js *jobState) (string, error) {
-    req := QueueSubmitRequest{
-        Prompt:         js.Job.Prompt,
-        Model:          js.Job.Model,
-        TimeoutSeconds: int(js.Job.Timeout.Seconds()),
-        Source:         "scheduler",
-        SourceJob:      js.Job.Name,
-    }
-
-    body, _ := json.Marshal(req)
-    resp, err := s.client.Post(
-        s.config.DirectorURL+"/api/queue/task",
-        "application/json",
-        bytes.NewReader(body),
-    )
-    if err != nil {
-        return "", err
-    }
-    defer resp.Body.Close()
-
-    if resp.StatusCode == http.StatusServiceUnavailable {
-        return "", ErrQueueFull
-    }
-    if resp.StatusCode != http.StatusCreated {
-        return "", fmt.Errorf("unexpected status: %d", resp.StatusCode)
-    }
-
-    var result struct {
-        QueueID string `json:"queue_id"`
-    }
-    json.NewDecoder(resp.Body).Decode(&result)
-    return result.QueueID, nil
-}
-```
+- Scheduler submits to `POST /api/queue/task` on `director_url`.
+- If `director_url` is missing or queue is full, mark the job as skipped with a specific status.
+- On success, store `queue_id` on the job state and report `queued`.
 
 #### Config Changes
 
-```yaml
-# configs/scheduler.yaml
-port: 9100
-log_level: info
-director_url: http://localhost:8080  # Required for queue submission
-
-# agent_url no longer needed - queue handles dispatch
-# agent_url: http://localhost:9000  # Removed
-
-jobs:
-  - name: nightly-maintenance
-    schedule: "0 1 * * *"
-    prompt: |
-      Perform nightly maintenance...
-```
+- `director_url` is required for queue submission (use the web internal port).
+- Keep `agent_url` only as an explicit fallback when the director is unavailable.
+- See `configs/scheduler.yaml` for canonical values.
 
 #### Job Status Changes
 
@@ -825,24 +476,7 @@ type jobState struct {
 
 #### Status Endpoint Changes
 
-```json
-{
-  "type": "helper",
-  "interfaces": ["statusable", "observable"],
-  "version": "1.0.0",
-  "state": "running",
-  "jobs": [
-    {
-      "name": "nightly-maintenance",
-      "schedule": "0 1 * * *",
-      "next_run": "2025-01-18T01:00:00Z",
-      "last_run": "2025-01-17T01:00:00Z",
-      "last_status": "queued",
-      "last_queue_id": "queue-abc12345"
-    }
-  ]
-}
-```
+- `/status` includes `last_queue_id` and queue-related `last_status` values (`queued`, `skipped_queue_full`, etc.).
 
 ### CLI Integration
 
@@ -864,59 +498,7 @@ ag-cli queue-cancel queue-abc12345
 
 #### Implementation
 
-```go
-// cmd/ag-cli/queue.go
-
-func cmdQueue(args []string) error {
-    if len(args) < 1 {
-        return fmt.Errorf("usage: ag-cli queue <prompt> [--model MODEL] [--timeout DURATION]")
-    }
-
-    prompt := args[0]
-    model := flagModel
-    timeout := flagTimeout
-
-    req := QueueSubmitRequest{
-        Prompt:         prompt,
-        Model:          model,
-        TimeoutSeconds: int(timeout.Seconds()),
-        Source:         "cli",
-    }
-
-    resp, err := submitToQueue(directorURL, req)
-    if err != nil {
-        return err
-    }
-
-    fmt.Printf("Queued: %s (position %d)\n", resp.QueueID, resp.Position)
-    return nil
-}
-
-func cmdQueueStatus(args []string) error {
-    if len(args) > 0 {
-        // Specific task
-        task, err := getQueuedTask(directorURL, args[0])
-        if err != nil {
-            return err
-        }
-        printQueuedTask(task)
-        return nil
-    }
-
-    // Full queue
-    queue, err := getQueue(directorURL)
-    if err != nil {
-        return err
-    }
-
-    fmt.Printf("Queue: %d/%d tasks\n", queue.Depth, queue.MaxSize)
-    for i, task := range queue.Tasks {
-        fmt.Printf("  %d. %s [%s] %s\n",
-            i+1, task.QueueID, task.State, task.PromptPreview)
-    }
-    return nil
-}
-```
+CLI commands are thin wrappers over the queue API; keep argument parsing and output formatting minimal.
 
 ---
 
@@ -964,12 +546,7 @@ AG_QUEUE_DISPATCH_TIMEOUT=30s    # Agent response timeout (default: 30s)
 
 ### Scheduler
 
-```yaml
-# configs/scheduler.yaml
-port: 9100
-director_url: http://localhost:8080  # Required
-# agent_url removed - queue handles dispatch
-```
+Scheduler submits via `director_url` (internal web port) to `POST /api/queue/task`. Keep `agent_url` only as an explicit fallback when the director is unavailable. See `configs/scheduler.yaml` and [SCHEDULER_DESIGN.md](SCHEDULER_DESIGN.md).
 
 ---
 
@@ -1187,13 +764,13 @@ For components that need immediate task IDs (e.g., session tracking), they poll 
 
 ### Scheduler Migration
 
-1. Add `director_url` to scheduler config (already exists per SESSION_ROUTING_DESIGN.md)
+1. Add `director_url` to scheduler config (already exists in `configs/scheduler.yaml`)
 2. Remove `agent_url` from scheduler config
 3. Scheduler automatically uses queue API
 
 ### No Fallback
 
-Unlike SESSION_ROUTING_DESIGN.md which proposed fallback to direct agent submission, the queue model requires all submissions to go through the director. If the director is down, tasks cannot be submitted.
+Queue submission prefers the director. If the director is unavailable and `agent_url` is configured, fallback to direct agent submission is allowed but bypasses the queue and session tracking.
 
 Rationale: Simpler model, guaranteed queue visibility, no split-brain scenarios.
 
@@ -1203,6 +780,5 @@ Rationale: Simpler model, guaranteed queue visibility, no split-brain scenarios.
 
 - [DESIGN.md](DESIGN.md) - Core architecture
 - [SCHEDULER_DESIGN.md](SCHEDULER_DESIGN.md) - Cron-style scheduling
-- [SESSION_ROUTING_DESIGN.md](SESSION_ROUTING_DESIGN.md) - Session management
 - [TASK_STATE_SYNC_DESIGN.md](TASK_STATE_SYNC_DESIGN.md) - State synchronization
 - [REFERENCE.md](REFERENCE.md) - API specifications

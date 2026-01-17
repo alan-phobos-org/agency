@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -33,11 +34,15 @@ type Director struct {
 	version        string
 	discovery      *Discovery
 	handlers       *Handlers
+	queueHandlers  *QueueHandlers
+	queue          *WorkQueue
+	dispatcher     *Dispatcher
 	server         *http.Server
 	internalServer *http.Server // Internal HTTP server (no auth)
 	rateLimiter    *RateLimiter
 	accessLogger   *AccessLogger
 	authStore      *AuthStore
+	dispatchCancel context.CancelFunc
 }
 
 // New creates a new web director
@@ -97,15 +102,53 @@ func New(cfg *Config, version string) (*Director, error) {
 		return nil, err
 	}
 
+	// Create work queue
+	queueDir := DefaultQueuePath()
+	queue, err := NewWorkQueue(QueueConfig{
+		Dir:             queueDir,
+		MaxSize:         DefaultMaxSize,
+		MaxAttempts:     DefaultMaxAttempts,
+		DispatchTimeout: DefaultDispatchTimeout,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("creating work queue: %w", err)
+	}
+
+	// Set queue on handlers for status reporting
+	handlers.SetQueue(queue)
+
+	// Create queue handlers
+	queueHandlers := NewQueueHandlers(queue, discovery, handlers.sessionStore)
+
+	// Create dispatcher
+	dispatcher := NewDispatcher(queue, discovery, handlers.sessionStore)
+
 	return &Director{
-		config:       cfg,
-		version:      version,
-		discovery:    discovery,
-		handlers:     handlers,
-		rateLimiter:  rateLimiter,
-		accessLogger: accessLogger,
-		authStore:    cfg.AuthStore,
+		config:        cfg,
+		version:       version,
+		discovery:     discovery,
+		handlers:      handlers,
+		queueHandlers: queueHandlers,
+		queue:         queue,
+		dispatcher:    dispatcher,
+		rateLimiter:   rateLimiter,
+		accessLogger:  accessLogger,
+		authStore:     cfg.AuthStore,
 	}, nil
+}
+
+// DefaultQueuePath returns the default queue directory path.
+// Uses AGENCY_ROOT env var if set, otherwise ~/.agency/queue
+func DefaultQueuePath() string {
+	root := os.Getenv("AGENCY_ROOT")
+	if root == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			home = "/tmp"
+		}
+		root = filepath.Join(home, ".agency")
+	}
+	return filepath.Join(root, "queue")
 }
 
 // Router returns the HTTP router
@@ -135,8 +178,8 @@ func (d *Director) Router() chi.Router {
 		r.Get("/dashboard", d.handlers.HandleDashboardData) // Consolidated endpoint with ETag
 		r.Get("/agents", d.handlers.HandleAgents)
 		r.Get("/directors", d.handlers.HandleDirectors)
-		r.Get("/contexts", d.handlers.HandleContexts) // Available task contexts
-		r.Post("/task", d.handlers.HandleTaskSubmit)
+		r.Get("/contexts", d.handlers.HandleContexts)             // Available task contexts
+		r.Post("/task", d.queueHandlers.HandleTaskSubmitViaQueue) // Route through queue
 		r.Get("/task/{id}", func(w http.ResponseWriter, r *http.Request) {
 			taskID := chi.URLParam(r, "id")
 			d.handlers.HandleTaskStatus(w, r, taskID)
@@ -174,6 +217,17 @@ func (d *Director) Router() chi.Router {
 			}
 			d.handlers.HandleTriggerJob(w, req, schedulerURL, jobName)
 		})
+		// Queue endpoints
+		r.Post("/queue/task", d.queueHandlers.HandleQueueSubmit)
+		r.Get("/queue", d.queueHandlers.HandleQueueStatus)
+		r.Get("/queue/{queueId}", func(w http.ResponseWriter, req *http.Request) {
+			queueID := chi.URLParam(req, "queueId")
+			d.queueHandlers.HandleQueueTaskStatus(w, req, queueID)
+		})
+		r.Post("/queue/{queueId}/cancel", func(w http.ResponseWriter, req *http.Request) {
+			queueID := chi.URLParam(req, "queueId")
+			d.queueHandlers.HandleQueueCancel(w, req, queueID)
+		})
 	})
 
 	return r
@@ -188,7 +242,7 @@ func (d *Director) InternalRouter() chi.Router {
 	// Internal API endpoints (no auth required)
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/status", d.handlers.HandleStatus)
-		r.Post("/task", d.handlers.HandleTaskSubmit)
+		r.Post("/task", d.queueHandlers.HandleTaskSubmitViaQueue) // Route through queue
 		r.Get("/task/{id}", func(w http.ResponseWriter, req *http.Request) {
 			taskID := chi.URLParam(req, "id")
 			d.handlers.HandleTaskStatus(w, req, taskID)
@@ -198,6 +252,17 @@ func (d *Director) InternalRouter() chi.Router {
 			d.handlers.HandleTaskHistory(w, req, taskID)
 		})
 		r.Get("/sessions", d.handlers.HandleSessions)
+		// Queue endpoints
+		r.Post("/queue/task", d.queueHandlers.HandleQueueSubmit)
+		r.Get("/queue", d.queueHandlers.HandleQueueStatus)
+		r.Get("/queue/{queueId}", func(w http.ResponseWriter, req *http.Request) {
+			queueID := chi.URLParam(req, "queueId")
+			d.queueHandlers.HandleQueueTaskStatus(w, req, queueID)
+		})
+		r.Post("/queue/{queueId}/cancel", func(w http.ResponseWriter, req *http.Request) {
+			queueID := chi.URLParam(req, "queueId")
+			d.queueHandlers.HandleQueueCancel(w, req, queueID)
+		})
 	})
 
 	// Shutdown endpoint (internal only, cascades to all services)
@@ -225,6 +290,11 @@ func (d *Director) Start() error {
 
 	// Start discovery in background
 	go d.discovery.Start(context.Background())
+
+	// Start dispatcher in background
+	dispatchCtx, dispatchCancel := context.WithCancel(context.Background())
+	d.dispatchCancel = dispatchCancel
+	go d.dispatcher.Start(dispatchCtx)
 
 	// Setup TLS
 	if err := EnsureTLSCert(d.config.TLS); err != nil {
@@ -260,6 +330,10 @@ func (d *Director) Start() error {
 
 // Shutdown gracefully shuts down the director
 func (d *Director) Shutdown(ctx context.Context) error {
+	// Stop dispatcher
+	if d.dispatchCancel != nil {
+		d.dispatchCancel()
+	}
 	d.discovery.Stop()
 	if d.accessLogger != nil {
 		d.accessLogger.Close()

@@ -649,16 +649,18 @@ func TestSchedulerJobNoDoubleRun(t *testing.T) {
 func TestSchedulerDirectorRouting(t *testing.T) {
 	t.Parallel()
 
-	// Create mock director that accepts tasks
+	// Create mock director that accepts queue submissions
 	directorCalled := false
 	var receivedReq map[string]interface{}
 	director := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/task" && r.Method == "POST" {
+		if r.URL.Path == "/api/queue/task" && r.Method == "POST" {
 			directorCalled = true
 			json.NewDecoder(r.Body).Decode(&receivedReq)
 			w.WriteHeader(http.StatusCreated)
-			json.NewEncoder(w).Encode(map[string]string{
-				"task_id": "task-dir-123",
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"queue_id": "queue-123",
+				"position": 1,
+				"state":    "pending",
 			})
 			return
 		}
@@ -701,12 +703,11 @@ func TestSchedulerDirectorRouting(t *testing.T) {
 
 	s.runJob(js)
 
-	// Should have called director, not agent
-	assert.True(t, directorCalled, "Director should have been called")
+	// Should have called director queue API, not agent
+	assert.True(t, directorCalled, "Director queue API should have been called")
 	assert.False(t, agentCalled, "Agent should not have been called when director succeeds")
 
-	// Verify request format
-	assert.Equal(t, agent.URL, receivedReq["agent_url"])
+	// Verify request format (queue submission doesn't include agent_url)
 	assert.Equal(t, "Test prompt", receivedReq["prompt"])
 	assert.Equal(t, "opus", receivedReq["model"])
 	assert.Equal(t, float64(3600), receivedReq["timeout_seconds"])
@@ -714,31 +715,27 @@ func TestSchedulerDirectorRouting(t *testing.T) {
 	assert.Equal(t, "test-job", receivedReq["source_job"])
 
 	// Verify state
-	assert.Equal(t, "submitted", js.LastStatus)
-	assert.Equal(t, "task-dir-123", js.LastTaskID)
+	assert.Equal(t, "queued", js.LastStatus)
+	assert.Equal(t, "queue-123", js.LastQueueID)
 }
 
-func TestSchedulerDirectorFallbackToAgent(t *testing.T) {
+func TestSchedulerQueueFull(t *testing.T) {
 	t.Parallel()
 
-	// Create mock director that fails
+	// Create mock director that returns 503 (queue full)
 	director := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
 	defer director.Close()
 
-	// Create mock agent that succeeds
+	// Create mock agent (should not be called when queue is full)
 	agentCalled := false
 	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/task" && r.Method == "POST" {
-			agentCalled = true
-			w.WriteHeader(http.StatusCreated)
-			json.NewEncoder(w).Encode(map[string]string{
-				"task_id": "task-fallback-123",
-			})
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
+		agentCalled = true
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]string{
+			"task_id": "task-fallback-123",
+		})
 	}))
 	defer agent.Close()
 
@@ -766,10 +763,9 @@ func TestSchedulerDirectorFallbackToAgent(t *testing.T) {
 
 	s.runJob(js)
 
-	// Should have fallen back to agent
-	assert.True(t, agentCalled, "Agent should have been called as fallback")
-	assert.Equal(t, "submitted", js.LastStatus)
-	assert.Equal(t, "task-fallback-123", js.LastTaskID)
+	// Should skip when queue is full, not fallback
+	assert.False(t, agentCalled, "Agent should not be called when queue is full")
+	assert.Equal(t, "skipped_queue_full", js.LastStatus)
 }
 
 func TestSchedulerDirectorUnavailable(t *testing.T) {
@@ -853,26 +849,76 @@ func TestSchedulerNoDirectorConfigured(t *testing.T) {
 	assert.Equal(t, "task-agent-only", js.LastTaskID)
 }
 
-func TestSchedulerDirectorAgentBusy(t *testing.T) {
+func TestSchedulerDirectorFallbackToAgent(t *testing.T) {
 	t.Parallel()
 
-	// Create mock director that returns agent busy
+	// Create mock director that is unreachable (returns non-503 error)
 	director := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/task" {
-			w.WriteHeader(http.StatusConflict)
-			json.NewEncoder(w).Encode(map[string]string{"error": "agent_busy"})
+		// Return 500 to simulate director error (not queue full)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer director.Close()
+
+	// Create mock agent that succeeds
+	agentCalled := false
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/task" && r.Method == "POST" {
+			agentCalled = true
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(map[string]string{
+				"task_id": "task-fallback-123",
+			})
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)
 	}))
+	defer agent.Close()
+
+	cfg := &Config{
+		Port:        0,
+		DirectorURL: director.URL,
+		AgentURL:    agent.URL,
+		Jobs: []Job{
+			{
+				Name:     "test-job",
+				Schedule: "0 1 * * *",
+				Prompt:   "Test prompt",
+			},
+		},
+	}
+
+	s := New(cfg, "test")
+
+	cron, _ := ParseCron(cfg.Jobs[0].Schedule)
+	js := &jobState{
+		Job:  &cfg.Jobs[0],
+		Cron: cron,
+	}
+	s.jobs = []*jobState{js}
+
+	s.runJob(js)
+
+	// Should have fallen back to agent
+	assert.True(t, agentCalled, "Agent should have been called as fallback")
+	assert.Equal(t, "submitted", js.LastStatus)
+	assert.Equal(t, "task-fallback-123", js.LastTaskID)
+}
+
+func TestSchedulerDirectorAgentBusy(t *testing.T) {
+	t.Parallel()
+
+	// Create mock director that returns 500 (to trigger fallback)
+	director := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
 	defer director.Close()
 
-	// Create mock agent (should be called as fallback)
+	// Create mock agent that is busy
 	agentCalled := false
 	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/task" {
 			agentCalled = true
-			// Agent is also busy
+			// Agent is busy
 			w.WriteHeader(http.StatusConflict)
 			json.NewEncoder(w).Encode(map[string]string{"error": "agent_busy"})
 			return

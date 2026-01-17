@@ -10,7 +10,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -93,6 +95,10 @@ type TaskRequest struct {
 	Env            map[string]string   `json:"env,omitempty"`
 	Thinking       *bool               `json:"thinking,omitempty"` // Enable extended thinking (default: true)
 }
+
+const maxSessionIDLen = 128
+
+var sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 
 // StatusResponse represents the /status response
 type StatusResponse struct {
@@ -245,6 +251,29 @@ func (a *Agent) handleStatus(w http.ResponseWriter, r *http.Request) {
 	api.WriteJSON(w, http.StatusOK, resp)
 }
 
+func isSafeSessionID(sessionID string) bool {
+	if sessionID == "" || len(sessionID) > maxSessionIDLen {
+		return false
+	}
+	if strings.Contains(sessionID, "..") {
+		return false
+	}
+	if strings.Contains(sessionID, "/") || strings.Contains(sessionID, "\\") {
+		return false
+	}
+	if filepath.IsAbs(sessionID) {
+		return false
+	}
+	return sessionIDPattern.MatchString(sessionID)
+}
+
+func setTaskCompletion(task *Task, completedAt time.Time) {
+	task.CompletedAt = &completedAt
+	if task.StartedAt != nil {
+		task.DurationSeconds = completedAt.Sub(*task.StartedAt).Seconds()
+	}
+}
+
 // handleCreateTask validates and queues a new task for execution.
 // Returns 201 Created with task_id on success.
 // Returns 400 if validation fails, 409 if agent is busy.
@@ -257,6 +286,11 @@ func (a *Agent) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 
 	if req.Prompt == "" {
 		api.WriteError(w, http.StatusBadRequest, "validation_error", "prompt is required")
+		return
+	}
+
+	if req.SessionID != "" && !isSafeSessionID(req.SessionID) {
+		api.WriteError(w, http.StatusBadRequest, "validation_error", "session_id contains invalid characters")
 		return
 	}
 
@@ -339,34 +373,59 @@ func (a *Agent) handleGetTask(w http.ResponseWriter, r *http.Request) {
 
 	a.mu.RLock()
 	task, ok := a.tasks[taskID]
+	var resp map[string]interface{}
+	if ok {
+		var exitCode *int
+		if task.ExitCode != nil {
+			code := *task.ExitCode
+			exitCode = &code
+		}
+		var tokenUsage *TokenUsage
+		if task.TokenUsage != nil {
+			usage := *task.TokenUsage
+			tokenUsage = &usage
+		}
+		var taskError *TaskError
+		if task.Error != nil {
+			errCopy := *task.Error
+			taskError = &errCopy
+		}
+
+		resp = map[string]interface{}{
+			"task_id":          task.ID,
+			"state":            task.State,
+			"exit_code":        exitCode,
+			"output":           task.Output,
+			"session_id":       task.SessionID,
+			"token_usage":      tokenUsage,
+			"duration_seconds": task.DurationSeconds,
+		}
+
+		if task.StartedAt != nil {
+			resp["started_at"] = task.StartedAt.Format(time.RFC3339)
+		}
+		if task.CompletedAt != nil {
+			resp["completed_at"] = task.CompletedAt.Format(time.RFC3339)
+		}
+		if taskError != nil {
+			resp["error"] = taskError
+		}
+	}
 	a.mu.RUnlock()
 
-	if !ok {
-		api.WriteError(w, http.StatusNotFound, "not_found", fmt.Sprintf("Task %s not found", taskID))
+	if ok {
+		api.WriteJSON(w, http.StatusOK, resp)
 		return
 	}
 
-	resp := map[string]interface{}{
-		"task_id":          task.ID,
-		"state":            task.State,
-		"exit_code":        task.ExitCode,
-		"output":           task.Output,
-		"session_id":       task.SessionID,
-		"token_usage":      task.TokenUsage,
-		"duration_seconds": task.DurationSeconds,
+	if a.history != nil {
+		if entry, err := a.history.Get(taskID); err == nil {
+			api.WriteJSON(w, http.StatusOK, entry)
+			return
+		}
 	}
 
-	if task.StartedAt != nil {
-		resp["started_at"] = task.StartedAt.Format(time.RFC3339)
-	}
-	if task.CompletedAt != nil {
-		resp["completed_at"] = task.CompletedAt.Format(time.RFC3339)
-	}
-	if task.Error != nil {
-		resp["error"] = task.Error
-	}
-
-	api.WriteJSON(w, http.StatusOK, resp)
+	api.WriteError(w, http.StatusNotFound, "not_found", fmt.Sprintf("Task %s not found", taskID))
 }
 
 // handleCancelTask cancels a running task by ID.
@@ -480,15 +539,19 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 		os.RemoveAll(workDir) // Clean for new sessions
 	}
 	if err := os.MkdirAll(workDir, 0755); err != nil {
+		completedAt := time.Now()
 		a.mu.Lock()
+		setTaskCompletion(task, completedAt)
 		task.State = TaskStateFailed
+		exitCode := 1
+		task.ExitCode = &exitCode
 		task.Error = &TaskError{
 			Type:    "session_error",
 			Message: fmt.Sprintf("Failed to create session directory: %v", err),
 		}
-		a.state = StateIdle
-		a.currentTask = nil
 		a.mu.Unlock()
+		a.saveTaskHistory(task, nil)
+		a.cleanupTask(task)
 		return
 	}
 
@@ -523,29 +586,36 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 		err := cmd.Run()
 		lastOutput = stdout.Bytes()
 		completedAt := time.Now()
-		task.CompletedAt = &completedAt
-		task.DurationSeconds = completedAt.Sub(*task.StartedAt).Seconds()
 
 		a.mu.Lock()
+		setTaskCompletion(task, completedAt)
 
 		// Handle cancellation: context was canceled and task was marked cancelled
 		if ctx.Err() == context.Canceled && task.State == TaskStateCancelled {
-			a.state = StateIdle
-			a.currentTask = nil
+			if task.Error == nil {
+				task.Error = &TaskError{
+					Type:    "cancelled",
+					Message: "Task cancelled",
+				}
+			}
 			a.mu.Unlock()
+			a.saveTaskHistory(task, lastOutput)
+			a.cleanupTask(task)
 			return
 		}
 
 		// Handle timeout: context deadline exceeded
 		if ctx.Err() == context.DeadlineExceeded {
 			task.State = TaskStateFailed
+			exitCode := 1
+			task.ExitCode = &exitCode
 			task.Error = &TaskError{
 				Type:    "timeout",
 				Message: fmt.Sprintf("Task exceeded timeout of %v", task.Timeout),
 			}
-			a.state = StateIdle
-			a.currentTask = nil
 			a.mu.Unlock()
+			a.saveTaskHistory(task, lastOutput)
+			a.cleanupTask(task)
 			return
 		}
 
@@ -563,9 +633,13 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 		}
 
 		if jsonErr := json.Unmarshal(stdout.Bytes(), &claudeResp); jsonErr == nil {
-			// Only update session_id if Claude returns a non-empty value
+			// Only update session_id if Claude returns a safe, non-empty value
 			if claudeResp.SessionID != "" {
-				task.SessionID = claudeResp.SessionID
+				if isSafeSessionID(claudeResp.SessionID) {
+					task.SessionID = claudeResp.SessionID
+				} else {
+					fmt.Fprintf(os.Stderr, "Warning: ignoring unsafe session_id from Claude: %q\n", claudeResp.SessionID)
+				}
 			}
 			task.Output = claudeResp.Result
 			task.TokenUsage = &TokenUsage{
@@ -593,10 +667,9 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 					Message: fmt.Sprintf("Task exceeded maximum turns limit (%d turns x %d attempts). Consider breaking the task into smaller steps.",
 						a.config.Claude.MaxTurns, maxAutoResumes+1),
 				}
-				a.saveTaskHistory(task, lastOutput)
-				a.state = StateIdle
-				a.currentTask = nil
 				a.mu.Unlock()
+				a.saveTaskHistory(task, lastOutput)
+				a.cleanupTask(task)
 				return
 			}
 		} else {
@@ -625,10 +698,9 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 		}
 
 		// Save to history and complete
-		a.saveTaskHistory(task, lastOutput)
-		a.state = StateIdle
-		a.currentTask = nil
 		a.mu.Unlock()
+		a.saveTaskHistory(task, lastOutput)
+		a.cleanupTask(task)
 		return
 	}
 }
@@ -716,6 +788,17 @@ func (a *Agent) saveTaskHistory(task *Task, rawOutput []byte) {
 			fmt.Fprintf(os.Stderr, "Warning: failed to save debug log: %v\n", err)
 		}
 	}
+}
+
+func (a *Agent) cleanupTask(task *Task) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// Note: we intentionally keep completed tasks in the map so they can be queried
+	if a.currentTask != nil && a.currentTask.ID == task.ID {
+		a.currentTask = nil
+	}
+	a.state = StateIdle
 }
 
 // handleListHistory returns paginated task history.

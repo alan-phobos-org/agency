@@ -36,7 +36,7 @@ idle → working → idle
 ```json
 {
   "prompt": "string (required)",
-  "timeout": "duration (optional)",
+  "timeout_seconds": "int (optional)",
   "env": "map[string]string (optional)",
   "model": "string (optional, default: sonnet)",
   "session_id": "string (optional, generates if omitted)",
@@ -76,6 +76,64 @@ idle → working → idle
 | `/api/pair/code` | POST | Generate pairing code (10min TTL) |
 | `/api/devices` | GET | List active sessions/devices |
 | `/api/devices/:id` | DELETE | Revoke device session |
+| `/api/queue/task` | POST | Submit task to queue |
+| `/api/queue` | GET | Queue status and pending tasks |
+| `/api/queue/:id` | GET | Specific queued task status |
+| `/api/queue/:id/cancel` | POST | Cancel queued task |
+
+### Queue Endpoints
+
+The work queue allows tasks to be queued when agents are busy. The dispatcher automatically dispatches pending tasks to idle agents.
+
+**Submit to Queue**
+```json
+POST /api/queue/task
+{
+  "prompt": "string (required)",
+  "model": "string (optional)",
+  "timeout_seconds": "int (optional)",
+  "session_id": "string (optional)",
+  "source": "string (optional, e.g., web, scheduler, cli)",
+  "source_job": "string (optional, job name if scheduler)"
+}
+
+Response (201):
+{
+  "queue_id": "queue-123",
+  "position": 1,
+  "state": "pending"
+}
+```
+
+**Queue Status**
+```json
+GET /api/queue
+
+Response:
+{
+  "depth": 5,
+  "max_size": 50,
+  "oldest_age_seconds": 120,
+  "dispatched_count": 2,
+  "tasks": [
+    {
+      "queue_id": "queue-123",
+      "state": "pending",
+      "position": 1,
+      "prompt_preview": "First 100 chars...",
+      "source": "scheduler"
+    }
+  ]
+}
+```
+
+**Queue States**
+- `pending` - In queue, waiting for agent
+- `dispatching` - Being sent to agent
+- `working` - Running on agent
+- `completed` - Finished
+- `failed` - Failed
+- `cancelled` - Cancelled
 
 ---
 
@@ -121,7 +179,7 @@ The agent uses `--model` flag with shorthand names: `haiku`, `sonnet`, `opus`.
 
 Command-line flags:
 - `-port` - HTTPS port
-- `-port-start`, `-port-end` - Discovery scan range (default: 9000-9009)
+- `-port-start`, `-port-end` - Discovery scan range (default: 9000-9010; deployments often set 9000-9010/9100-9110)
 - `-contexts` - Path to contexts YAML file
 - `-access-log` - Path to access log file
 
@@ -157,8 +215,8 @@ contexts:
 | Type | Interfaces | Examples |
 |------|------------|----------|
 | Agent | Statusable + Taskable | ag-agent-claude |
-| Director | Statusable + Observable + Taskable | ag-director-claude |
-| Helper | Statusable + Observable | ag-tool-scheduler |
+| Director | Statusable + Observable + Taskable | ag-cli (CLI director) |
+| Helper | Statusable + Observable | ag-scheduler |
 | View | Statusable + Observable | ag-view-web |
 
 ---
@@ -174,6 +232,7 @@ Agent uses shared session directories (`/tmp/agency/sessions/<session_id>/`):
 ### Multi-turn Conversations
 
 Pass `session_id` in task request to continue a session. Response always includes `session_id`.
+Session IDs must be 1-128 chars of `A-Za-z0-9._-` and cannot include `..` or path separators.
 
 ### Max Turns and Auto-Resume
 
@@ -214,22 +273,7 @@ Stored at `~/.agency/history/<agent-name>/`:
 
 ## Design Patterns
 
-### Fallback on Resource Lifecycle Transitions
-
-When a resource moves between endpoints (e.g., active → archived), proxy layers implement fallback:
-1. Try primary endpoint (`/task/:id`)
-2. On 404, check secondary (`/history/:id`)
-3. Return data from whichever succeeds
-
-Example: `HandleTaskStatus` checks `/history/:id` when agent returns 404 for `/task/:id`.
-
-### Embedded Instructions
-
-Components have embedded CLAUDE.md files prepended to all prompts:
-- `internal/agent/claude.md` - Agent instructions
-- `internal/director/claude.md` - Director instructions
-
-Custom preprompt can be loaded from file via `preprompt_file` in agent config.
+See [DESIGN.md](DESIGN.md) for fallback behavior, embedded instructions, and session directory conventions.
 
 ---
 

@@ -33,8 +33,9 @@ type Handlers struct {
 	contexts     *ContextsConfig
 	authStore    *AuthStore
 	rateLimiter  *RateLimiter
-	secureCookie bool   // Whether to set Secure flag on cookies (HTTPS)
-	shutdownFunc func() // Callback to trigger graceful shutdown
+	secureCookie bool       // Whether to set Secure flag on cookies (HTTPS)
+	shutdownFunc func()     // Callback to trigger graceful shutdown
+	queue        *WorkQueue // Work queue for status reporting
 }
 
 // NewHandlers creates handlers with dependencies
@@ -62,10 +63,18 @@ func (h *Handlers) SetShutdownFunc(fn func()) {
 	h.shutdownFunc = fn
 }
 
+// SetQueue sets the work queue for status reporting
+func (h *Handlers) SetQueue(q *WorkQueue) {
+	h.queue = q
+}
+
 // HandleDashboard serves the main dashboard HTML page
 func (h *Handlers) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := h.tmpl.ExecuteTemplate(w, "dashboard.html", nil); err != nil {
+	data := map[string]interface{}{
+		"Version": h.version,
+	}
+	if err := h.tmpl.ExecuteTemplate(w, "dashboard.html", data); err != nil {
 		http.Error(w, "Template error: "+err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -74,13 +83,22 @@ func (h *Handlers) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]interface{}{
 		"type":           api.TypeView,
-		"interfaces":     []string{api.InterfaceStatusable, api.InterfaceObservable},
+		"interfaces":     []string{api.InterfaceStatusable, api.InterfaceObservable, api.InterfaceTaskable},
 		"version":        h.version,
 		"state":          "running",
 		"uptime_seconds": time.Since(h.startTime).Seconds(),
 		"config": map[string]interface{}{
 			"type": "web",
 		},
+	}
+	// Add queue status if available
+	if h.queue != nil {
+		resp["queue"] = map[string]interface{}{
+			"depth":              h.queue.Depth(),
+			"max_size":           h.queue.Config().MaxSize,
+			"oldest_age_seconds": h.queue.OldestAge(),
+			"dispatched_count":   h.queue.DispatchedCount(),
+		}
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -403,6 +421,16 @@ type DashboardData struct {
 	Directors []*ComponentStatus `json:"directors"`
 	Helpers   []*ComponentStatus `json:"helpers"`
 	Sessions  []*Session         `json:"sessions"`
+	Queue     *QueueInfo         `json:"queue,omitempty"`
+}
+
+// QueueInfo represents queue status in dashboard data
+type QueueInfo struct {
+	Depth            int                 `json:"depth"`
+	MaxSize          int                 `json:"max_size"`
+	OldestAgeSeconds float64             `json:"oldest_age_seconds"`
+	DispatchedCount  int                 `json:"dispatched_count"`
+	Tasks            []QueuedTaskSummary `json:"tasks"`
 }
 
 // HandleDashboardData returns all dashboard data in a single request with ETag support
@@ -432,6 +460,43 @@ func (h *Handlers) HandleDashboardData(w http.ResponseWriter, r *http.Request) {
 		Directors: directors,
 		Helpers:   helpers,
 		Sessions:  sessions,
+	}
+
+	// Add queue info if available
+	if h.queue != nil {
+		tasks := h.queue.GetAll()
+		summaries := make([]QueuedTaskSummary, 0, len(tasks))
+		pendingPos := 0
+		for _, task := range tasks {
+			if task.State == TaskStatePending {
+				pendingPos++
+			}
+			preview := task.Prompt
+			if len(preview) > 100 {
+				preview = preview[:100] + "..."
+			}
+			summary := QueuedTaskSummary{
+				QueueID:       task.QueueID,
+				State:         task.State,
+				CreatedAt:     task.CreatedAt,
+				PromptPreview: preview,
+				Source:        task.Source,
+				SourceJob:     task.SourceJob,
+				TaskID:        task.TaskID,
+				AgentURL:      task.AgentURL,
+			}
+			if task.State == TaskStatePending {
+				summary.Position = pendingPos
+			}
+			summaries = append(summaries, summary)
+		}
+		data.Queue = &QueueInfo{
+			Depth:            h.queue.Depth(),
+			MaxSize:          h.queue.Config().MaxSize,
+			OldestAgeSeconds: h.queue.OldestAge(),
+			DispatchedCount:  h.queue.DispatchedCount(),
+			Tasks:            summaries,
+		}
 	}
 
 	// Generate ETag from JSON content

@@ -30,7 +30,7 @@ WEB_INTERNAL_PORT="${AG_WEB_INTERNAL_PORT:-8080}"
 AGENT_PORT="${AG_AGENT_PORT:-9000}"
 SCHEDULER_PORT="${AG_SCHEDULER_PORT:-9010}"
 DISCOVERY_START="${AG_DISCOVERY_START:-9000}"
-DISCOVERY_END="${AG_DISCOVERY_END:-9009}"
+DISCOVERY_END="${AG_DISCOVERY_END:-9010}"
 
 # Optional scheduler config (set to empty to disable)
 SCHEDULER_CONFIG="${AG_SCHEDULER_CONFIG:-$PROJECT_ROOT/configs/scheduler.yaml}"
@@ -55,9 +55,41 @@ if ! "$PROJECT_ROOT/bin/ag-agent-claude" -version >/dev/null 2>&1 || \
     cd "$PROJECT_ROOT" && ./build.sh build
 fi
 
-# Stop any existing instance for this mode
-if [ -f "$PID_FILE" ]; then
-    echo "Stopping existing $MODE instance..."
+# Check if agency is already running (via API, more reliable than PID file)
+if curl -sf "http://localhost:${WEB_INTERNAL_PORT}/status" > /dev/null 2>&1; then
+    echo "Agency is already running on port $WEB_INTERNAL_PORT."
+    # Check if running interactively
+    if [ -t 0 ]; then
+        read -p "Shut it down via /shutdown? [Y/n] " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            echo "Shutting down existing agency..."
+            if curl -sf -X POST "http://localhost:${WEB_INTERNAL_PORT}/shutdown" > /dev/null 2>&1; then
+                echo "  Shutdown initiated, waiting for services to stop..."
+                sleep 2
+                rm -f "$PID_FILE"
+            else
+                echo "  Shutdown request failed. Try stop-agency.sh manually."
+                exit 1
+            fi
+        else
+            echo "Aborting. Use stop-agency.sh to shut down the existing instance."
+            exit 0
+        fi
+    else
+        # Non-interactive: just shut it down
+        echo "Shutting down existing agency..."
+        if curl -sf -X POST "http://localhost:${WEB_INTERNAL_PORT}/shutdown" > /dev/null 2>&1; then
+            sleep 2
+            rm -f "$PID_FILE"
+        else
+            echo "  Shutdown request failed."
+            exit 1
+        fi
+    fi
+elif [ -f "$PID_FILE" ]; then
+    # PID file exists but API not responding - clean up stale PIDs
+    echo "Cleaning up stale PID file..."
     "$SCRIPT_DIR/stop-agency.sh" "$MODE"
 fi
 
@@ -86,16 +118,34 @@ if [ -n "$SCHEDULER_PID" ]; then
     echo "$SCHEDULER_PID" >> "$PID_FILE"
 fi
 
+# Show last N lines of a log file with header
+show_log_tail() {
+    local log_file="$1"
+    local lines="${2:-20}"
+    if [ -f "$log_file" ] && [ -s "$log_file" ]; then
+        echo ""
+        echo "=== Last $lines lines of $log_file ==="
+        tail -n "$lines" "$log_file"
+        echo "=== End of log ==="
+    elif [ -f "$log_file" ]; then
+        echo ""
+        echo "(Log file $log_file is empty)"
+    fi
+}
+
 # Wait for services to become ready via status API
 wait_for_status() {
     local name="$1"
     local url="$2"
     local pid="$3"
+    local log_file="$4"
     local max_attempts=30
 
     for i in $(seq 1 $max_attempts); do
         if ! kill -0 "$pid" 2>/dev/null; then
-            echo "ERROR: $name (PID $pid) died. Check logs."
+            echo ""
+            echo "ERROR: $name (PID $pid) exited unexpectedly"
+            show_log_tail "$log_file" 30
             return 1
         fi
         if curl -sf -k "$url" > /dev/null 2>&1; then
@@ -103,13 +153,19 @@ wait_for_status() {
         fi
         sleep 0.1
     done
-    echo "ERROR: $name not responding after ${max_attempts} attempts"
+    echo ""
+    echo "ERROR: $name not responding after ${max_attempts} attempts (3 seconds)"
+    echo "Process is running (PID $pid) but not accepting connections at $url"
+    show_log_tail "$log_file" 30
     return 1
 }
 
+AGENT_LOG="$PID_DIR/agent-${MODE}.log"
+VIEW_LOG="$PID_DIR/view-${MODE}.log"
+SCHEDULER_LOG="$PID_DIR/scheduler-${MODE}.log"
+
 echo -n "Waiting for agent..."
-if ! wait_for_status "Claude agent" "http://localhost:$AGENT_PORT/status" "$AGENT_PID"; then
-    echo " failed. Check $PID_DIR/agent.log"
+if ! wait_for_status "Claude agent" "http://localhost:$AGENT_PORT/status" "$AGENT_PID" "$AGENT_LOG"; then
     kill "$VIEW_PID" 2>/dev/null || true
     [ -n "$SCHEDULER_PID" ] && kill "$SCHEDULER_PID" 2>/dev/null || true
     rm -f "$PID_FILE"
@@ -118,8 +174,7 @@ fi
 echo " ready"
 
 echo -n "Waiting for view..."
-if ! wait_for_status "Web view" "https://localhost:$WEB_PORT/status" "$VIEW_PID"; then
-    echo " failed. Check $PID_DIR/view.log"
+if ! wait_for_status "Web view" "https://localhost:$WEB_PORT/status" "$VIEW_PID" "$VIEW_LOG"; then
     kill "$AGENT_PID" 2>/dev/null || true
     [ -n "$SCHEDULER_PID" ] && kill "$SCHEDULER_PID" 2>/dev/null || true
     rm -f "$PID_FILE"
@@ -129,8 +184,7 @@ echo " ready"
 
 if [ -n "$SCHEDULER_PID" ]; then
     echo -n "Waiting for scheduler..."
-    if ! wait_for_status "Scheduler" "http://localhost:$SCHEDULER_PORT/status" "$SCHEDULER_PID"; then
-        echo " failed. Check $PID_DIR/scheduler.log"
+    if ! wait_for_status "Scheduler" "http://localhost:$SCHEDULER_PORT/status" "$SCHEDULER_PID" "$SCHEDULER_LOG"; then
         kill "$VIEW_PID" 2>/dev/null || true
         kill "$AGENT_PID" 2>/dev/null || true
         rm -f "$PID_FILE"

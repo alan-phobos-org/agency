@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -255,4 +256,149 @@ func extractPort(t *testing.T, url string) int {
 		}
 	}
 	return port
+}
+
+func TestDiscoveryHelperWithJobs(t *testing.T) {
+	t.Parallel()
+
+	// Track job status that can be updated
+	var mu sync.Mutex
+	jobLastStatus := ""
+	jobLastTaskID := ""
+
+	// Create a mock helper server that returns jobs
+	helper := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/status" {
+			mu.Lock()
+			status := jobLastStatus
+			taskID := jobLastTaskID
+			mu.Unlock()
+
+			response := map[string]interface{}{
+				"type":           "helper",
+				"interfaces":     []string{"statusable", "observable"},
+				"version":        "test-scheduler-1.0",
+				"state":          "running",
+				"uptime_seconds": 100,
+				"jobs": []map[string]interface{}{
+					{
+						"name":         "test-job",
+						"schedule":     "0 * * * *",
+						"next_run":     time.Now().Add(time.Hour).Format(time.RFC3339),
+						"last_status":  status,
+						"last_task_id": taskID,
+					},
+				},
+			}
+			json.NewEncoder(w).Encode(response)
+		}
+	}))
+	defer helper.Close()
+
+	port := extractPort(t, helper.URL)
+
+	d := NewDiscovery(DiscoveryConfig{
+		PortStart:       port,
+		PortEnd:         port,
+		RefreshInterval: 100 * time.Millisecond,
+		MaxFailures:     3,
+	})
+
+	// Initial scan - should find helper with jobs
+	d.scan()
+
+	helpers := d.Helpers()
+	require.Len(t, helpers, 1)
+	require.Equal(t, "helper", helpers[0].Type)
+	require.Equal(t, "running", helpers[0].State)
+	require.Len(t, helpers[0].Jobs, 1)
+	require.Equal(t, "test-job", helpers[0].Jobs[0].Name)
+	require.Equal(t, "0 * * * *", helpers[0].Jobs[0].Schedule)
+	require.Empty(t, helpers[0].Jobs[0].LastStatus)
+
+	// Update job status (simulating job execution)
+	mu.Lock()
+	jobLastStatus = "submitted"
+	jobLastTaskID = "task-123"
+	mu.Unlock()
+
+	// Scan again - should reflect updated status
+	d.scan()
+
+	helpers = d.Helpers()
+	require.Len(t, helpers, 1)
+	require.Len(t, helpers[0].Jobs, 1)
+	require.Equal(t, "submitted", helpers[0].Jobs[0].LastStatus)
+	require.Equal(t, "task-123", helpers[0].Jobs[0].LastTaskID)
+}
+
+func TestDiscoveryHelperJobStatusUpdates(t *testing.T) {
+	t.Parallel()
+
+	// This test verifies that job status updates trigger data changes
+	// which would cause the ETag to change in the dashboard API
+
+	var mu sync.Mutex
+	jobStatus := "pending"
+	nextRunTime := time.Now().Add(5 * time.Minute)
+
+	helper := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/status" {
+			mu.Lock()
+			status := jobStatus
+			nextRun := nextRunTime
+			mu.Unlock()
+
+			response := map[string]interface{}{
+				"type":       "helper",
+				"interfaces": []string{"statusable"},
+				"version":    "v1",
+				"state":      "running",
+				"jobs": []map[string]interface{}{
+					{
+						"name":        "cron-job",
+						"schedule":    "*/5 * * * *",
+						"next_run":    nextRun.Format(time.RFC3339),
+						"last_status": status,
+					},
+				},
+			}
+			json.NewEncoder(w).Encode(response)
+		}
+	}))
+	defer helper.Close()
+
+	port := extractPort(t, helper.URL)
+
+	d := NewDiscovery(DiscoveryConfig{
+		PortStart: port,
+		PortEnd:   port,
+	})
+
+	// First scan
+	d.scan()
+	helpers := d.Helpers()
+	require.Len(t, helpers, 1)
+	initialJob := helpers[0].Jobs[0]
+	require.Equal(t, "pending", initialJob.LastStatus)
+
+	// Update the job status
+	mu.Lock()
+	jobStatus = "queued"
+	nextRunTime = time.Now().Add(10 * time.Minute)
+	mu.Unlock()
+
+	// Rescan
+	d.scan()
+	helpers = d.Helpers()
+	require.Len(t, helpers, 1)
+	updatedJob := helpers[0].Jobs[0]
+
+	// Verify status changed
+	require.Equal(t, "queued", updatedJob.LastStatus)
+
+	// Verify next_run changed
+	require.True(t, updatedJob.NextRun.After(initialJob.NextRun),
+		"NextRun should have been updated: initial=%v, updated=%v",
+		initialJob.NextRun, updatedJob.NextRun)
 }

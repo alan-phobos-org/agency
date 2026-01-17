@@ -348,103 +348,9 @@ Full-screen on mobile, modal on desktop.
 
 ---
 
-## API Changes
+## API Surface
 
-### Task Summary Field
-
-To display human-readable summaries instead of cryptic UUIDs, the agent API must be extended.
-
-#### Agent API Changes
-
-**POST /task** - Request unchanged, response extended:
-
-```json
-{
-  "task_id": "task_a1b2c3d4",
-  "session_id": "sess_e5f6g7h8",
-  "summary": "Fix auth token refresh"  // NEW: 30 char max
-}
-```
-
-**GET /task/:id** - Response extended:
-
-```json
-{
-  "id": "task_a1b2c3d4",
-  "state": "completed",
-  "summary": "Fix auth token refresh",  // NEW
-  "prompt": "Fix the authentication token refresh logic...",
-  "output": "I'll analyze the auth client code...",
-  "exit_code": 0,
-  "duration_seconds": 45.2,
-  "tokens_used": 12400,      // NEW: optional
-  "cost_usd": 0.037          // NEW: optional
-}
-```
-
-**GET /history** - List includes summaries:
-
-```json
-{
-  "tasks": [
-    {
-      "id": "task_a1b2c3d4",
-      "summary": "Fix auth token refresh",  // NEW
-      "state": "completed",
-      "started_at": "2025-01-14T14:23:05Z",
-      "completed_at": "2025-01-14T14:23:50Z"
-    }
-  ]
-}
-```
-
-#### Summary Generation
-
-The agent generates summaries from the prompt using:
-
-1. **First sentence extraction** - Take first sentence if under 30 chars
-2. **Imperative verb detection** - Extract "Fix X", "Add Y", "Update Z" patterns
-3. **Truncation with ellipsis** - If still too long, truncate at word boundary + "..."
-
-Implementation pseudocode:
-
-```go
-func GenerateSummary(prompt string, maxLen int) string {
-    // Try first sentence
-    if idx := strings.IndexAny(prompt, ".!?"); idx > 0 && idx < maxLen {
-        return strings.TrimSpace(prompt[:idx])
-    }
-
-    // Try first line
-    if idx := strings.Index(prompt, "\n"); idx > 0 && idx < maxLen {
-        return strings.TrimSpace(prompt[:idx])
-    }
-
-    // Truncate at word boundary
-    if len(prompt) <= maxLen {
-        return prompt
-    }
-
-    truncated := prompt[:maxLen]
-    if idx := strings.LastIndex(truncated, " "); idx > maxLen/2 {
-        return truncated[:idx] + "..."
-    }
-    return truncated[:maxLen-3] + "..."
-}
-```
-
-#### Session Summary
-
-Sessions use the **first task's summary** as their display name:
-
-```json
-{
-  "id": "sess_e5f6g7h8",
-  "summary": "Fix auth token refresh",  // From first task
-  "agent_url": "http://localhost:9001",
-  "tasks": [...]
-}
-```
+See [REFERENCE.md](REFERENCE.md) for the current dashboard, task, and queue endpoints.
 
 ---
 
@@ -710,205 +616,24 @@ To modify the UI:
 
 ## Mockups
 
-### Final Design
-
-**[mockup-final.html](mockup-final.html)** - The approved design combining:
-- **Feature layout** from mockup-basic (sessions, tasks, fleet, task submission)
-- **Visual style** from mockup-langsmith (colors, typography, page layout, CSS)
-- **Architectural decisions:** Polling, flat hierarchy, no offline
-
-### Design Explorations
-
-Three exploratory mockups were created during design:
-
-1. **[mockup-basic.html](mockup-basic.html)** - Conventional, Bootstrap-inspired layout
-2. **[mockup-creative.html](mockup-creative.html)** - Innovative, experimental design
-3. **[mockup-langsmith.html](mockup-langsmith.html)** - Inspired by LangSmith observability UI
-
-### Mockup Features
-
-All mockups demonstrate:
-- Dark mode with Danish minimalism
-- iPhone 17 Pro responsive design
-- Expandable session cards (flat, accordion-style)
-- Human-readable summaries
-- Fleet status panel
-- Polling status indicator
+- `mockup-final.html` - Current visual reference
+- `mockup-basic.html`, `mockup-creative.html`, `mockup-langsmith.html` - Design explorations
 
 ---
 
-## Resolved Questions
+## Implementation Status
 
-1. **Real-time updates** - **Polling.** HTTP polling with visibility-based pausing. Simple, reliable, sufficient for dashboard use case.
-
-2. **Offline support** - **None.** Dashboard is for real-time monitoring; cached data would be stale and misleading.
-
-3. **Session hierarchy** - **Flat.** Simple list of sessions, each containing one task. No nested trace trees.
-
----
-
-## Implementation Plan
-
-### Implementation Decisions
-
-These decisions were made during design review:
-
-#### 1. UI Replacement Strategy: Full Replacement
-
-**Decision:** Complete replacement of existing `dashboard.html` (44KB).
-
-**Rationale:**
-- Existing UI has different architecture (server-rendered templates)
-- New design uses Alpine.js for reactivity
-- Clean slate avoids technical debt from mixing approaches
-- Mockup already implements full functionality
-
-**Implication:** Delete `internal/view/web/templates/dashboard.html` and related server-side rendering logic. New UI is a single-page application.
-
-#### 2. Fleet Summary Source: Agents Only
-
-**Decision:** Collapsed fleet panel shows agent counts only (not directors/helpers).
-
-**Rationale:**
-- Agents are the primary work executors
-- Simpler summary (e.g., "2 idle, 1 working")
-- Directors and helpers visible when fleet expanded
-- Matches user's mental model of "available workers"
-
-**Implication:** Fleet summary bar displays: `Fleet ▸ 2 idle · 1 working` counting only agents. Full breakdown (agents, directors, helpers) shown when expanded.
-
-#### 3. Output Display: Poll for Partial Output
-
-**Decision:** Poll `/task/:id` every 1s while task is working to show partial output.
-
-**Rationale:**
-- Users want to see progress during long-running tasks
-- Polling is consistent with overall architecture (no WebSocket)
-- Agent already returns partial output in `output` field
-- Simple implementation: same endpoint, just display incrementally
-
-**Implication:** When a task is in `working` state, poll every 1s and update the output display. Use CSS animation to indicate streaming. Add "live" indicator while task is active.
-
-#### 4. Frontend Framework: Alpine.js
-
-**Decision:** Use Alpine.js for reactive UI.
-
-**Rationale:**
-- Declarative, no build step required
-- 15KB minified, loads from CDN
-- Simple `x-data`, `x-show`, `x-for` directives
-- Easy to understand and modify
-- Good fit for dashboard complexity level
-- Better DX than vanilla JS for reactive state
-
-**Implication:** Include Alpine.js via CDN. State management via Alpine stores. No build tooling required.
-
-### Implementation Phases
-
-#### Phase 1: Foundation (1 PR)
-
-**Goal:** Replace existing UI with new Alpine.js-based dashboard.
-
-**Tasks:**
-1. Create new `dashboard.html` using mockup-final as base
-2. Add Alpine.js from CDN
-3. Implement API client (`/api/dashboard`, `/api/task`, `/api/agents`)
-4. Set up polling infrastructure with visibility API
-5. Delete old dashboard.html and related server templates
-6. Update handlers.go to serve new SPA
-
-**Files to create:**
-- `internal/view/web/templates/dashboard.html` (new, Alpine.js SPA)
-
-**Files to delete:**
-- `internal/view/web/templates/dashboard.html` (old, 44KB)
-- Related template partials if any
-
-**Files to modify:**
-- `internal/view/web/handlers.go` - Simplify to serve SPA
-- `internal/view/web/embed.go` - Update embed directives
-
-#### Phase 2: Fleet Panel
-
-**Goal:** Collapsible fleet with agent-only summary.
-
-**Tasks:**
-1. Implement collapsed state showing "2 idle · 1 working"
-2. Count agents only for summary stats
-3. Expanded state shows full breakdown (agents, directors, helpers)
-4. Persist collapse state in localStorage
-5. Add fleet refresh on interval (5s idle, 2s active)
-
-#### Phase 3: Session Management
-
-**Goal:** Accordion-style session list with flat hierarchy.
-
-**Tasks:**
-1. Fetch sessions from `/api/sessions`
-2. Implement accordion (single expanded at a time)
-3. Session card shows: status dot, summary, agent, timestamp
-4. Expanded view shows session metadata and task list
-5. Task cards within session (nested accordion)
-
-#### Phase 4: Live Task Output
-
-**Goal:** Poll and display partial output during task execution.
-
-**Tasks:**
-1. Detect when a task is in `working` state
-2. Poll `/task/:id` every 1s for that task
-3. Update output display incrementally
-4. Add "live" indicator with pulse animation
-5. Stop polling when state changes to completed/failed/cancelled
-
-#### Phase 5: Task Submission
-
-**Goal:** Full-screen modal for submitting new tasks.
-
-**Tasks:**
-1. Agent selector dropdown (filter to idle agents)
-2. Context picker from contexts.yaml
-3. Prompt textarea with markdown preview
-4. Options panel (model, timeout, thinking budget)
-5. Submit action with optimistic UI update
-6. Error handling and validation
-
-#### Phase 6: Polish
-
-**Goal:** Accessibility, keyboard shortcuts, and refinements.
-
-**Tasks:**
-1. Keyboard navigation (j/k, Enter, Escape, n, r, f)
-2. Focus management for modals
-3. ARIA labels and roles
-4. Screen reader testing
-5. Reduced motion support
-6. Error states and loading skeletons
-
-### Migration Notes
-
-**Backward Compatibility:**
-- No backward compatibility needed (internal tool)
-- Single deployment replaces old UI entirely
-- No feature flags or gradual rollout
-
-**Testing Approach:**
-1. Manual testing on iPhone 17 Pro (primary target)
-2. Desktop browser testing (Chrome, Firefox, Safari)
-3. Existing integration tests still pass (API unchanged)
-4. New E2E tests for critical flows
-
-**Rollback Plan:**
-- Git revert if issues found
-- Old dashboard.html preserved in git history
+- Implemented as a single-file Alpine.js SPA in `internal/view/web/templates/dashboard.html`.
+- Full replacement of the old dashboard templates; login/pair pages remain server-rendered.
+- Fleet summary counts agents only; full breakdown shown when expanded.
+- Live output uses polling for active tasks.
 
 ---
 
 ## Open Questions
 
-1. **Export/sharing** - Do users need to export session data (JSON, share links)?
-
-2. **Multi-agent views** - When director-claude orchestrates multiple agents, how should the UI visualize the parent-child relationship?
+- Export/sharing of sessions (JSON, share links).
+- Multi-agent views when a director orchestrates multiple agents.
 
 ---
 
@@ -1475,147 +1200,7 @@ document.addEventListener('touchend', (e) => {
 
 ## Enhanced Accessibility
 
-### WCAG 2.2 Compliance
-
-The dashboard targets WCAG 2.2 Level AA compliance, with particular attention to:
-
-#### Success Criterion 4.1.3: Status Messages
-
-Status messages (task completion, errors, connection status) must be announced to screen readers without moving focus.
-
-**Implementation using ARIA Live Regions:**
-
-```html
-<!-- Status announcer (always in DOM, even when empty) -->
-<div id="status-announcer"
-     role="status"
-     aria-live="polite"
-     aria-atomic="true"
-     class="u-visually-hidden">
-</div>
-
-<!-- Alert for urgent messages -->
-<div id="alert-announcer"
-     role="alert"
-     aria-live="assertive"
-     aria-atomic="true"
-     class="u-visually-hidden">
-</div>
-```
-
-```javascript
-function announceStatus(message) {
-    const announcer = document.getElementById('status-announcer');
-    announcer.textContent = message;
-}
-
-function announceAlert(message) {
-    const announcer = document.getElementById('alert-announcer');
-    announcer.textContent = message;
-}
-
-// Usage
-function onTaskComplete(task) {
-    announceStatus(`Task completed: ${task.summary}`);
-}
-
-function onConnectionLost() {
-    announceAlert('Connection lost. Attempting to reconnect.');
-}
-```
-
-#### Live Region Best Practices
-
-| Attribute | Value | Use Case |
-|-----------|-------|----------|
-| `aria-live="polite"` | Waits for user idle | Task status updates, non-urgent notifications |
-| `aria-live="assertive"` | Interrupts immediately | Connection errors, critical failures |
-| `aria-atomic="true"` | Announces entire region | Short messages, status changes |
-| `aria-atomic="false"` | Announces only changes | Log output, streaming content |
-| `role="log"` | Preserves history | Task output display |
-| `role="status"` | Current state | Connection status, poll indicator |
-
-### Focus Management
-
-#### Modal Focus Trap
-
-```javascript
-function openModal(modalElement) {
-    // Store current focus
-    const previousFocus = document.activeElement;
-
-    // Find focusable elements
-    const focusable = modalElement.querySelectorAll(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-    );
-    const firstFocusable = focusable[0];
-    const lastFocusable = focusable[focusable.length - 1];
-
-    // Focus first element
-    firstFocusable.focus();
-
-    // Trap focus
-    modalElement.addEventListener('keydown', (e) => {
-        if (e.key !== 'Tab') return;
-
-        if (e.shiftKey && document.activeElement === firstFocusable) {
-            e.preventDefault();
-            lastFocusable.focus();
-        } else if (!e.shiftKey && document.activeElement === lastFocusable) {
-            e.preventDefault();
-            firstFocusable.focus();
-        }
-    });
-
-    // Return focus on close
-    modalElement.addEventListener('close', () => {
-        previousFocus.focus();
-    }, { once: true });
-}
-```
-
-#### Skip Links
-
-```html
-<a href="#main-content" class="skip-link">Skip to main content</a>
-<a href="#sessions-list" class="skip-link">Skip to sessions</a>
-```
-
-```css
-.skip-link {
-    position: absolute;
-    top: -40px;
-    left: 0;
-    padding: var(--space-2) var(--space-4);
-    background: var(--bg-elevated);
-    color: var(--text-primary);
-    z-index: 1000;
-}
-
-.skip-link:focus {
-    top: 0;
-}
-```
-
-### Reduced Motion
-
-```css
-@media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-        animation-duration: 0.01ms !important;
-        animation-iteration-count: 1 !important;
-        transition-duration: 0.01ms !important;
-    }
-
-    .status-dot--working {
-        animation: none;
-    }
-}
-```
-
----
+For WCAG 2.2 AA details (live regions, focus traps, skip links, reduced motion), follow standard WAI-ARIA patterns and mirror the implementation in `internal/view/web/templates/dashboard.html`.
 
 ## Error Handling & Recovery
 
@@ -1849,7 +1434,9 @@ async function poll() {
 
 ## Placeholder Features (Pending Observability Improvements)
 
-The following features are designed but require observability improvements before full implementation:
+The following features are designed but require observability improvements before full implementation.
+They should be integrated into the existing dashboard UI with progressive disclosure:
+panels are collapsed by default and only fetch data when the user expands or requests them.
 
 ### 1. Token Usage & Cost Display
 
@@ -1913,6 +1500,7 @@ function streamTaskOutput(taskId, onChunk) {
 
 - [PLAN.md](PLAN.md) - Project roadmap
 - [DESIGN.md](DESIGN.md) - Technical architecture
+- [OBSERVABILITY_UI_MOCKUP.md](OBSERVABILITY_UI_MOCKUP.md) - Stage 2 UI sketch
 - [authentication.md](authentication.md) - Auth system
 
 ## References

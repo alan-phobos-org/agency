@@ -38,6 +38,13 @@ func NewSessionStore() *SessionStore {
 	}
 }
 
+// Clear removes all sessions from the store
+func (s *SessionStore) Clear() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sessions = make(map[string]*Session)
+}
+
 // Get retrieves a session by ID
 func (s *SessionStore) Get(id string) (*Session, bool) {
 	s.mu.RLock()

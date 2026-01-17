@@ -83,10 +83,98 @@ case "${1:-help}" in
         rm -rf bin/ dist/ coverage.out
         ;;
     deploy-local)
-        $0 dist
+        # Stop any existing instance first
+        ./deployment/stop-agency.sh dev 2>/dev/null || true
+
+        DEPLOY_STEP=""
+        deploy_fail() {
+            echo ""
+            echo "=== DEPLOY-LOCAL FAILED ==="
+            echo "Step: $DEPLOY_STEP"
+            echo ""
+            echo "Troubleshooting:"
+            case "$DEPLOY_STEP" in
+                "lint")
+                    echo "  - Run './build.sh lint' to see formatting issues"
+                    echo "  - Run 'gofmt -d .' to see specific diffs"
+                    ;;
+                "build")
+                    echo "  - Check for Go compilation errors above"
+                    echo "  - Run 'go build ./...' for more details"
+                    ;;
+                "unit tests")
+                    echo "  - Run './build.sh test' to re-run unit tests"
+                    echo "  - Run 'go test -v ./...' for verbose output"
+                    ;;
+                "integration tests")
+                    echo "  - Run './build.sh test-int' to re-run integration tests"
+                    ;;
+                "system tests")
+                    echo "  - Run './build.sh test-sys' to re-run system tests"
+                    ;;
+                "dist packaging")
+                    echo "  - Check that all required files exist"
+                    ;;
+                *)
+                    echo "  - Review the error message above"
+                    ;;
+            esac
+            exit 1
+        }
+        trap deploy_fail ERR
+
+        echo "=== Deploy Local (dev mode) ==="
+        echo ""
+
+        DEPLOY_STEP="lint"
+        echo "Step 1/6: Linting..."
+        $0 lint
+
+        DEPLOY_STEP="build"
+        echo "Step 2/6: Building binaries..."
+        build_all
+
+        DEPLOY_STEP="unit tests"
+        echo "Step 3/6: Running unit tests..."
+        go test -race -short ./...
+
+        DEPLOY_STEP="integration tests"
+        echo "Step 4/6: Running integration tests..."
+        run_tests integration
+
+        DEPLOY_STEP="system tests"
+        echo "Step 5/6: Running system tests..."
+        AGENCY_BIN_DIR="$(pwd)/bin" run_tests system
+
+        DEPLOY_STEP="dist packaging"
+        echo "Step 6/6: Creating distribution..."
+        rm -rf dist/
+        mkdir -p dist/bin dist/deployment dist/configs
+        cp "${BINARIES[@]/#/bin/}" dist/bin/
+        cp deployment/agency.sh deployment/stop-agency.sh deployment/deploy-agency.sh deployment/ports.conf dist/deployment/
+        cp configs/contexts.yaml configs/scheduler.yaml dist/configs/
         [ -f .env ] && cp .env dist/
-        echo "Deploying locally (dev mode)..."
-        exec ./dist/deployment/agency.sh dev
+
+        trap - ERR
+        echo ""
+        echo "Starting services..."
+        if ! ./dist/deployment/agency.sh dev; then
+            echo ""
+            echo "=== DEPLOY-LOCAL FAILED: start services ==="
+            echo ""
+            # Check logs for port conflicts
+            for log in dist/deployment/{scheduler,agent,view}-dev.log; do
+                if [ -f "$log" ] && grep -q "address already in use" "$log"; then
+                    PORT=$(grep "address already in use" "$log" | grep -oE ':[0-9]+' | tr -d ':' | head -1)
+                    echo "Port $PORT is already in use."
+                    echo "  lsof -i :$PORT        # find what's using it"
+                    echo "  kill \$(lsof -ti :$PORT)  # kill the process"
+                    exit 1
+                fi
+            done
+            echo "Check logs: dist/deployment/{view,agent,scheduler}-dev.log"
+            exit 1
+        fi
         ;;
     stop-local)
         echo "Stopping local dev instance..."

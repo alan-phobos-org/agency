@@ -267,15 +267,14 @@ func TestIntegrationSchedulerDirectorRouting(t *testing.T) {
 	}
 	var directorCalled atomic.Bool
 
-	// Mock director that receives the task submission
+	// Mock director that receives the task submission via queue API
 	director := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/task" && r.Method == "POST" {
+		if r.URL.Path == "/api/queue/task" && r.Method == "POST" {
 			directorCalled.Store(true)
 			json.NewDecoder(r.Body).Decode(&directorReceived)
 			w.WriteHeader(http.StatusCreated)
 			json.NewEncoder(w).Encode(map[string]string{
-				"task_id":    "task-director-123",
-				"session_id": "sess-director-456",
+				"queue_id": "queue-director-123",
 			})
 			return
 		}
@@ -283,9 +282,9 @@ func TestIntegrationSchedulerDirectorRouting(t *testing.T) {
 	}))
 	defer director.Close()
 
-	// Mock agent (not actually called when director succeeds)
+	// Agent URL for config (not actually called when queue succeeds)
 	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Error("Agent should not be called when director is available")
+		t.Error("Agent should not be called when queue submission succeeds")
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer agent.Close()
@@ -324,20 +323,19 @@ func TestIntegrationSchedulerDirectorRouting(t *testing.T) {
 	// Verify director was called
 	assert.True(t, directorCalled.Load(), "Director should be called")
 
-	// Verify the request format
-	assert.Equal(t, agent.URL, directorReceived.AgentURL, "Should include agent_url")
+	// Verify the request format (queue API doesn't include agent_url)
 	assert.Equal(t, "Test job for director routing", directorReceived.Prompt)
 	assert.Equal(t, "scheduler", directorReceived.Source, "Source should be 'scheduler'")
 	assert.Equal(t, "routed-job", directorReceived.SourceJob, "SourceJob should be job name")
 
-	// Verify job state was updated
+	// Verify job state was updated for queue submission
 	s.mu.RLock()
 	js := s.jobs[0]
 	s.mu.RUnlock()
 
 	js.mu.RLock()
-	assert.Equal(t, "submitted", js.LastStatus)
-	assert.Equal(t, "task-director-123", js.LastTaskID)
+	assert.Equal(t, "queued", js.LastStatus)
+	assert.Equal(t, "queue-director-123", js.LastQueueID)
 	js.mu.RUnlock()
 }
 
@@ -346,9 +344,9 @@ func TestIntegrationSchedulerDirectorFallback(t *testing.T) {
 
 	var agentCalled atomic.Bool
 
-	// Mock director that fails
+	// Mock director that fails with 500 (not 503, which is treated as queue full)
 	director := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusServiceUnavailable)
+		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer director.Close()
 

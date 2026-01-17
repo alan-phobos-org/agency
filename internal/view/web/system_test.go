@@ -628,3 +628,277 @@ func TestSystemWebViewNoContexts(t *testing.T) {
 		require.Equal(t, "Manual", contexts[0].Name)
 	})
 }
+
+// startScheduler starts a scheduler binary with the given config
+func startScheduler(t *testing.T, binDir string, configPath string, port int) *exec.Cmd {
+	t.Helper()
+
+	schedulerBin := filepath.Join(binDir, "ag-scheduler")
+	args := []string{"-config", configPath}
+	if port > 0 {
+		args = append(args, "-port", fmt.Sprintf("%d", port))
+	}
+
+	cmd := exec.Command(schedulerBin, args...)
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+
+	err := cmd.Start()
+	require.NoError(t, err, "Failed to start scheduler")
+
+	return cmd
+}
+
+func TestSystemWebViewHelperDiscovery(t *testing.T) {
+	binDir := buildBinaries(t)
+
+	// Start scheduler (helper) with a job
+	schedulerPort := testutil.AllocateTestPortN(t, 0)
+	schedulerURL := fmt.Sprintf("http://localhost:%d", schedulerPort)
+
+	configContent := fmt.Sprintf(`
+port: %d
+agent_url: http://localhost:19999
+jobs:
+  - name: test-job
+    schedule: "0 * * * *"
+    prompt: "Test task"
+`, schedulerPort)
+
+	configFile := filepath.Join(t.TempDir(), "scheduler.yaml")
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	schedulerCmd := startScheduler(t, binDir, configFile, 0)
+
+	defer func() {
+		if schedulerCmd.Process != nil {
+			schedulerCmd.Process.Signal(syscall.SIGTERM)
+			schedulerCmd.Wait()
+		}
+	}()
+
+	testutil.WaitForHealthy(t, schedulerURL+"/status", 10*time.Second)
+	t.Log("Scheduler is healthy")
+
+	// Start web view with port range that includes the scheduler
+	webPort := testutil.AllocateTestPortN(t, 1)
+	webURL := fmt.Sprintf("https://localhost:%d", webPort)
+	token := "test-helper-token"
+
+	webCmd := startWebView(t, binDir, webPort, token, schedulerPort, schedulerPort)
+
+	defer func() {
+		if webCmd.Process != nil {
+			webCmd.Process.Signal(syscall.SIGTERM)
+			webCmd.Wait()
+		}
+	}()
+
+	waitForHTTPS(t, webURL+"/status", 15*time.Second)
+	t.Log("Web view is healthy")
+
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	t.Run("dashboard discovers helper with jobs", func(t *testing.T) {
+		// Give discovery time to find the scheduler
+		time.Sleep(2 * time.Second)
+
+		req, _ := http.NewRequest("GET", webURL+"/api/dashboard", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var data DashboardData
+		body, _ := io.ReadAll(resp.Body)
+		err = json.Unmarshal(body, &data)
+		require.NoError(t, err)
+
+		// Should discover the scheduler as a helper
+		require.GreaterOrEqual(t, len(data.Helpers), 1, "Should discover at least 1 helper")
+
+		// Find our scheduler helper
+		var found *ComponentStatus
+		for _, h := range data.Helpers {
+			if strings.Contains(h.URL, fmt.Sprintf(":%d", schedulerPort)) {
+				found = h
+				break
+			}
+		}
+		require.NotNil(t, found, "Should find scheduler helper")
+		require.Equal(t, "helper", found.Type)
+		require.Equal(t, "running", found.State)
+
+		// Should have jobs
+		require.Len(t, found.Jobs, 1, "Helper should have 1 job")
+		require.Equal(t, "test-job", found.Jobs[0].Name)
+		require.Equal(t, "0 * * * *", found.Jobs[0].Schedule)
+	})
+}
+
+func TestSystemWebViewHelperJobStatusUpdate(t *testing.T) {
+	binDir := buildBinaries(t)
+
+	// Start a mock agent that accepts tasks
+	agentPort := testutil.AllocateTestPortN(t, 0)
+	agentURL := fmt.Sprintf("http://localhost:%d", agentPort)
+	agentCmd := startAgent(t, binDir, agentPort)
+
+	defer func() {
+		if agentCmd.Process != nil {
+			agentCmd.Process.Signal(syscall.SIGTERM)
+			agentCmd.Wait()
+		}
+	}()
+
+	testutil.WaitForHealthy(t, agentURL+"/status", 10*time.Second)
+	t.Log("Agent is healthy")
+
+	// Start scheduler with the agent configured
+	schedulerPort := testutil.AllocateTestPortN(t, 1)
+	schedulerURL := fmt.Sprintf("http://localhost:%d", schedulerPort)
+
+	configContent := fmt.Sprintf(`
+port: %d
+agent_url: %s
+jobs:
+  - name: trigger-test-job
+    schedule: "0 0 1 1 *"
+    prompt: "Test task for trigger"
+    model: haiku
+    timeout: 5m
+`, schedulerPort, agentURL)
+
+	configFile := filepath.Join(t.TempDir(), "scheduler.yaml")
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	schedulerCmd := startScheduler(t, binDir, configFile, 0)
+
+	defer func() {
+		if schedulerCmd.Process != nil {
+			schedulerCmd.Process.Signal(syscall.SIGTERM)
+			schedulerCmd.Wait()
+		}
+	}()
+
+	testutil.WaitForHealthy(t, schedulerURL+"/status", 10*time.Second)
+	t.Log("Scheduler is healthy")
+
+	// Start web view with port range that includes agent and scheduler
+	webPort := testutil.AllocateTestPortN(t, 2)
+	webURL := fmt.Sprintf("https://localhost:%d", webPort)
+	token := "test-helper-update-token"
+
+	// Port range includes both agent and scheduler
+	minPort := agentPort
+	maxPort := schedulerPort
+	if schedulerPort < agentPort {
+		minPort = schedulerPort
+		maxPort = agentPort
+	}
+
+	webCmd := startWebView(t, binDir, webPort, token, minPort, maxPort)
+
+	defer func() {
+		if webCmd.Process != nil {
+			webCmd.Process.Signal(syscall.SIGTERM)
+			webCmd.Wait()
+		}
+	}()
+
+	waitForHTTPS(t, webURL+"/status", 15*time.Second)
+	t.Log("Web view is healthy")
+
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	// Wait for discovery
+	time.Sleep(2 * time.Second)
+
+	// Get initial dashboard data
+	req1, _ := http.NewRequest("GET", webURL+"/api/dashboard", nil)
+	req1.Header.Set("Authorization", "Bearer "+token)
+	resp1, err := client.Do(req1)
+	require.NoError(t, err)
+	body1, _ := io.ReadAll(resp1.Body)
+	resp1.Body.Close()
+
+	var data1 DashboardData
+	json.Unmarshal(body1, &data1)
+
+	// Find scheduler helper and verify initial state
+	var initialHelper *ComponentStatus
+	for _, h := range data1.Helpers {
+		if strings.Contains(h.URL, fmt.Sprintf(":%d", schedulerPort)) {
+			initialHelper = h
+			break
+		}
+	}
+	require.NotNil(t, initialHelper, "Should find scheduler helper")
+	require.Len(t, initialHelper.Jobs, 1)
+	initialStatus := initialHelper.Jobs[0].LastStatus
+	t.Logf("Initial job status: %q", initialStatus)
+
+	etag1 := resp1.Header.Get("ETag")
+	t.Logf("Initial ETag: %s", etag1)
+
+	// Trigger the job via scheduler API
+	triggerResp, err := http.Post(schedulerURL+"/trigger/trigger-test-job", "application/json", nil)
+	require.NoError(t, err)
+	triggerResp.Body.Close()
+	require.Equal(t, http.StatusOK, triggerResp.StatusCode, "Job trigger should succeed")
+	t.Log("Job triggered successfully")
+
+	// Wait for discovery to pick up the change
+	time.Sleep(2 * time.Second)
+
+	// Get updated dashboard data
+	req2, _ := http.NewRequest("GET", webURL+"/api/dashboard", nil)
+	req2.Header.Set("Authorization", "Bearer "+token)
+	resp2, err := client.Do(req2)
+	require.NoError(t, err)
+	body2, _ := io.ReadAll(resp2.Body)
+	resp2.Body.Close()
+
+	var data2 DashboardData
+	json.Unmarshal(body2, &data2)
+
+	// Find scheduler helper and verify updated state
+	var updatedHelper *ComponentStatus
+	for _, h := range data2.Helpers {
+		if strings.Contains(h.URL, fmt.Sprintf(":%d", schedulerPort)) {
+			updatedHelper = h
+			break
+		}
+	}
+	require.NotNil(t, updatedHelper, "Should find scheduler helper after trigger")
+	require.Len(t, updatedHelper.Jobs, 1)
+
+	updatedStatus := updatedHelper.Jobs[0].LastStatus
+	t.Logf("Updated job status: %q", updatedStatus)
+
+	// Job status should have changed to "submitted" after trigger
+	require.Equal(t, "submitted", updatedStatus, "Job status should be 'submitted' after trigger")
+
+	// Verify ETag changed
+	etag2 := resp2.Header.Get("ETag")
+	t.Logf("Updated ETag: %s", etag2)
+	require.NotEqual(t, etag1, etag2, "ETag should change when job status changes")
+
+	// Verify task_id is populated
+	require.NotEmpty(t, updatedHelper.Jobs[0].LastTaskID, "Job should have last_task_id after trigger")
+}

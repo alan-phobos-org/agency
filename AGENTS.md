@@ -14,14 +14,19 @@ Deploying agents should feel like reliable infrastructure, not babysitting exper
 | [README.md](README.md) | Project overview, quick start | Getting started |
 | [docs/REFERENCE.md](docs/REFERENCE.md) | API specs, endpoints, config | Implementing API changes |
 | [docs/DESIGN.md](docs/DESIGN.md) | Architecture, patterns | Major refactoring |
+| [docs/TESTING.md](docs/TESTING.md) | Test conventions, commands | Writing/running tests |
+| [docs/RELEASE.md](docs/RELEASE.md) | Release process | Preparing releases |
+| [docs/WEB_UI_DESIGN.md](docs/WEB_UI_DESIGN.md) | Dashboard design, Alpine.js | Modifying web UI |
+| [docs/INTEGRATION_PATTERNS.md](docs/INTEGRATION_PATTERNS.md) | Scheduler, helpers, queue | Component integration |
 | [docs/SCHEDULER_DESIGN.md](docs/SCHEDULER_DESIGN.md) | Scheduler architecture | Modifying scheduler |
-| [docs/SESSION_ROUTING_DESIGN.md](docs/SESSION_ROUTING_DESIGN.md) | Centralized session routing | Implementing session routing |
 | [docs/WORK_QUEUE_DESIGN.md](docs/WORK_QUEUE_DESIGN.md) | Task queue architecture | Implementing work queue |
 | [docs/PLAN.md](docs/PLAN.md) | Vision, phases, backlog | Planning work |
 | [docs/DEBUGGING_DEPLOYED.md](docs/DEBUGGING_DEPLOYED.md) | Remote system diagnostics | Debugging deployed systems |
 | [CHANGELOG.md](CHANGELOG.md) | Release history | Preparing releases |
 
 ## Quick Reference
+
+Use `./build.sh` for all build/test/lint/release/deploy actions. Do not use Makefiles or ad-hoc scripts unless a doc explicitly calls for it.
 
 ### Build Commands
 
@@ -50,7 +55,7 @@ Deploying agents should feel like reliable infrastructure, not babysitting exper
 - `PUT /api/sessions/{sessionId}/tasks/{taskId}` - Update task state
 - `POST /api/sessions/{sessionId}/archive` - Archive session
 
-### API Endpoints (Queue) - Planned
+### API Endpoints (Queue)
 
 - `POST /api/queue/task` - Submit task to queue
 - `GET /api/queue` - Get queue status and pending tasks
@@ -70,8 +75,7 @@ From `deployment/ports.conf`:
 | Before any commit | `./build.sh check` |
 | "what's next", "status" | `./build.sh status` → read `docs/PLAN.md` → summarize (10-15 lines) |
 | "prepare release" | `./build.sh prepare-release` → update CHANGELOG.md → `./build.sh release X.Y.Z` → push |
-| "deploy locally" | `./deployment/agency.sh` (uses AG_WEB_PASSWORD from .env) |
-| "stop services" | `./deployment/stop-agency.sh` |
+| "deploy locally" | `./build.sh deploy-local` (uses AG_WEB_PASSWORD from .env) |
 
 ---
 
@@ -120,90 +124,19 @@ agency/
 
 ---
 
-## Testing [READ IF: implementing features, fixing bugs, debugging]
+## Testing
 
-- Tests use `t.Parallel()` unless sharing state
-- Use `testutil.AllocateTestPort(t)` for unique ports
-- Mock Claude CLI via `CLAUDE_BIN` env var pointing to `testdata/mock-claude`
-- Print progress to stderr, not t.Log()
-- Use production-style IDs in tests (e.g., `task-abc123` not `test123`)
-- Create fresh `NewHandlers()` instance per test
-- Use `httptest.NewRequest` and `httptest.NewRecorder` for handler tests
+See [docs/TESTING.md](docs/TESTING.md) for conventions, race condition prevention, and test commands.
 
-### Test Levels
-
-| Level | Speed | Claude | Purpose |
-|-------|-------|--------|---------|
-| Unit | Fast | Mock | Individual functions |
-| Integration | Fast | Mock | Component interactions |
-| System | Fast | Mock | Binary execution, API contracts |
-| Smoke | Slow | Real (haiku) | Full E2E with Playwright |
-
-### Race Condition Prevention
-
-Tests run with `-race` flag in CI. When using `httptest.NewServer` with shared variables:
-
-```go
-// WRONG - race condition between handler goroutine and test goroutine
-var count int
-server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-    count++  // Write from handler goroutine
-}))
-assert.Equal(t, 1, count)  // Read from test goroutine - RACE!
-
-// CORRECT - use sync/atomic for cross-goroutine access
-var count int32
-server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-    atomic.AddInt32(&count, 1)  // Atomic write
-}))
-assert.Equal(t, int32(1), atomic.LoadInt32(&count))  // Atomic read
-```
-
-**Rule**: Any variable accessed from both an HTTP handler and the test function MUST use `sync/atomic` or a mutex.
-
-### Test Commands
-
-| Command | Purpose | When to Use |
-|---------|---------|-------------|
-| `./build.sh test` | Unit tests (<5s) | Quick validation |
-| `./build.sh test-all` | Unit + integration | Before PR |
-| `./build.sh test-int` | Integration only | Testing API changes |
-| `./build.sh test-sys` | System tests | End-to-end validation |
-| `./build.sh test-release` | Full suite | Before release |
-
-### Coverage by Package
-
-| Package | Tests |
-|---------|-------|
-| internal/agent | Unit + Integration + System |
-| internal/config | Unit (validation) |
-| internal/history | Unit (storage, pruning) |
-| internal/scheduler | Unit (cron, config, job submission) |
-| internal/view/web | Unit + Integration + System |
-| cmd/* | None (thin entry points) |
+Quick reference: `./build.sh test` (unit), `./build.sh test-all` (unit + integration), `./build.sh check` (pre-commit).
 
 ---
 
-## Release Process [READ IF: user explicitly requests release]
+## Release Process
 
-```bash
-# 1. Run all checks
-./build.sh prepare-release
+See [docs/RELEASE.md](docs/RELEASE.md) for the full process.
 
-# 2. Update CHANGELOG.md (add: ## [X.Y.Z] - YYYY-MM-DD)
-
-# 3. Review docs for completed TODOs
-
-# 4. Create release
-./build.sh release X.Y.Z
-
-# 5. Push
-git push origin main vX.Y.Z
-```
-
-The `prepare-release` target runs: check, test-all, test-sys, local deployment test, shows git log.
-
-The `release` target: validates semver, checks CHANGELOG.md entry, creates commit and tag.
+Quick reference: `./build.sh prepare-release` then `./build.sh release X.Y.Z`.
 
 ---
 
@@ -264,136 +197,22 @@ When in doubt, query the Agent. The Web's `/api/task/{id}` handler falls back to
 
 ---
 
-## Web UI Architecture [READ IF: modifying the dashboard]
+## Web UI Architecture
 
-### Alpine.js Dashboard
+See [docs/WEB_UI_DESIGN.md](docs/WEB_UI_DESIGN.md) for the full design (visual system, components, state management, accessibility).
 
-The web UI (`internal/view/web/templates/dashboard.html`) uses Alpine.js for reactive state management. Key design decisions:
-
-**State Management:**
-- Single Alpine.js component (`dashboard()`) manages all UI state
-- Uses ETags for efficient dashboard polling (returns 304 if unchanged)
-- Visibility API pauses polling when tab is hidden
-- Debounced refresh (500ms) prevents thundering herd on rapid updates
-
-**Polling Strategy:**
-- Idle: 5s poll interval
-- Active tasks: 1s poll interval (auto-adjusts)
-- Per-task polling for streaming output updates
-- Falls back to history endpoint when task not found
-
-**Race Condition Handling:**
-- `activeTaskPolling` object tracks polling state per task
-- `activeTasks` stores real-time output separately from session history
-- Session history loaded on-demand when expanding a session
-- Task state changes trigger refresh + history reload
-
-**UI Structure:**
-- Fleet panel: Collapsible, shows agent/director/helper status
-- Session cards: Accordion pattern, one expanded at a time
-- Session tabs: I/O, Details, Metrics
-- Task modal: Agent selection, context presets, advanced options
-
-**Keyboard Shortcuts:**
-- `N` - New task
-- `R` - Refresh
-- `F` - Toggle fleet panel
-- `J/K` - Navigate sessions
-- `Escape` - Close expanded session
-
-**CSS Variables:**
-- Dark mode only (Danish minimalism aesthetic)
-- Mobile-first responsive (optimized for narrow screens)
-- Safe area insets for notched devices
-- Reduced motion support via `prefers-reduced-motion`
-
-**TODOs (placeholder for future observability):**
-- Token usage aggregation per session (needs history API enhancement)
-- Cost estimation (requires pricing data)
-- Step/trace visualization (requires expanded history API)
+Quick reference:
+- Alpine.js SPA in `internal/view/web/templates/dashboard.html`
+- Polling: 5s idle, 1s active; pauses when tab hidden
+- Keyboard: `N` new task, `R` refresh, `F` fleet panel, `J/K` navigate
 
 ---
 
-## Scheduler Integration [READ IF: working with scheduled jobs]
+## Integration Patterns
 
-### Session Tracking for Scheduled Jobs
+See [docs/INTEGRATION_PATTERNS.md](docs/INTEGRATION_PATTERNS.md) for scheduler integration, helper patterns, and work queue details.
 
-For scheduled jobs to appear in the web UI with proper session tracking:
-
-1. Start the web director with an internal HTTP port:
-   ```bash
-   ag-view-web -internal-port=8080
-   ```
-
-2. Configure the scheduler to use this internal port in `configs/scheduler.yaml`:
-   ```yaml
-   director_url: http://localhost:8080
-   ```
-
-**Why this matters:** The scheduler routes tasks through the director to create tracked sessions. Without `director_url`, tasks fall back to direct agent submission and sessions won't appear in the web UI.
-
-### Manual Job Triggering
-
-Jobs can be triggered manually via `POST /trigger/{job}` on the scheduler. The web UI exposes this through the Fleet panel when helpers with jobs are discovered.
-
-**Web UI endpoint:** `POST /api/scheduler/trigger?scheduler_url=<url>&job=<name>`
-
-This is useful for testing scheduled jobs without waiting for the cron schedule.
-
----
-
-## Helper Patterns [READ IF: working with github-monitor]
-
-### Event-Driven Helpers (github-monitor)
-
-- Quiet period pattern: delay action after events to batch rapid changes
-- Circuit breaker pattern: stop after N consecutive failures, require manual reset
-- Task queue: sequential per-repo to avoid conflicts, parallel across repos
-- Use `gh` CLI for GitHub API access (requires GITHUB_TOKEN in .env)
-- Model selection: Sonnet for reviews, Opus for fixes
-
-### Handler Conventions (internal/view/web)
-
-- HTTP handlers with chi router parameters passed explicitly
-- Use `api.WriteJSON` and `api.WriteError` for responses
-- Pattern: `HandleX(w, r, ...params)` for handlers with URL params
-- Session store: in-memory thread-safe with `sync.RWMutex`
-- Sessions can be archived (hidden from UI but kept in storage)
-
----
-
-## Work Queue [READ IF: implementing task queue]
-
-See [docs/WORK_QUEUE_DESIGN.md](docs/WORK_QUEUE_DESIGN.md) for the full design.
-
-### Key Decisions
-
-- **Persistence**: JSON file-based (`~/.agency/queue/pending/`, `~/.agency/queue/dispatched/`)
-- **Ordering**: FIFO (no priority)
-- **Agent selection**: First available idle agent
-- **Queue limit**: Reject at 50 tasks (503 Service Unavailable)
-- **TTL**: None (tasks wait indefinitely)
-
-### New Task States
-
-```go
-TaskStatePending     TaskState = "pending"     // In queue, waiting for agent
-TaskStateDispatching TaskState = "dispatching" // Being sent to agent
-```
-
-### Component Responsibilities
-
-| Component | Responsibility |
-|-----------|----------------|
-| WorkQueue | Stores pending tasks, enforces FIFO, persists to JSON files |
-| Dispatcher | Background loop that finds idle agents and dispatches tasks |
-| Queue API | HTTP endpoints for queue operations |
-| Submitters | Web UI, Scheduler, CLI - all submit via queue API |
-
-### Scheduler Changes
-
-When work queue is implemented:
-- Scheduler requires `director_url` in config
-- Removes `agent_url` (queue handles dispatch)
-- Job status changes from "submitted" to "queued"
-- Uses `POST /api/queue/task` instead of direct agent submission
+Quick reference:
+- Scheduler needs `director_url` in config to create tracked sessions
+- Manual job trigger: `POST /api/scheduler/trigger?scheduler_url=<url>&job=<name>`
+- Work queue design: [docs/WORK_QUEUE_DESIGN.md](docs/WORK_QUEUE_DESIGN.md)

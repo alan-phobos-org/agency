@@ -22,8 +22,8 @@ For project roadmap and phases, see [PLAN.md](PLAN.md).
 | Type | Interfaces | Can Task Others | Examples |
 |------|------------|-----------------|----------|
 | **Agent** | Statusable + Taskable | No | ag-agent-claude |
-| **Director** | Statusable + Observable + Taskable | Yes | ag-director-claude |
-| **Helper** | Statusable + Observable | Yes (not taskable itself) | ag-tool-scheduler |
+| **Director** | Statusable + Observable + Taskable | Yes | ag-cli (CLI director) |
+| **Helper** | Statusable + Observable | Yes (not taskable itself) | ag-scheduler |
 | **View** | Statusable + Observable | Yes (tasks + observes) | ag-view-web |
 
 ### Communication Pattern
@@ -58,7 +58,7 @@ POST /api/task        # Submit task (proxies to selected agent)
 ### Discovery Protocol
 
 **Port scanning (current implementation):**
-1. Components start on configurable port ranges (default: 9000-9009 for dev, 9100-9109 for prod)
+1. Components start on configurable port ranges (default: 9000-9010 for dev, 9100-9110 for prod)
 2. On startup, scan range for `/status` endpoints
 3. Cache discovered services, refresh periodically (1s for working, 5s for idle)
 4. `/status` returns `type` and `interfaces` for component identification
@@ -76,8 +76,7 @@ POST /api/task        # Submit task (proxies to selected agent)
 
 ```
 idle → working → idle
-         ↓
-       error → idle (after logging)
+  \-> cancelling -> idle
 ```
 
 Agents are intentionally simple. They don't track history across tasks—that's the director's job.
@@ -164,6 +163,8 @@ agency/
 ├── cmd/
 │   ├── ag-agent-claude/  # Agent binary
 │   ├── ag-cli/           # CLI tool
+│   ├── ag-github-monitor/  # GitHub repo event monitor
+│   ├── ag-scheduler/     # Scheduler binary
 │   └── ag-view-web/      # Web view binary
 ├── configs/              # Configuration files
 ├── deployment/           # Local and remote deployment scripts

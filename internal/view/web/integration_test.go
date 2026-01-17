@@ -1017,7 +1017,7 @@ func TestIntegrationSessionBouncing(t *testing.T) {
 
 	t.Run("browser B joins after seeing session in dropdown", func(t *testing.T) {
 		// Clear previous state
-		d.handlers.sessionStore = NewSessionStore()
+		d.handlers.sessionStore.Clear()
 		agentMu.Lock()
 		taskCounter = 0
 		agentMu.Unlock()
@@ -1543,7 +1543,7 @@ func TestIntegrationConsolidatedDashboard(t *testing.T) {
 
 	t.Run("sessions are sorted by UpdatedAt", func(t *testing.T) {
 		// Clear and recreate sessions with known order
-		d.handlers.sessionStore = NewSessionStore()
+		d.handlers.sessionStore.Clear()
 		d.handlers.sessionStore.AddTask("old-sess", mockAgent.URL, "task-old", "completed", "old")
 		time.Sleep(15 * time.Millisecond)
 		d.handlers.sessionStore.AddTask("new-sess", mockAgent.URL, "task-new", "working", "new")

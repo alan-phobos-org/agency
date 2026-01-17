@@ -50,7 +50,7 @@ Clean interface-based architecture with explicit component types.
 
 **Component Types:**
 - **Agent** (Statusable + Taskable) - ag-agent-claude
-- **Director** (Statusable + Observable + Taskable) - ag-director-claude
+- **Director** (Statusable + Observable + Taskable) - ag-cli (CLI director)
 - **Helper** (Statusable + Observable) - ag-scheduler, ag-github-monitor
 - **View** (Statusable + Observable) - ag-view-web
 
@@ -72,11 +72,15 @@ See [SCHEDULER_DESIGN.md](SCHEDULER_DESIGN.md) for details.
 Observability, security isolation, and multi-instance support.
 
 #### 2.1 Observability
-- Structured logging (JSON) with levels
+**Complete:**
 - Per-task history storage (last 100 tasks)
 - `/history` API with pagination
-- Health checks and graceful shutdown
-- Web UI observability dashboard
+- Health checks via `/status` and graceful shutdown via `/shutdown`
+
+**Remaining:**
+- Structured logging (JSON) with levels
+- Web UI observability integrated into the existing dashboard with progressive disclosure
+- Populate tokens/cost, step/trace data, and (optionally) stream output when requested
 
 #### 2.2 Security
 - Agent auth (bind localhost, add token)
@@ -134,9 +138,7 @@ Feature parity with h2ai v1 GitHub integration.
 
 ### Session Routing (Centralized)
 
-Route all task submissions through Web Director for unified session tracking.
-
-**Design:** See [SESSION_ROUTING_DESIGN.md](SESSION_ROUTING_DESIGN.md)
+Route all task submissions through the web director for unified session tracking. Scheduler and CLI should use `director_url` when available, with explicit fallback behavior when the director is unavailable.
 
 ### Task State Synchronization
 
@@ -152,5 +154,4 @@ Tasks can appear stuck in "working" state due to distributed state. Options in [
 - [DESIGN.md](DESIGN.md) - Architecture and technical design
 - [SCHEDULER_DESIGN.md](SCHEDULER_DESIGN.md) - Scheduler architecture
 - [GITHUB_MONITOR_DESIGN.md](GITHUB_MONITOR_DESIGN.md) - GitHub monitor architecture
-- [SESSION_ROUTING_DESIGN.md](SESSION_ROUTING_DESIGN.md) - Centralized session routing
 - [TASK_STATE_SYNC_DESIGN.md](TASK_STATE_SYNC_DESIGN.md) - Task state synchronization
