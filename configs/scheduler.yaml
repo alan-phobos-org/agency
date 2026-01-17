@@ -47,9 +47,8 @@ jobs:
       ### 1. Code Cleanup
       - Remove dead code and unused imports
       - Fix obvious code style issues
-      - Remove commented-out code blocks
-      - Look for ways to refactor out any duplication
-      - Look for any inconsistencies or logic errors
+      - Refactor out any duplication
+      - Fix inconsistencies or logic errors
 
       ### 2. Testing
       - Run the test suite and fix any failing tests
