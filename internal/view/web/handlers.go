@@ -124,8 +124,10 @@ func (h *Handlers) HandleDirectors(w http.ResponseWriter, r *http.Request) {
 // TaskSubmitRequest represents a task submission through the web view
 type TaskSubmitRequest struct {
 	AgentURL       string            `json:"agent_url"`
+	AgentKind      string            `json:"agent_kind,omitempty"`
 	Prompt         string            `json:"prompt"`
 	Model          string            `json:"model,omitempty"`
+	Tier           string            `json:"tier,omitempty"`
 	TimeoutSeconds int               `json:"timeout_seconds,omitempty"`
 	SessionID      string            `json:"session_id,omitempty"` // Continue existing session
 	Env            map[string]string `json:"env,omitempty"`
@@ -157,11 +159,24 @@ func (h *Handlers) HandleTaskSubmit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "validation_error", "prompt is required")
 		return
 	}
+	if req.Model == "" && req.Tier != "" && !api.IsValidTier(req.Tier) {
+		writeError(w, http.StatusBadRequest, "validation_error", "tier must be fast, standard, or heavy")
+		return
+	}
+	if req.AgentKind != "" && req.AgentKind != api.AgentKindClaude && req.AgentKind != api.AgentKindCodex {
+		writeError(w, http.StatusBadRequest, "validation_error", "agent_kind must be claude or codex")
+		return
+	}
 
 	// Verify agent exists and is idle
 	agent, ok := h.discovery.GetComponent(req.AgentURL)
 	if !ok {
 		writeError(w, http.StatusBadRequest, "agent_not_found", "Agent not found: "+req.AgentURL)
+		return
+	}
+	if req.AgentKind != "" && agent.AgentKind != "" && agent.AgentKind != req.AgentKind {
+		writeError(w, http.StatusBadRequest, "agent_kind_mismatch",
+			fmt.Sprintf("Agent kind %q does not match requested %q", agent.AgentKind, req.AgentKind))
 		return
 	}
 	if agent.State != "idle" {
@@ -175,6 +190,9 @@ func (h *Handlers) HandleTaskSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Model != "" {
 		agentReq["model"] = req.Model
+	}
+	if req.Tier != "" {
+		agentReq["tier"] = req.Tier
 	}
 	if req.TimeoutSeconds > 0 {
 		agentReq["timeout_seconds"] = req.TimeoutSeconds

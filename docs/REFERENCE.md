@@ -10,14 +10,14 @@ Detailed endpoint specifications and technical reference for Agency components.
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/status` | GET | Agent state, version, config, current task preview |
-| `/task` | POST | Submit task (prompt, timeout, env, model, session_id, project, thinking) |
+| `/status` | GET | Agent state, version, agent kind, config, current task preview |
+| `/task` | POST | Submit task (prompt, timeout, env, model, tier, session_id, project, thinking) |
 | `/task/:id` | GET | Task status and output (includes session_id) |
 | `/task/:id/cancel` | POST | Cancel running task |
 | `/shutdown` | POST | Graceful shutdown (supports force flag) |
 | `/history` | GET | Paginated task history (page, limit params) |
 | `/history/:id` | GET | Full task details with execution outline |
-| `/history/:id/debug` | GET | Raw Claude output (retained for 20 most recent tasks) |
+| `/history/:id/debug` | GET | Raw CLI output (retained for 20 most recent tasks) |
 
 ### Agent States
 
@@ -38,7 +38,8 @@ idle → working → idle
   "prompt": "string (required)",
   "timeout_seconds": "int (optional)",
   "env": "map[string]string (optional)",
-  "model": "string (optional, default: sonnet)",
+  "model": "string (optional, overrides tier)",
+  "tier": "string (optional: fast|standard|heavy, default: standard)",
   "session_id": "string (optional, generates if omitted)",
   "project": {"name": "string", "prompt": "string"} (optional),
   "thinking": "bool (optional)"
@@ -90,9 +91,11 @@ The work queue allows tasks to be queued when agents are busy. The dispatcher au
 POST /api/queue/task
 {
   "prompt": "string (required)",
-  "model": "string (optional)",
+  "model": "string (optional, overrides tier)",
+  "tier": "string (optional: fast|standard|heavy)",
   "timeout_seconds": "int (optional)",
   "session_id": "string (optional)",
+  "agent_kind": "string (optional: claude|codex)",
   "source": "string (optional, e.g., web, scheduler, cli)",
   "source_job": "string (optional, job name if scheduler)"
 }
@@ -148,10 +151,20 @@ session_dir: /tmp/agency/sessions
 history_dir: ~/.agency/history
 preprompt_file: /path/to/custom.md  # optional, falls back to embedded
 
+agent_kind: claude  # claude or codex
+tiers:
+  fast: haiku
+  standard: sonnet
+  heavy: opus
+
 claude:
   model: sonnet      # default model (overridable per-task)
   timeout: 30m       # default timeout (overridable per-task)
   max_turns: 50      # conversation turn limit
+
+codex:
+  model: ""          # default model (overridable per-task)
+  timeout: 30m       # default timeout (overridable per-task)
 ```
 
 ### Web View Config
@@ -162,6 +175,7 @@ Environment variables:
 - `AG_AGENT_PORT` - Agent port for deployment scripts (default: 9000)
 - `AGENCY_ROOT` - Override config directory (default: ~/.agency)
 - `CLAUDE_BIN` - Path to Claude CLI (default: claude from PATH)
+- `CODEX_BIN` - Path to Codex CLI (default: codex from PATH)
 
 ### Claude Code CLI Authentication
 
@@ -191,6 +205,7 @@ contexts:
     name: My Context
     description: Description shown in UI
     model: opus
+    tier: heavy
     thinking: true
     timeout_seconds: 1800
     prompt_prefix: |

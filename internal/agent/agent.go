@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -27,9 +26,6 @@ import (
 	"phobos.org.uk/agency/internal/logging"
 	"phobos.org.uk/agency/internal/stream"
 )
-
-//go:embed claude.md
-var agentClaudeMD string
 
 // State represents the agent's current state
 type State string
@@ -82,7 +78,7 @@ type TaskError struct {
 	Message string `json:"message"`
 }
 
-// TokenUsage represents Claude token usage
+// TokenUsage represents token usage.
 type TokenUsage struct {
 	Input  int `json:"input"`
 	Output int `json:"output"`
@@ -92,6 +88,7 @@ type TokenUsage struct {
 type TaskRequest struct {
 	Prompt         string              `json:"prompt"`
 	Model          string              `json:"model,omitempty"`
+	Tier           string              `json:"tier,omitempty"`
 	TimeoutSeconds int                 `json:"timeout_seconds,omitempty"`
 	SessionID      string              `json:"session_id,omitempty"`
 	Project        *api.ProjectContext `json:"project,omitempty"`
@@ -108,6 +105,7 @@ type StatusResponse struct {
 	Type          string           `json:"type"`
 	Interfaces    []string         `json:"interfaces"`
 	Version       string           `json:"version"`
+	AgentKind     string           `json:"agent_kind"`
 	State         State            `json:"state"`
 	UptimeSeconds float64          `json:"uptime_seconds"`
 	CurrentTask   *api.CurrentTask `json:"current_task"`
@@ -128,6 +126,8 @@ type Agent struct {
 	preprompt string // Preprompt instructions loaded at startup
 	history   *history.Store
 	log       *logging.Logger
+	runner    Runner
+	agentKind string
 
 	mu          sync.RWMutex
 	state       State
@@ -140,6 +140,13 @@ type Agent struct {
 
 // New creates a new Agent
 func New(cfg *config.Config, version string) *Agent {
+	return NewWithRunner(cfg, version, NewClaudeRunner())
+}
+
+// NewWithRunner creates a new Agent with a specific CLI runner.
+func NewWithRunner(cfg *config.Config, version string, runner Runner) *Agent {
+	cfg.AgentKind = runner.Kind()
+
 	// Initialize structured logger
 	logLevel := logging.LevelInfo
 	if lvl := os.Getenv("AGENCY_LOG_LEVEL"); lvl != "" {
@@ -160,7 +167,7 @@ func New(cfg *config.Config, version string) *Agent {
 	})
 
 	// Load preprompt: try custom file first, fallback to embedded default
-	preprompt := agentClaudeMD
+	preprompt := runner.DefaultPreprompt()
 	if cfg.PrepromptFile != "" {
 		if data, err := os.ReadFile(cfg.PrepromptFile); err == nil {
 			preprompt = string(data)
@@ -190,6 +197,8 @@ func New(cfg *config.Config, version string) *Agent {
 		preprompt: preprompt,
 		history:   historyStore,
 		log:       log,
+		runner:    runner,
+		agentKind: runner.Kind(),
 		state:     StateIdle,
 		tasks:     make(map[string]*Task),
 		shutdown:  make(chan struct{}),
@@ -242,8 +251,14 @@ func (a *Agent) Shutdown(ctx context.Context) error {
 
 	// Cancel any running task
 	a.mu.Lock()
-	if a.currentTask != nil && a.currentTask.cancel != nil {
-		a.currentTask.cancel()
+	if a.currentTask != nil {
+		if a.currentTask.cancel != nil {
+			a.currentTask.cancel()
+		}
+		// Kill the process group to ensure clean shutdown of CLI subprocess
+		if a.currentTask.cmd != nil {
+			killProcessGroup(a.currentTask.cmd)
+		}
 	}
 	a.mu.Unlock()
 
@@ -263,11 +278,12 @@ func (a *Agent) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Type:          api.TypeAgent,
 		Interfaces:    []string{api.InterfaceStatusable, api.InterfaceTaskable},
 		Version:       a.version,
+		AgentKind:     a.agentKind,
 		State:         a.state,
 		UptimeSeconds: time.Since(a.startTime).Seconds(),
 		Config: StatusConfig{
 			Port:  a.config.Port,
-			Model: a.config.Claude.Model,
+			Model: a.defaultModel(),
 		},
 	}
 
@@ -302,6 +318,69 @@ func isSafeSessionID(sessionID string) bool {
 	return sessionIDPattern.MatchString(sessionID)
 }
 
+func (a *Agent) defaultModel() string {
+	if model := a.modelForTier(api.TierStandard); model != "" {
+		return model
+	}
+	switch a.runner.Kind() {
+	case api.AgentKindCodex:
+		return a.config.Codex.Model
+	default:
+		return a.config.Claude.Model
+	}
+}
+
+func (a *Agent) defaultTimeout() time.Duration {
+	switch a.runner.Kind() {
+	case api.AgentKindCodex:
+		return a.config.Codex.Timeout
+	default:
+		return a.config.Claude.Timeout
+	}
+}
+
+func (a *Agent) modelForTier(tier string) string {
+	if model := a.config.Tiers.Value(tier); model != "" {
+		return model
+	}
+	switch a.runner.Kind() {
+	case api.AgentKindClaude:
+		return config.DefaultClaudeTiers().Value(tier)
+	case api.AgentKindCodex:
+		return config.DefaultCodexTiers().Value(tier)
+	}
+	return ""
+}
+
+func (a *Agent) resolveModel(req TaskRequest) (string, error) {
+	if req.Model != "" {
+		return req.Model, nil
+	}
+	tier := req.Tier
+	if tier == "" {
+		tier = api.TierStandard
+	}
+	model := a.modelForTier(tier)
+	if model == "" {
+		model = a.defaultModel()
+	}
+	if model == "" {
+		if a.runner.Kind() == api.AgentKindCodex {
+			return "", fmt.Errorf("no model configured for tier %q (set codex.model or tiers.%s)", tier, tier)
+		}
+		return "", fmt.Errorf("no model configured for tier %q", tier)
+	}
+	return model, nil
+}
+
+func (a *Agent) buildPrompt(task *Task) string {
+	prompt := a.preprompt + "\n\n" + task.Prompt
+	if task.Project != nil && task.Project.Prompt != "" {
+		prompt = a.preprompt + "\n\n" + task.Project.Prompt + "\n\n" + task.Prompt
+	}
+	return prompt
+}
+
 func setTaskCompletion(task *Task, completedAt time.Time) {
 	task.CompletedAt = &completedAt
 	if task.StartedAt != nil {
@@ -321,6 +400,11 @@ func (a *Agent) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 
 	if req.Prompt == "" {
 		api.WriteError(w, http.StatusBadRequest, "validation_error", "prompt is required")
+		return
+	}
+
+	if req.Model == "" && req.Tier != "" && !api.IsValidTier(req.Tier) {
+		api.WriteError(w, http.StatusBadRequest, "validation_error", "tier must be fast, standard, or heavy")
 		return
 	}
 
@@ -360,11 +444,17 @@ func (a *Agent) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		thinking = *req.Thinking
 	}
 
+	model, err := a.resolveModel(req)
+	if err != nil {
+		api.WriteError(w, http.StatusInternalServerError, "configuration_error", err.Error())
+		return
+	}
+
 	task := &Task{
 		ID:            "task-" + uuid.New().String()[:8],
 		State:         TaskStateQueued,
 		Prompt:        req.Prompt,
-		Model:         req.Model,
+		Model:         model,
 		SessionID:     sessionID,
 		ResumeSession: resumeSession,
 		WorkDir:       sessionID,
@@ -372,14 +462,10 @@ func (a *Agent) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		Thinking:      thinking,
 	}
 
-	if task.Model == "" {
-		task.Model = a.config.Claude.Model
-	}
-
 	if req.TimeoutSeconds > 0 {
 		task.Timeout = time.Duration(req.TimeoutSeconds) * time.Second
 	} else {
-		task.Timeout = a.config.Claude.Timeout
+		task.Timeout = a.defaultTimeout()
 	}
 
 	a.tasks[task.ID] = task
@@ -471,7 +557,7 @@ func (a *Agent) handleGetTask(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleCancelTask cancels a running task by ID.
-// Triggers context cancellation which sends SIGTERM to the Claude process.
+// Triggers context cancellation which sends SIGTERM to the CLI process.
 // Returns 404 if not found, 409 if already completed.
 func (a *Agent) handleCancelTask(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "id")
@@ -497,6 +583,10 @@ func (a *Agent) handleCancelTask(w http.ResponseWriter, r *http.Request) {
 	task.State = TaskStateCancelled
 	if task.cancel != nil {
 		task.cancel()
+	}
+	// Kill the process group to ensure clean shutdown of CLI subprocess
+	if task.cmd != nil {
+		killProcessGroup(task.cmd)
 	}
 	a.mu.Unlock()
 
@@ -550,18 +640,18 @@ func (a *Agent) handleShutdown(w http.ResponseWriter, r *http.Request) {
 	}()
 }
 
-// executeTask runs the Claude CLI with the given task configuration.
+// executeTask runs the CLI runner with the given task configuration.
 // It handles the full lifecycle: setup, execution, timeout/cancellation, and result parsing.
 //
 // The function:
 //  1. Creates a timeout context based on task.Timeout
-//  2. Creates/reuses session directory and executes Claude CLI
+//  2. Creates/reuses session directory and executes the CLI runner
 //  3. Handles three termination cases: success, timeout, or cancellation
-//  4. Parses JSON output from Claude or falls back to raw stdout
+//  4. Parses JSON output from the runner or falls back to raw stdout
 //  5. Updates task state and clears agent's current task when done
 //
-// The env parameter allows passing additional environment variables to Claude.
-// Auto-resumes up to 2 times if Claude hits the max_turns limit.
+// The env parameter allows passing additional environment variables to the runner.
+// Auto-resumes up to 2 times if the runner reports a max_turns limit.
 func (a *Agent) executeTask(task *Task, env map[string]string) {
 	taskLog := a.log.WithTask(task.ID)
 	taskLog.Info("task started", map[string]any{
@@ -602,21 +692,21 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 		return
 	}
 
-	// Resolve Claude binary: CLAUDE_BIN env var or "claude" from PATH
-	claudeBin := os.Getenv("CLAUDE_BIN")
-	if claudeBin == "" {
-		claudeBin = "claude"
-	}
+	runnerBin := a.runner.ResolveBin()
 
 	const maxAutoResumes = 2
 	var lastOutput []byte
 
 	// Execution loop: runs once normally, up to 2 more times for max_turns auto-resume
 	for {
-		args := a.buildClaudeArgs(task)
+		prompt := a.buildPrompt(task)
+		cmdSpec := a.runner.BuildCommand(task, prompt, a.config)
 
-		cmd := exec.CommandContext(ctx, claudeBin, args...)
+		cmd := exec.CommandContext(ctx, runnerBin, cmdSpec.Args...)
 		cmd.Dir = workDir
+		if cmdSpec.PromptInStdin {
+			cmd.Stdin = strings.NewReader(prompt)
+		}
 
 		// Inherit current environment and add task-specific vars
 		cmd.Env = os.Environ()
@@ -624,7 +714,8 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 		}
 
-		task.cmd = cmd
+		// Set up process group for proper signal propagation
+		setupProcessGroup(cmd)
 
 		// Set up streaming output capture
 		stdout, err := cmd.StdoutPipe()
@@ -648,8 +739,10 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
 
-		// Start command
-		if err := cmd.Start(); err != nil {
+		// Start the process first, then set task.cmd to avoid race
+		// where handleCancelTask reads cmd.Process while it's being initialized
+		cmdErr := cmd.Start()
+		if cmdErr != nil {
 			completedAt := time.Now()
 			a.mu.Lock()
 			setTaskCompletion(task, completedAt)
@@ -658,13 +751,18 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 			task.ExitCode = &exitCode
 			task.Error = &TaskError{
 				Type:    "start_error",
-				Message: fmt.Sprintf("Failed to start Claude: %v", err),
+				Message: fmt.Sprintf("Failed to start CLI: %v", err),
 			}
 			a.mu.Unlock()
 			a.saveTaskHistory(task, nil)
 			a.cleanupTask(task)
 			return
 		}
+
+		// Process started successfully, now it's safe to set task.cmd
+		a.mu.Lock()
+		task.cmd = cmd
+		a.mu.Unlock()
 
 		// Stream and parse output line by line
 		parser := stream.NewClaudeStreamParser()
@@ -713,7 +811,7 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 		lastOutput = outputBuf.Bytes()
 
 		// Wait for command to complete
-		cmdErr := cmd.Wait()
+		cmdErr = cmd.Wait()
 		completedAt := time.Now()
 
 		a.mu.Lock()
@@ -755,7 +853,7 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 				if isSafeSessionID(lastResult.SessionID) {
 					task.SessionID = lastResult.SessionID
 				} else {
-					taskLog.Warn("ignoring unsafe session_id from Claude", map[string]any{
+					taskLog.Warn("ignoring unsafe session_id from CLI", map[string]any{
 						"session_id": lastResult.SessionID,
 					})
 				}
@@ -782,16 +880,46 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 				task.Error = &TaskError{
 					Type: "max_turns",
 					Message: fmt.Sprintf("Task exceeded maximum turns limit (%d turns x %d attempts). Consider breaking the task into smaller steps.",
-						a.config.Claude.MaxTurns, maxAutoResumes+1),
+						a.runner.MaxTurnsLimit(a.config), maxAutoResumes+1),
 				}
 				a.mu.Unlock()
 				a.saveTaskHistory(task, lastOutput)
 				a.cleanupTask(task)
 				return
 			}
-		} else {
-			// No result event - try to extract output from raw stream
-			task.Output = extractResultFromStream(lastOutput)
+		}
+
+		// Try runner-specific parsing for metadata (session_id, tokens, etc)
+		parsedOutput, parsed := a.runner.ParseOutput(lastOutput)
+		if parsed {
+			// Only update session_id if runner returns a safe, non-empty value and we didn't already get one
+			if parsedOutput.SessionID != "" && task.SessionID == "" {
+				if isSafeSessionID(parsedOutput.SessionID) {
+					task.SessionID = parsedOutput.SessionID
+				} else {
+					taskLog.Warn("ignoring unsafe session_id from runner", map[string]any{
+						"session_id": parsedOutput.SessionID,
+					})
+				}
+			}
+			// Extract token usage if not already set
+			if task.TokenUsage == nil && parsedOutput.TokenUsage != nil {
+				usage := *parsedOutput.TokenUsage
+				task.TokenUsage = &usage
+			}
+			// For Codex, handle session directory renaming
+			if a.runner.Kind() == api.AgentKindCodex && !task.ResumeSession && task.SessionID != "" {
+				oldPath := workDir
+				newPath := filepath.Join(a.config.SessionDir, task.SessionID)
+				task.WorkDir = task.SessionID
+				if oldPath != newPath {
+					if err := os.Rename(oldPath, newPath); err != nil {
+						taskLog.Warn("failed to rename session directory", map[string]any{
+							"error": err.Error(),
+						})
+					}
+				}
+			}
 		}
 
 		// Determine final state based on command execution result
@@ -805,7 +933,7 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 			}
 			task.ExitCode = &exitCode
 			task.Error = &TaskError{
-				Type:    "claude_error",
+				Type:    a.runner.ErrorType(),
 				Message: stderr.String(),
 			}
 			taskLog.Error("task failed", map[string]any{
@@ -872,43 +1000,6 @@ func extractResultFromStream(output []byte) string {
 	return lastText
 }
 
-// buildClaudeArgs constructs the command-line arguments for the Claude CLI.
-// It uses "--" to separate options from the prompt, preventing prompts that
-// start with dashes from being interpreted as flags.
-func (a *Agent) buildClaudeArgs(task *Task) []string {
-	args := []string{
-		"--print",
-		"--dangerously-skip-permissions",
-		"--model", task.Model,
-		"--output-format", "stream-json",
-		"--verbose",
-		"--max-turns", strconv.Itoa(a.config.Claude.MaxTurns),
-	}
-
-	// Note: Extended thinking is enabled by default in Claude CLI for compatible models.
-	// There is no CLI flag to control it; it's determined by the model's capabilities.
-
-	// Add session handling for conversation continuity
-	// For new sessions: pass --session-id to create session with our UUID
-	// For resumed sessions: pass --resume to continue the existing session
-	if task.SessionID != "" {
-		if task.ResumeSession {
-			args = append(args, "--resume", task.SessionID)
-		} else {
-			args = append(args, "--session-id", task.SessionID)
-		}
-	}
-
-	// Build prompt with agent instructions and optional project context prepended
-	prompt := a.preprompt
-	if task.Project != nil && task.Project.Prompt != "" {
-		prompt = prompt + "\n\n" + task.Project.Prompt
-	}
-	prompt = prompt + "\n\n" + task.Prompt
-
-	args = append(args, "-p", "--", prompt)
-	return args
-}
 
 // saveTaskHistory saves a completed task to the history store.
 func (a *Agent) saveTaskHistory(task *Task, rawOutput []byte) {
@@ -953,7 +1044,7 @@ func (a *Agent) saveTaskHistory(task *Task, rawOutput []byte) {
 		})
 	}
 
-	// Save debug log (raw Claude output)
+	// Save debug log (raw CLI output)
 	if len(rawOutput) > 0 {
 		if err := a.history.SaveDebugLog(task.ID, rawOutput); err != nil {
 			a.log.WithTask(task.ID).Warn("failed to save debug log", map[string]any{

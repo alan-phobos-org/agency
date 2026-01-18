@@ -18,6 +18,7 @@ type ComponentStatus struct {
 	Type          string           `json:"type"`                 // agent, director, helper, view
 	Interfaces    []string         `json:"interfaces,omitempty"` // statusable, taskable, observable, configurable
 	Version       string           `json:"version"`
+	AgentKind     string           `json:"agent_kind,omitempty"`
 	State         string           `json:"state"`
 	UptimeSeconds float64          `json:"uptime_seconds"`
 	CurrentTask   *api.CurrentTask `json:"current_task,omitempty"`

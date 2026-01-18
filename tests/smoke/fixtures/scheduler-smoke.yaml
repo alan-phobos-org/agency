@@ -14,6 +14,7 @@ agent_url: http://localhost:19000
 jobs:
   - name: smoke-test
     schedule: "0 0 31 2 *"  # Never auto-runs (Feb 31)
+    agent_kind: claude
     model: haiku
     timeout: 60s
     prompt: |
@@ -52,25 +53,10 @@ jobs:
       4. Run tests again to verify no regressions
       5. Commit changes with descriptive messages
 
-  - name: daily-newsletter
-    schedule: "0 6 * * *"  # 06:00 UTC daily
-    model: opus
-    timeout: 30m
+  - name: smoke-test-codex
+    schedule: "0 0 31 2 *"  # Never auto-runs (Feb 31)
+    agent_kind: codex
+    agent_url: http://localhost:19001
+    timeout: 60s
     prompt: |
-      Build today's newsletter, commit it, push, and merge the resulting PR to main.
-
-      ## Setup
-      - Ensure you have the latest head of main: `git fetch origin && git checkout main && git pull`
-
-      ## Tasks
-      1. Build today's newsletter ({{.Date}})
-      2. Create a new branch for the newsletter
-      3. Commit the newsletter changes
-      4. Push the branch
-      5. Create a pull request
-      6. Merge the PR to main
-
-      When complete, provide a brief summary in <summary> tags:
-      <summary>
-      Newsletter status for {{.Date}}
-      </summary>
+      This is a smoke test for codex. Reply with exactly: "Codex smoke test OK"

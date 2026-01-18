@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+	"phobos.org.uk/agency/internal/api"
 )
 
 // Config represents the scheduler configuration
@@ -14,34 +15,39 @@ type Config struct {
 	LogLevel    string `yaml:"log_level"`
 	DirectorURL string `yaml:"director_url"` // Primary target for session tracking (optional)
 	AgentURL    string `yaml:"agent_url"`    // Fallback if director unavailable
+	AgentKind   string `yaml:"agent_kind"`   // Default agent kind for jobs
 	Jobs        []Job  `yaml:"jobs"`
 }
 
 // Job represents a scheduled job
 type Job struct {
-	Name     string        `yaml:"name"`
-	Schedule string        `yaml:"schedule"`
-	Prompt   string        `yaml:"prompt"`
-	Model    string        `yaml:"model,omitempty"`
-	Timeout  time.Duration `yaml:"timeout,omitempty"`
-	AgentURL string        `yaml:"agent_url,omitempty"`
+	Name      string        `yaml:"name"`
+	Schedule  string        `yaml:"schedule"`
+	Prompt    string        `yaml:"prompt"`
+	Model     string        `yaml:"model,omitempty"`
+	Tier      string        `yaml:"tier,omitempty"`
+	Timeout   time.Duration `yaml:"timeout,omitempty"`
+	AgentURL  string        `yaml:"agent_url,omitempty"`
+	AgentKind string        `yaml:"agent_kind,omitempty"`
 }
 
 // Defaults
 const (
-	DefaultPort     = 9100
-	DefaultLogLevel = "info"
-	DefaultAgentURL = "http://localhost:9000"
-	DefaultModel    = "sonnet"
-	DefaultTimeout  = 30 * time.Minute
+	DefaultPort      = 9100
+	DefaultLogLevel  = "info"
+	DefaultAgentURL  = "http://localhost:9000"
+	DefaultModel     = "sonnet"
+	DefaultTimeout   = 30 * time.Minute
+	DefaultAgentKind = api.AgentKindClaude
 )
 
 // Parse parses YAML config data
 func Parse(data []byte) (*Config, error) {
 	cfg := &Config{
-		Port:     DefaultPort,
-		LogLevel: DefaultLogLevel,
-		AgentURL: DefaultAgentURL,
+		Port:      DefaultPort,
+		LogLevel:  DefaultLogLevel,
+		AgentURL:  DefaultAgentURL,
+		AgentKind: DefaultAgentKind,
 	}
 
 	if err := yaml.Unmarshal(data, cfg); err != nil {
@@ -69,6 +75,9 @@ func (c *Config) Validate() error {
 	if c.Port < 1 || c.Port > 65535 {
 		return fmt.Errorf("port must be between 1 and 65535, got %d", c.Port)
 	}
+	if c.AgentKind != "" && c.AgentKind != api.AgentKindClaude && c.AgentKind != api.AgentKindCodex {
+		return fmt.Errorf("agent_kind must be claude or codex, got %q", c.AgentKind)
+	}
 
 	if len(c.Jobs) == 0 {
 		return fmt.Errorf("at least one job is required")
@@ -95,7 +104,16 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("job[%d] %q: prompt is required", i, job.Name)
 		}
 
-		if job.Model != "" {
+		jobKind := c.GetAgentKind(&job)
+		if jobKind != api.AgentKindClaude && jobKind != api.AgentKindCodex {
+			return fmt.Errorf("job[%d] %q: agent_kind must be claude or codex, got %q", i, job.Name, jobKind)
+		}
+
+		if job.Tier != "" && !api.IsValidTier(job.Tier) {
+			return fmt.Errorf("job[%d] %q: tier must be fast, standard, or heavy, got %q", i, job.Name, job.Tier)
+		}
+
+		if job.Model != "" && jobKind == api.AgentKindClaude {
 			validModels := map[string]bool{"opus": true, "sonnet": true, "haiku": true}
 			if !validModels[job.Model] {
 				return fmt.Errorf("job[%d] %q: model must be opus, sonnet, or haiku, got %q", i, job.Name, job.Model)
@@ -114,12 +132,20 @@ func (c *Config) GetAgentURL(job *Job) string {
 	return c.AgentURL
 }
 
-// GetModel returns the model for a job, using the default if not specified
-func (c *Config) GetModel(job *Job) string {
-	if job.Model != "" {
-		return job.Model
+// GetAgentKind returns the agent kind for a job, using defaults if not specified.
+func (c *Config) GetAgentKind(job *Job) string {
+	if job.AgentKind != "" {
+		return job.AgentKind
 	}
-	return DefaultModel
+	if c.AgentKind != "" {
+		return c.AgentKind
+	}
+	return api.AgentKindClaude
+}
+
+// GetModel returns the model override for a job.
+func (c *Config) GetModel(job *Job) string {
+	return job.Model
 }
 
 // GetTimeout returns the timeout for a job, using the default if not specified

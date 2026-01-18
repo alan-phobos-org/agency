@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"phobos.org.uk/agency/internal/api"
 )
 
 // Dispatcher dispatches queued tasks to idle agents
@@ -57,7 +59,7 @@ func (d *Dispatcher) dispatchNext() {
 	}
 
 	// Find first idle agent
-	agent := d.findFirstIdleAgent()
+	agent := d.findFirstIdleAgent(task.AgentKind)
 	if agent == nil {
 		return // No idle agents
 	}
@@ -93,10 +95,22 @@ func (d *Dispatcher) dispatchNext() {
 	go d.trackCompletion(task)
 }
 
-func (d *Dispatcher) findFirstIdleAgent() *ComponentStatus {
+func (d *Dispatcher) findFirstIdleAgent(agentKind string) *ComponentStatus {
+	if agentKind == "" {
+		agentKind = api.AgentKindClaude
+	}
 	agents := d.discovery.Agents()
 	for _, agent := range agents {
 		if agent.State == "idle" && agent.FailCount == 0 {
+			if agentKind == api.AgentKindCodex {
+				if agent.AgentKind != api.AgentKindCodex {
+					continue
+				}
+			} else {
+				if agent.AgentKind != "" && agent.AgentKind != api.AgentKindClaude {
+					continue
+				}
+			}
 			return agent
 		}
 	}
@@ -110,6 +124,9 @@ func (d *Dispatcher) submitToAgent(agent *ComponentStatus, task *QueuedTask) (ta
 	}
 	if task.Model != "" {
 		agentReq["model"] = task.Model
+	}
+	if task.Tier != "" {
+		agentReq["tier"] = task.Tier
 	}
 	if task.TimeoutSeconds > 0 {
 		agentReq["timeout_seconds"] = task.TimeoutSeconds

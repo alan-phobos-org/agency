@@ -219,7 +219,7 @@ test.describe.serial('Agency Smoke Tests', () => {
 
     // Wait for agent to show as idle (ensures previous task fully completed)
     await expect(async () => {
-      const idleChip = page.locator('.fleet-chip:has-text("idle")');
+      const idleChip = page.locator('.fleet-chip:has-text("idle")').first();
       await expect(idleChip).toBeVisible();
       await page.waitForTimeout(500);
       await expect(idleChip).toBeVisible();
@@ -239,7 +239,7 @@ test.describe.serial('Agency Smoke Tests', () => {
     // Also verify the regular smoke-test job exists
     const smokeTestJob = page.locator('.job-item').filter({
       hasText: 'smoke-test'
-    });
+    }).first();
     await expect(smokeTestJob).toBeVisible({ timeout: 5000 });
   });
 
@@ -307,6 +307,67 @@ test.describe.serial('Agency Smoke Tests', () => {
     await screenshot(page, '16-nightly-maintenance-completed');
   });
 
+  test('5. Trigger Codex Scheduled Job', async ({ page }) => {
+    // Login first
+    await page.goto('/login');
+    await page.fill('#password', PASSWORD);
+    await page.click('button[type="submit"]');
+    await expect(page).toHaveURL('/');
+
+    // Expand "Fleet" section
+    await page.click('.fleet-trigger');
+    await expect(page.locator('.fleet-content')).toBeVisible();
+    await screenshot(page, '14a-fleet-section-for-codex');
+
+    // Wait for agent to show as idle
+    await expect(async () => {
+      const idleChip = page.locator('.fleet-chip:has-text("idle")').first();
+      await expect(idleChip).toBeVisible();
+      await page.waitForTimeout(500);
+      await expect(idleChip).toBeVisible();
+    }).toPass({ timeout: 10000, intervals: [1000] });
+
+    // Wait for job list to render
+    await page.waitForTimeout(1000);
+    await screenshot(page, '14b-scheduler-jobs-for-codex');
+
+    // Find the smoke-test-codex job
+    const codexJob = page.locator('.job-item').filter({
+      hasText: 'smoke-test-codex'
+    });
+
+    await expect(codexJob).toBeVisible({ timeout: 10000 });
+    await screenshot(page, '14c-codex-job-visible');
+
+    // Get initial session count
+    const initialSessionCount = await page.locator('.session-card').count();
+
+    // Click trigger button
+    await codexJob.locator('button:has-text("Run Now")').click();
+
+    // Verify new session created
+    await expect(async () => {
+      const newCount = await page.locator('.session-card').count();
+      expect(newCount).toBeGreaterThan(initialSessionCount);
+    }).toPass({ timeout: 10000, intervals: [1000] });
+
+    await screenshot(page, '14d-codex-job-triggered');
+
+    // Wait for job completion
+    const newSession = page.locator('.session-card').first();
+    const terminalStatus = newSession.locator('.session-status--completed, .session-status--failed, .session-status--cancelled');
+    await expect(terminalStatus).toBeVisible({ timeout: 90000 });
+
+    // Verify it completed successfully
+    await expect(newSession.locator('.session-status--completed')).toBeVisible();
+
+    // Verify success state - output should contain "Codex smoke test OK"
+    await newSession.click();
+    await expect(newSession).toContainText('Codex smoke test OK', { timeout: 5000 });
+    await screenshot(page, '14e-codex-job-completed');
+  });
+
+
   test('6. UI Navigation and Interactions', async ({ page }) => {
     // Login first
     await page.goto('/login');
@@ -337,7 +398,7 @@ test.describe.serial('Agency Smoke Tests', () => {
 
     // Verify agent and helpers are shown
     await expect(page.locator('.fleet-category-label:has-text("Agents")')).toBeVisible();
-    await expect(page.locator('.fleet-chip:has-text("idle"), .fleet-chip:has-text("working")')).toBeVisible();
+    await expect(page.locator('.fleet-chip:has-text("idle"), .fleet-chip:has-text("working")').first()).toBeVisible();
 
     // Collapse fleet section
     await fleetTrigger.click();

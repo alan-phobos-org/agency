@@ -326,7 +326,9 @@ func TestBuildClaudeArgs(t *testing.T) {
 			t.Parallel()
 			cfg := config.Default()
 			a := New(cfg, "test")
-			args := a.buildClaudeArgs(tt.task)
+			prompt := a.buildPrompt(tt.task)
+			cmdSpec := claudeRunner{}.BuildCommand(tt.task, prompt, cfg)
+			args := cmdSpec.Args
 			tt.verify(t, args)
 		})
 	}
@@ -361,10 +363,12 @@ func TestPrepromptFileLoading(t *testing.T) {
 
 	// Verify it appears in built args
 	task := &Task{Model: "sonnet", Prompt: "test prompt"}
-	args := a.buildClaudeArgs(task)
-	prompt := args[len(args)-1] // Last arg is the prompt
-	require.Contains(t, prompt, "# Custom Instructions")
-	require.Contains(t, prompt, "test prompt")
+	prompt := a.buildPrompt(task)
+	cmdSpec := claudeRunner{}.BuildCommand(task, prompt, cfg)
+	args := cmdSpec.Args
+	promptArg := args[len(args)-1] // Last arg is the prompt
+	require.Contains(t, promptArg, "# Custom Instructions")
+	require.Contains(t, promptArg, "test prompt")
 }
 
 func TestPrepromptFileFallbackToDefault(t *testing.T) {
@@ -497,7 +501,9 @@ func TestBuildClaudeArgsCustomMaxTurns(t *testing.T) {
 		Prompt: "test prompt",
 	}
 
-	args := a.buildClaudeArgs(task)
+	prompt := a.buildPrompt(task)
+	cmdSpec := claudeRunner{}.BuildCommand(task, prompt, cfg)
+	args := cmdSpec.Args
 	require.Contains(t, args, "--max-turns")
 	idx := indexOf(args, "--max-turns")
 	require.Equal(t, "100", args[idx+1])

@@ -13,6 +13,7 @@ type Context struct {
 	Name           string `yaml:"name" json:"name"`
 	Description    string `yaml:"description,omitempty" json:"description,omitempty"`
 	Model          string `yaml:"model,omitempty" json:"model,omitempty"`
+	Tier           string `yaml:"tier,omitempty" json:"tier,omitempty"`
 	Thinking       *bool  `yaml:"thinking,omitempty" json:"thinking,omitempty"`
 	TimeoutSeconds int    `yaml:"timeout_seconds,omitempty" json:"timeout_seconds,omitempty"`
 	PromptPrefix   string `yaml:"prompt_prefix,omitempty" json:"prompt_prefix,omitempty"`

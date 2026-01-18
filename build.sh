@@ -3,7 +3,7 @@ set -euo pipefail
 
 VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS="-X main.version=$VERSION"
-BINARIES=(ag-agent-claude ag-view-web ag-cli ag-scheduler)
+BINARIES=(ag-agent-claude ag-agent-codex ag-view-web ag-cli ag-scheduler)
 
 # Helper functions
 build_all() {
@@ -224,6 +224,7 @@ case "${1:-help}" in
         export AG_WEB_PORT=18443
         export AG_WEB_INTERNAL_PORT=18080
         export AG_AGENT_PORT=19000
+        export AG_AGENT_CODEX_PORT=19001
         export AG_SCHEDULER_PORT=19010
         export AG_DISCOVERY_START=19000
         export AG_DISCOVERY_END=19010

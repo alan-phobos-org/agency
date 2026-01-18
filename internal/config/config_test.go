@@ -28,10 +28,15 @@ func TestParse(t *testing.T) {
 				LogLevel:   DefaultLogLevel,
 				SessionDir: DefaultSessionDir,
 				HistoryDir: expectedHistoryDir,
+				AgentKind:  DefaultAgentKind,
 				Claude: ClaudeConfig{
 					Model:    DefaultModel,
 					Timeout:  DefaultTimeout,
 					MaxTurns: DefaultMaxTurns,
+				},
+				Codex: CodexConfig{
+					Model:   DefaultCodexModel,
+					Timeout: DefaultCodexTimeout,
 				},
 			},
 		},
@@ -50,10 +55,15 @@ claude:
 				LogLevel:   "debug",
 				SessionDir: DefaultSessionDir,
 				HistoryDir: expectedHistoryDir,
+				AgentKind:  DefaultAgentKind,
 				Claude: ClaudeConfig{
 					Model:    "opus",
 					Timeout:  time.Hour,
 					MaxTurns: DefaultMaxTurns,
+				},
+				Codex: CodexConfig{
+					Model:   DefaultCodexModel,
+					Timeout: DefaultCodexTimeout,
 				},
 			},
 		},
@@ -123,7 +133,10 @@ func TestDefault(t *testing.T) {
 	require.Equal(t, DefaultLogLevel, cfg.LogLevel)
 	require.Equal(t, DefaultSessionDir, cfg.SessionDir)
 	require.Equal(t, DefaultHistoryPath(DefaultName), cfg.HistoryDir)
+	require.Equal(t, DefaultAgentKind, cfg.AgentKind)
 	require.Equal(t, DefaultModel, cfg.Claude.Model)
 	require.Equal(t, DefaultTimeout, cfg.Claude.Timeout)
 	require.Equal(t, DefaultMaxTurns, cfg.Claude.MaxTurns)
+	require.Equal(t, DefaultCodexModel, cfg.Codex.Model)
+	require.Equal(t, DefaultCodexTimeout, cfg.Codex.Timeout)
 }

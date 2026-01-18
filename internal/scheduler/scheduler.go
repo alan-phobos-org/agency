@@ -211,15 +211,25 @@ func (s *Scheduler) runJob(js *jobState) {
 // submitViaQueue submits a task through the queue API
 func (s *Scheduler) submitViaQueue(js *jobState) (string, error) {
 	model := s.config.GetModel(js.Job)
+	tier := js.Job.Tier
+	if model == "" && tier == "" {
+		tier = api.TierStandard
+	}
 	timeout := s.config.GetTimeout(js.Job)
+	agentKind := s.config.GetAgentKind(js.Job)
 
 	// Build queue request
 	queueReq := map[string]interface{}{
 		"prompt":          js.Job.Prompt,
-		"model":           model,
 		"timeout_seconds": int(timeout.Seconds()),
 		"source":          "scheduler",
 		"source_job":      js.Job.Name,
+		"agent_kind":      agentKind,
+	}
+	if model != "" {
+		queueReq["model"] = model
+	} else if tier != "" {
+		queueReq["tier"] = tier
 	}
 
 	body, _ := json.Marshal(queueReq)
@@ -255,12 +265,20 @@ func (s *Scheduler) submitViaQueue(js *jobState) (string, error) {
 func (s *Scheduler) submitViaAgent(js *jobState) (taskID string, status string, err error) {
 	agentURL := s.config.GetAgentURL(js.Job)
 	model := s.config.GetModel(js.Job)
+	tier := js.Job.Tier
+	if model == "" && tier == "" {
+		tier = api.TierStandard
+	}
 	timeout := s.config.GetTimeout(js.Job)
 
 	taskReq := map[string]interface{}{
 		"prompt":          js.Job.Prompt,
-		"model":           model,
 		"timeout_seconds": int(timeout.Seconds()),
+	}
+	if model != "" {
+		taskReq["model"] = model
+	} else if tier != "" {
+		taskReq["tier"] = tier
 	}
 
 	body, _ := json.Marshal(taskReq)

@@ -6,66 +6,17 @@ This document outlines what we're building, current status, and the roadmap.
 
 Agency is a modular framework for AI-powered software engineering agents. The core insight: **separate the executor (agent) from the orchestrator (director)** to enable flexible composition, better testing, and VCS-agnostic operation.
 
-## Current Status
+## Next Steps
 
-**Released: v1.1.0** (2026-01-13)
+### v2.0
 
-Completed phases:
-- Phase 1: Foundation (MVP) - Agent + CLI director with REST API
-- Phase 1.1: Web View - Status dashboard with auth and task submission
-- Phase 1.2: Interface-Based Architecture - Clean component taxonomy
-- Phase 1.3: Scheduler - Cron-style task scheduling
+* ag-agent-codex: `{"type":"thread.started","thread_id":"019bce81-4adf-7372-a168-b1547122749e"} {"type":"turn.started"}` results parsing needs sorting out!
+* ag-web-view: agents need to show more detail in fleet pane (type etc)
+* ag-web-view: agent kind selection doesn't seem to work - is that because types are wrong?
+* ag-web-view: model override is unnecessary (show model-specific name though)
+* ag-web-view: put 'archive' button on collapsed session (far end?)
 
 ## Delivery Phases
-
-### Phase 1: Foundation (MVP) - COMPLETE
-
-Working agent + CLI director with solid testing infrastructure.
-
-**Deliverables:**
-- Agent binary with REST API (`/status`, `/task`, `/task/:id`, `/task/:id/cancel`, `/shutdown`)
-- CLI director for interactive prompt submission
-- Unit and component test suites
-- `build.sh` with all targets
-
-### Phase 1.1: Web View - COMPLETE
-
-Status dashboard and task submission UI with security.
-
-**Deliverables:**
-- HTTPS web server with self-signed TLS
-- Password auth + device pairing
-- Port scanning discovery
-- Real-time status updates (1s polling)
-- Task submission with contexts
-
-### Phase 1.2: Interface-Based Architecture - COMPLETE
-
-Clean interface-based architecture with explicit component types.
-
-**Core Interfaces:**
-- **Statusable** - Report type, version, config (`GET /status`)
-- **Taskable** - Accept prompts, execute work (`POST /task`, `GET /task/:id`)
-- **Observable** - Report held tasks (`GET /tasks`)
-
-**Component Types:**
-- **Agent** (Statusable + Taskable) - ag-agent-claude
-- **Director** (Statusable + Observable + Taskable) - ag-cli (CLI director)
-- **Helper** (Statusable + Observable) - ag-scheduler, ag-github-monitor
-- **View** (Statusable + Observable) - ag-view-web
-
-### Phase 1.3: Scheduler - COMPLETE
-
-Cron-based task scheduling.
-
-**Deliverables:**
-- `ag-scheduler` binary for cron-style task triggering
-- Standard 5-field cron expressions
-- Configurable agent URL, model, and timeout per job
-- Status endpoint showing job states and next run times
-- Fire-and-forget task submission
-
-See [SCHEDULER_DESIGN.md](SCHEDULER_DESIGN.md) for details.
 
 ### Phase 2: Production Readiness - IN PROGRESS
 
@@ -135,14 +86,6 @@ Feature parity with h2ai v1 GitHub integration.
 - PR creation with review cycle
 
 ## Backlog
-
-### Session Routing (Centralized)
-
-Route all task submissions through the web director for unified session tracking. Scheduler and CLI should use `director_url` when available, with explicit fallback behavior when the director is unavailable.
-
-### Task State Synchronization
-
-Tasks can appear stuck in "working" state due to distributed state. Options in [TASK_STATE_SYNC_DESIGN.md](TASK_STATE_SYNC_DESIGN.md).
 
 ### Remote Deployment & Multi-Instance
 

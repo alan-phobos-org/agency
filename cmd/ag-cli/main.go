@@ -66,6 +66,8 @@ Run 'ag-cli <command> -h' for command-specific help.`)
 func taskCmd(args []string) {
 	fs := flag.NewFlagSet("task", flag.ExitOnError)
 	agentURL := fs.String("agent", "http://localhost:9000", "Agent URL")
+	tier := fs.String("tier", "standard", "Model tier (fast, standard, heavy)")
+	agentKind := fs.String("agent-kind", "claude", "Agent kind (claude, codex)")
 	timeout := fs.Duration("timeout", 30*time.Minute, "Task timeout")
 	sessionID := fs.String("session", "", "Session ID to continue (optional)")
 	fs.Parse(args)
@@ -84,6 +86,12 @@ func taskCmd(args []string) {
 	taskReq := map[string]interface{}{
 		"prompt":          prompt,
 		"timeout_seconds": int(timeout.Seconds()),
+	}
+	if *tier != "" {
+		taskReq["tier"] = *tier
+	}
+	if *agentKind != "" {
+		taskReq["agent_kind"] = *agentKind
 	}
 	if *sessionID != "" {
 		taskReq["session_id"] = *sessionID
@@ -247,12 +255,13 @@ func discoverCmd(args []string) {
 		if compType == nil {
 			compType = "unknown"
 		}
+		agentKind := status["agent_kind"]
 		state := status["state"]
 		ver := status["version"]
 		interfaces := status["interfaces"]
 
-		fmt.Printf("  :%d  type=%-10v state=%-10v version=%-10v interfaces=%v\n",
-			port, compType, state, ver, interfaces)
+		fmt.Printf("  :%d  type=%-10v agent_kind=%-7v state=%-10v version=%-10v interfaces=%v\n",
+			port, compType, agentKind, state, ver, interfaces)
 	}
 
 	if found == 0 {
@@ -266,7 +275,9 @@ func discoverCmd(args []string) {
 func queueCmd(args []string) {
 	fs := flag.NewFlagSet("queue", flag.ExitOnError)
 	directorURL := fs.String("director", "http://localhost:8080", "Director URL")
-	model := fs.String("model", "", "Model override (opus, sonnet, haiku)")
+	model := fs.String("model", "", "Model override (provider-specific)")
+	tier := fs.String("tier", "standard", "Model tier (fast, standard, heavy)")
+	agentKind := fs.String("agent-kind", "claude", "Agent kind (claude, codex)")
 	timeout := fs.Duration("timeout", 30*time.Minute, "Task timeout")
 	source := fs.String("source", "cli", "Source identifier")
 	fs.Parse(args)
@@ -289,6 +300,12 @@ func queueCmd(args []string) {
 	}
 	if *model != "" {
 		queueReq["model"] = *model
+	}
+	if *tier != "" {
+		queueReq["tier"] = *tier
+	}
+	if *agentKind != "" {
+		queueReq["agent_kind"] = *agentKind
 	}
 	body, _ := json.Marshal(queueReq)
 

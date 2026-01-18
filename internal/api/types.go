@@ -9,6 +9,19 @@ const (
 	TypeView     = "view"
 )
 
+// Agent kinds identify which runtime an agent uses.
+const (
+	AgentKindClaude = "claude"
+	AgentKindCodex  = "codex"
+)
+
+// Tier names identify model selection tiers.
+const (
+	TierFast     = "fast"
+	TierStandard = "standard"
+	TierHeavy    = "heavy"
+)
+
 // Interface names identify component capabilities.
 const (
 	InterfaceStatusable   = "statusable"
@@ -43,4 +56,14 @@ const (
 type ProjectContext struct {
 	Name   string `json:"name"`
 	Prompt string `json:"prompt"`
+}
+
+// IsValidTier returns true if the tier name is known.
+func IsValidTier(tier string) bool {
+	switch tier {
+	case TierFast, TierStandard, TierHeavy:
+		return true
+	default:
+		return false
+	}
 }

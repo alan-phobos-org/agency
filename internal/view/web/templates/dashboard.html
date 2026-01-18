@@ -2144,8 +2144,17 @@
                                                         <div class="inline-form-options-content">
                                                             <div class="inline-form-row">
                                                                 <div class="inline-form-group">
-                                                                    <label class="inline-form-label">Model</label>
+                                                                    <label class="inline-form-label">Tier</label>
+                                                                    <select class="inline-form-select" x-model="getInlineForm(session.id).tier">
+                                                                        <option value="fast">fast</option>
+                                                                        <option value="standard">standard</option>
+                                                                        <option value="heavy">heavy</option>
+                                                                    </select>
+                                                                </div>
+                                                                <div class="inline-form-group">
+                                                                    <label class="inline-form-label">Model Override</label>
                                                                     <select class="inline-form-select" x-model="getInlineForm(session.id).model">
+                                                                        <option value="">default</option>
                                                                         <option value="opus">opus</option>
                                                                         <option value="sonnet">sonnet</option>
                                                                         <option value="haiku">haiku</option>
@@ -2312,7 +2321,7 @@
                     </div>
                     <div class="form-group-inline">
                         <label class="form-label" for="agent-select">Agent</label>
-                        <select class="form-select" id="agent-select" x-model="taskForm.agentUrl" :disabled="taskForm.sessionId" :required="!taskForm.sessionId">
+                        <select class="form-select" id="agent-select" x-model="taskForm.agentUrl" :disabled="taskForm.sessionId">
                             <option value="">Select an agent...</option>
                             <template x-for="agent in idleAgents" :key="agent.url">
                                 <option :value="agent.url" x-text="getComponentName(agent.url) + ' (idle)'"></option>
@@ -2320,6 +2329,13 @@
                             <template x-for="agent in agents.filter(a => a.state !== 'idle')" :key="agent.url">
                                 <option :value="agent.url" x-text="getComponentName(agent.url) + ' (' + agent.state + ')'" disabled></option>
                             </template>
+                        </select>
+                    </div>
+                    <div class="form-group-inline">
+                        <label class="form-label" for="agent-kind-select">Agent Kind</label>
+                        <select class="form-select" id="agent-kind-select" x-model="taskForm.agentKind" :disabled="taskForm.sessionId">
+                            <option value="claude">claude</option>
+                            <option value="codex">codex</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -2331,8 +2347,17 @@
                             <div class="form-options-content">
                                 <div class="form-row">
                                     <div class="form-group">
-                                        <label class="form-label" for="model-select">Model</label>
+                                        <label class="form-label" for="tier-select">Tier</label>
+                                        <select class="form-select" id="tier-select" x-model="taskForm.tier" :disabled="taskForm.contextId !== 'manual'">
+                                            <option value="fast">fast</option>
+                                            <option value="standard">standard</option>
+                                            <option value="heavy">heavy</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label" for="model-select">Model Override</label>
                                         <select class="form-select" id="model-select" x-model="taskForm.model" :disabled="taskForm.contextId !== 'manual'">
+                                            <option value="">default</option>
                                             <option value="opus">opus</option>
                                             <option value="sonnet">sonnet</option>
                                             <option value="haiku">haiku</option>
@@ -2489,10 +2514,12 @@
                 taskOptionsOpen: false,
                 taskForm: {
                     agentUrl: '',
+                    agentKind: 'claude',
                     sessionId: '',
                     contextId: 'manual',
                     prompt: '',
-                    model: 'opus',
+                    tier: 'standard',
+                    model: '',
                     timeout: 1800,
                     thinking: true
                 },
@@ -2500,7 +2527,7 @@
                 taskError: '',
 
                 // Inline task forms (per-session)
-                inlineTaskForms: {}, // { sessionId: { expanded, optionsOpen, prompt, model, timeout, thinking, submitting, error } }
+                inlineTaskForms: {}, // { sessionId: { expanded, optionsOpen, prompt, tier, model, timeout, thinking, submitting, error } }
 
                 // Settings modal
                 settingsOpen: false,
@@ -2894,6 +2921,7 @@
                     if (ctx && ctx.id !== 'manual') {
                         // Apply context settings
                         if (ctx.model) this.taskForm.model = ctx.model;
+                        if (ctx.tier) this.taskForm.tier = ctx.tier;
                         if (ctx.timeout_seconds) this.taskForm.timeout = ctx.timeout_seconds;
                         if (ctx.thinking !== undefined) this.taskForm.thinking = ctx.thinking;
                     }
@@ -2916,10 +2944,18 @@
                         const body = {
                             agent_url: this.taskForm.agentUrl,
                             prompt: fullPrompt,
-                            model: this.taskForm.model,
                             timeout_seconds: this.taskForm.timeout,
                             thinking: this.taskForm.thinking
                         };
+                        if (this.taskForm.model) {
+                            body.model = this.taskForm.model;
+                        }
+                        if (this.taskForm.tier) {
+                            body.tier = this.taskForm.tier;
+                        }
+                        if (!this.taskForm.agentUrl && this.taskForm.agentKind) {
+                            body.agent_kind = this.taskForm.agentKind;
+                        }
                         if (this.taskForm.sessionId) {
                             body.session_id = this.taskForm.sessionId;
                         }
@@ -2958,7 +2994,8 @@
                             expanded: false,
                             optionsOpen: false,
                             prompt: '',
-                            model: 'opus',
+                            tier: 'standard',
+                            model: '',
                             timeout: 1800,
                             thinking: true,
                             submitting: false,
@@ -3005,10 +3042,15 @@
                             agent_url: session.agent_url,
                             session_id: sessionId,
                             prompt: prompt,
-                            model: form.model,
                             timeout_seconds: form.timeout,
                             thinking: form.thinking
                         };
+                        if (form.model) {
+                            body.model = form.model;
+                        }
+                        if (form.tier) {
+                            body.tier = form.tier;
+                        }
 
                         const resp = await this.api('/api/task', {
                             method: 'POST',

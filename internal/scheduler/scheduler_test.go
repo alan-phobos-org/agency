@@ -283,9 +283,11 @@ jobs:
 	assert.Equal(t, DefaultPort, cfg.Port)
 	assert.Equal(t, DefaultLogLevel, cfg.LogLevel)
 	assert.Equal(t, DefaultAgentURL, cfg.AgentURL)
+	assert.Equal(t, DefaultAgentKind, cfg.AgentKind)
 
 	// Job defaults
-	assert.Equal(t, DefaultModel, cfg.GetModel(&cfg.Jobs[0]))
+	assert.Equal(t, "", cfg.GetModel(&cfg.Jobs[0]))
+	assert.Equal(t, DefaultAgentKind, cfg.GetAgentKind(&cfg.Jobs[0]))
 	assert.Equal(t, DefaultTimeout, cfg.GetTimeout(&cfg.Jobs[0]))
 	assert.Equal(t, DefaultAgentURL, cfg.GetAgentURL(&cfg.Jobs[0]))
 }

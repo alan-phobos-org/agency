@@ -30,17 +30,17 @@ This baseline behavior should be preserved for the Codex agent to maintain predi
 
 ### Binary
 
-Add a new binary: `cmd/ag-agent-codex` that wires the shared agent runtime with a Codex CLI runner.
+Add a new binary: `cmd/ag-agent-codex` that wires the shared agent runtime with an OpenAI Codex CLI runner.
 
 ### CLI Execution
 
 The Codex runner should:
 - Resolve the CLI via `CODEX_BIN` or `codex` on PATH.
-- Always run in fully permissive mode.
-- Use OAuth-based login (no API key mode).
-- Produce machine-readable output (JSON if supported).
-
-TODO: Confirm the exact Codex CLI flags for permissive mode, OAuth mode, and JSON output.
+- Always run in fully permissive mode (`--dangerously-bypass-approvals-and-sandbox`).
+- Use OpenAI API authentication.
+- Produce machine-readable output (`--json` for JSONL output).
+- Use `codex exec [flags] -` for new sessions and `codex exec [flags] resume <session_id> -` for resumes.
+- Always skip git repository checks (`--skip-git-repo-check`) since session directories are not git repos.
 
 ### Preprompt
 
@@ -73,12 +73,17 @@ Add tier mapping to agent configuration:
 
 ```yaml
 tiers:
-  fast: haiku
-  standard: sonnet
-  heavy: opus
+  fast: gpt-5.1-codex-mini
+  standard: gpt-5.2-codex
+  heavy: gpt-5.1-codex-max
 ```
 
-Codex agents will provide their own tier mapping to Codex model names.
+Codex agents use OpenAI's GPT-5 Codex models with the following tier mapping:
+- `fast` → `gpt-5.1-codex-mini` (smaller, faster, cost-effective for common tasks)
+- `standard` → `gpt-5.2-codex` (latest model, balanced performance, recommended)
+- `heavy` → `gpt-5.1-codex-max` (optimized for long and highly complex coding tasks)
+
+These defaults apply when no explicit `tiers` config is provided.
 
 ## Agent Kind Routing
 
@@ -108,9 +113,4 @@ Include `agent_kind` in the `/status` response so discovery can route appropriat
 - Existing clients that send `model` continue to work without changes.
 - `tier` is additive and optional.
 - Claude remains the default for all generic tasking unless `agent_kind` is specified.
-
-## Open Questions
-
-- TODO: Provide Codex CLI flag details for permissive mode, OAuth mode, and JSON output.
-- TODO: Confirm Codex model names for tier mapping.
-
+- OpenAI Codex CLI accepts full model names (`gpt-5.2-codex`, `gpt-5.1-codex-max`, `gpt-5.1-codex-mini`, etc.).

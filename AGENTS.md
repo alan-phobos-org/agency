@@ -46,6 +46,7 @@ Use `./build.sh` for all build/test/lint/release/deploy actions. Do not use Make
 | `AG_WEB_PASSWORD` | Web view login (required) |
 | `AGENCY_ROOT` | Config directory (default: ~/.agency) |
 | `CLAUDE_BIN` | Claude CLI path (default: from PATH) |
+| `CODEX_BIN` | OpenAI Codex CLI path (default: codex) |
 | `GITHUB_TOKEN` | GitHub API access for github-monitor |
 
 ### API Endpoints (Session)
@@ -65,8 +66,8 @@ Use `./build.sh` for all build/test/lint/release/deploy actions. Do not use Make
 ### Port Configuration
 
 From `deployment/ports.conf`:
-- **Dev**: Web=8443, Agent=9000, Scheduler=9010, Discovery=9000-9010, GitHub Monitor=9020
-- **Prod**: Web=9443, Agent=9100, Scheduler=9110, Discovery=9100-9110, GitHub Monitor=9120
+- **Dev**: Web=8443, Agent=9000, AgentCodex=9001, Scheduler=9010, Discovery=9000-9010, GitHub Monitor=9020
+- **Prod**: Web=9443, Agent=9100, AgentCodex=9101, Scheduler=9110, Discovery=9100-9110, GitHub Monitor=9120
 
 ## Workflows
 
@@ -103,6 +104,7 @@ Write commit messages as a human developer would:
 agency/
 ├── cmd/
 │   ├── ag-agent-claude/    # Agent binary (wraps Claude CLI)
+│   ├── ag-agent-codex/     # Agent binary (wraps OpenAI Codex CLI)
 │   ├── ag-cli/             # CLI tool (task, status, discover)
 │   ├── ag-github-monitor/  # GitHub repo event monitor
 │   ├── ag-scheduler/       # Scheduler binary (cron-style task triggering)
@@ -130,6 +132,8 @@ agency/
 See [docs/TESTING.md](docs/TESTING.md) for conventions, race condition prevention, and test commands.
 
 Quick reference: `./build.sh test` (unit), `./build.sh test-all` (unit + integration), `./build.sh check` (pre-commit).
+
+Smoke tests (Playwright): Cover both Claude and Codex agents via scheduled job triggers with trivial validation tasks.
 
 ---
 
@@ -161,6 +165,8 @@ Quick reference: `./build.sh prepare-release` then `./build.sh release X.Y.Z`.
 - Web view discovers agents via port scanning (9000-9009 dev, 9100-9109 prod)
 - Sessions persist in shared directories for multi-turn conversations
 - Task history stored at `~/.agency/history/<agent>/`
+- Two agent kinds: `claude` (Anthropic), `codex` (OpenAI)
+- Model tiers: `fast`/`standard`/`heavy` map to provider-specific models (Claude: haiku/sonnet/opus; Codex: gpt-5.1-codex-mini/gpt-5.2-codex/gpt-5.1-codex-max)
 
 For detailed endpoint specs, see [docs/REFERENCE.md](docs/REFERENCE.md).
 

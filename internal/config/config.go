@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+	"phobos.org.uk/agency/internal/api"
 )
 
 // Config represents the agent configuration
@@ -17,7 +18,10 @@ type Config struct {
 	SessionDir    string          `yaml:"session_dir"`    // Base directory for session workspaces
 	HistoryDir    string          `yaml:"history_dir"`    // Directory for task history storage
 	PrepromptFile string          `yaml:"preprompt_file"` // Optional path to custom preprompt file
+	AgentKind     string          `yaml:"agent_kind"`     // claude, codex
+	Tiers         TierConfig      `yaml:"tiers"`
 	Claude        ClaudeConfig    `yaml:"claude"`
+	Codex         CodexConfig     `yaml:"codex"`
 	Projects      []ProjectConfig `yaml:"projects,omitempty"`
 }
 
@@ -34,16 +38,69 @@ type ClaudeConfig struct {
 	MaxTurns int           `yaml:"max_turns"` // Maximum conversation turns per execution (default: 50)
 }
 
+// CodexConfig holds Codex CLI settings.
+type CodexConfig struct {
+	Model   string        `yaml:"model"`
+	Timeout time.Duration `yaml:"timeout"`
+}
+
+// TierConfig holds model tier mappings.
+type TierConfig struct {
+	Fast     string `yaml:"fast"`
+	Standard string `yaml:"standard"`
+	Heavy    string `yaml:"heavy"`
+}
+
+// HasAny reports whether any tier mapping is set.
+func (t TierConfig) HasAny() bool {
+	return t.Fast != "" || t.Standard != "" || t.Heavy != ""
+}
+
+// Value returns the model name for a tier.
+func (t TierConfig) Value(tier string) string {
+	switch tier {
+	case api.TierFast:
+		return t.Fast
+	case api.TierStandard:
+		return t.Standard
+	case api.TierHeavy:
+		return t.Heavy
+	default:
+		return ""
+	}
+}
+
+// DefaultClaudeTiers returns the default tier mapping for Claude agents.
+func DefaultClaudeTiers() TierConfig {
+	return TierConfig{
+		Fast:     "haiku",
+		Standard: "sonnet",
+		Heavy:    "opus",
+	}
+}
+
+// DefaultCodexTiers returns the default tier mapping for Codex (OpenAI) agents.
+func DefaultCodexTiers() TierConfig {
+	return TierConfig{
+		Fast:     "gpt-5.1-codex-mini",
+		Standard: "gpt-5.2-codex",
+		Heavy:    "gpt-5.1-codex-max",
+	}
+}
+
 // Defaults
 const (
-	DefaultPort       = 9000
-	DefaultName       = "agent"
-	DefaultModel      = "sonnet"
-	DefaultTimeout    = 30 * time.Minute
-	DefaultMaxTurns   = 50
-	DefaultLogLevel   = "info"
-	DefaultSessionDir = "/tmp/agency/sessions"
-	DefaultHistoryDir = "" // Derived from AGENCY_ROOT or ~/.agency/history/<name>
+	DefaultPort         = 9000
+	DefaultName         = "agent"
+	DefaultModel        = "sonnet"
+	DefaultTimeout      = 30 * time.Minute
+	DefaultMaxTurns     = 50
+	DefaultLogLevel     = "info"
+	DefaultSessionDir   = "/tmp/agency/sessions"
+	DefaultHistoryDir   = "" // Derived from AGENCY_ROOT or ~/.agency/history/<name>
+	DefaultAgentKind    = api.AgentKindClaude
+	DefaultCodexModel   = ""
+	DefaultCodexTimeout = 30 * time.Minute
 )
 
 // Parse parses YAML config data
@@ -53,10 +110,15 @@ func Parse(data []byte) (*Config, error) {
 		Name:       DefaultName,
 		LogLevel:   DefaultLogLevel,
 		SessionDir: DefaultSessionDir,
+		AgentKind:  DefaultAgentKind,
 		Claude: ClaudeConfig{
 			Model:    DefaultModel,
 			Timeout:  DefaultTimeout,
 			MaxTurns: DefaultMaxTurns,
+		},
+		Codex: CodexConfig{
+			Model:   DefaultCodexModel,
+			Timeout: DefaultCodexTimeout,
 		},
 	}
 
@@ -91,17 +153,31 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("port must be between 1 and 65535, got %d", c.Port)
 	}
 
-	validModels := map[string]bool{"opus": true, "sonnet": true, "haiku": true}
-	if !validModels[c.Claude.Model] {
-		return fmt.Errorf("model must be opus, sonnet, or haiku, got %q", c.Claude.Model)
+	switch c.AgentKind {
+	case api.AgentKindClaude, api.AgentKindCodex:
+	default:
+		return fmt.Errorf("agent_kind must be claude or codex, got %q", c.AgentKind)
 	}
 
-	if c.Claude.Timeout < time.Second {
-		return fmt.Errorf("timeout must be at least 1 second, got %v", c.Claude.Timeout)
+	if c.AgentKind == api.AgentKindClaude {
+		validModels := map[string]bool{"opus": true, "sonnet": true, "haiku": true}
+		if !validModels[c.Claude.Model] {
+			return fmt.Errorf("model must be opus, sonnet, or haiku, got %q", c.Claude.Model)
+		}
+
+		if c.Claude.Timeout < time.Second {
+			return fmt.Errorf("timeout must be at least 1 second, got %v", c.Claude.Timeout)
+		}
+
+		if c.Claude.MaxTurns < 1 {
+			return fmt.Errorf("max_turns must be at least 1, got %d", c.Claude.MaxTurns)
+		}
 	}
 
-	if c.Claude.MaxTurns < 1 {
-		return fmt.Errorf("max_turns must be at least 1, got %d", c.Claude.MaxTurns)
+	if c.AgentKind == api.AgentKindCodex {
+		if c.Codex.Timeout < time.Second {
+			return fmt.Errorf("codex timeout must be at least 1 second, got %v", c.Codex.Timeout)
+		}
 	}
 
 	return nil
@@ -115,10 +191,15 @@ func Default() *Config {
 		LogLevel:   DefaultLogLevel,
 		SessionDir: DefaultSessionDir,
 		HistoryDir: DefaultHistoryPath(DefaultName),
+		AgentKind:  DefaultAgentKind,
 		Claude: ClaudeConfig{
 			Model:    DefaultModel,
 			Timeout:  DefaultTimeout,
 			MaxTurns: DefaultMaxTurns,
+		},
+		Codex: CodexConfig{
+			Model:   DefaultCodexModel,
+			Timeout: DefaultCodexTimeout,
 		},
 	}
 }
