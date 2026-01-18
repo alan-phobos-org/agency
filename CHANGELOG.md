@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Fixed prompt construction duplicating preprompt when project context is present
+
 ## [2.2.0] - 2026-01-17
 
 ### Added
