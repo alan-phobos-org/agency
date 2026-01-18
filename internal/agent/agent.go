@@ -23,6 +23,7 @@ import (
 	"phobos.org.uk/agency/internal/api"
 	"phobos.org.uk/agency/internal/config"
 	"phobos.org.uk/agency/internal/history"
+	"phobos.org.uk/agency/internal/logging"
 )
 
 //go:embed claude.md
@@ -124,6 +125,7 @@ type Agent struct {
 	startTime time.Time
 	preprompt string // Preprompt instructions loaded at startup
 	history   *history.Store
+	log       *logging.Logger
 
 	mu          sync.RWMutex
 	state       State
@@ -136,14 +138,36 @@ type Agent struct {
 
 // New creates a new Agent
 func New(cfg *config.Config, version string) *Agent {
+	// Initialize structured logger
+	logLevel := logging.LevelInfo
+	if lvl := os.Getenv("AGENCY_LOG_LEVEL"); lvl != "" {
+		switch strings.ToLower(lvl) {
+		case "debug":
+			logLevel = logging.LevelDebug
+		case "warn":
+			logLevel = logging.LevelWarn
+		case "error":
+			logLevel = logging.LevelError
+		}
+	}
+	log := logging.New(logging.Config{
+		Output:     os.Stderr,
+		Level:      logLevel,
+		Component:  "agent",
+		MaxEntries: 1000,
+	})
+
 	// Load preprompt: try custom file first, fallback to embedded default
 	preprompt := agentClaudeMD
 	if cfg.PrepromptFile != "" {
 		if data, err := os.ReadFile(cfg.PrepromptFile); err == nil {
 			preprompt = string(data)
-			fmt.Fprintf(os.Stderr, "Loaded preprompt from %s\n", cfg.PrepromptFile)
+			log.Info("loaded preprompt", map[string]any{"path": cfg.PrepromptFile})
 		} else {
-			fmt.Fprintf(os.Stderr, "Warning: failed to load preprompt file %s: %v (using default)\n", cfg.PrepromptFile, err)
+			log.Warn("failed to load preprompt file, using default", map[string]any{
+				"path":  cfg.PrepromptFile,
+				"error": err.Error(),
+			})
 		}
 	}
 
@@ -153,7 +177,7 @@ func New(cfg *config.Config, version string) *Agent {
 		var err error
 		historyStore, err = history.NewStore(cfg.HistoryDir)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to initialize history store: %v\n", err)
+			log.Warn("failed to initialize history store", map[string]any{"error": err.Error()})
 		}
 	}
 
@@ -163,6 +187,7 @@ func New(cfg *config.Config, version string) *Agent {
 		startTime: time.Now(),
 		preprompt: preprompt,
 		history:   historyStore,
+		log:       log,
 		state:     StateIdle,
 		tasks:     make(map[string]*Task),
 		shutdown:  make(chan struct{}),
@@ -186,6 +211,10 @@ func (a *Agent) Router() chi.Router {
 	r.Get("/history/{id}", a.handleGetHistory)
 	r.Get("/history/{id}/debug", a.handleGetHistoryDebug)
 
+	// Logging endpoints
+	r.Get("/logs", a.handleLogs)
+	r.Get("/logs/stats", a.handleLogStats)
+
 	return r
 }
 
@@ -197,7 +226,11 @@ func (a *Agent) Start() error {
 		Handler: a.Router(),
 	}
 
-	fmt.Fprintf(os.Stderr, "Agent starting on %s\n", addr)
+	a.log.Info("agent starting", map[string]any{
+		"addr":    addr,
+		"version": a.version,
+		"model":   a.config.Claude.Model,
+	})
 	return a.server.ListenAndServe()
 }
 
@@ -350,6 +383,14 @@ func (a *Agent) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	a.tasks[task.ID] = task
 	a.currentTask = task
 	a.state = StateWorking
+
+	// Log task creation
+	a.log.Info("task created", map[string]any{
+		"task_id":    task.ID,
+		"session_id": task.SessionID,
+		"model":      task.Model,
+		"resume":     task.ResumeSession,
+	})
 
 	// Copy fields needed for response before releasing lock
 	taskID := task.ID
@@ -632,13 +673,16 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 			} `json:"usage"`
 		}
 
+		taskLog := a.log.WithTask(task.ID)
 		if jsonErr := json.Unmarshal(stdout.Bytes(), &claudeResp); jsonErr == nil {
 			// Only update session_id if Claude returns a safe, non-empty value
 			if claudeResp.SessionID != "" {
 				if isSafeSessionID(claudeResp.SessionID) {
 					task.SessionID = claudeResp.SessionID
 				} else {
-					fmt.Fprintf(os.Stderr, "Warning: ignoring unsafe session_id from Claude: %q\n", claudeResp.SessionID)
+					taskLog.Warn("ignoring unsafe session_id from Claude", map[string]any{
+						"session_id": claudeResp.SessionID,
+					})
 				}
 			}
 			task.Output = claudeResp.Result
@@ -653,8 +697,10 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 			if claudeResp.Subtype == "error_max_turns" && task.maxTurnsResumes < maxAutoResumes {
 				task.maxTurnsResumes++
 				task.ResumeSession = true
-				fmt.Fprintf(os.Stderr, "[agent] Task %s hit max_turns limit, auto-resuming (attempt %d/%d)\n",
-					task.ID, task.maxTurnsResumes+1, maxAutoResumes+1)
+				taskLog.Info("hit max_turns limit, auto-resuming", map[string]any{
+					"attempt":     task.maxTurnsResumes + 1,
+					"max_retries": maxAutoResumes + 1,
+				})
 				a.mu.Unlock()
 				continue // Retry with resume
 			}
@@ -691,10 +737,23 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 				Type:    "claude_error",
 				Message: stderr.String(),
 			}
+			taskLog.Error("task failed", map[string]any{
+				"error_type":       "claude_error",
+				"exit_code":        exitCode,
+				"duration_seconds": task.DurationSeconds,
+			})
 		} else {
 			task.State = TaskStateCompleted
 			exitCode := 0
 			task.ExitCode = &exitCode
+			logFields := map[string]any{
+				"duration_seconds": task.DurationSeconds,
+			}
+			if task.TokenUsage != nil {
+				logFields["input_tokens"] = task.TokenUsage.Input
+				logFields["output_tokens"] = task.TokenUsage.Output
+			}
+			taskLog.Info("task completed", logFields)
 		}
 
 		// Save to history and complete
@@ -780,13 +839,17 @@ func (a *Agent) saveTaskHistory(task *Task, rawOutput []byte) {
 	}
 
 	if err := a.history.Save(entry); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to save task history: %v\n", err)
+		a.log.WithTask(task.ID).Warn("failed to save task history", map[string]any{
+			"error": err.Error(),
+		})
 	}
 
 	// Save debug log (raw Claude output)
 	if len(rawOutput) > 0 {
 		if err := a.history.SaveDebugLog(task.ID, rawOutput); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to save debug log: %v\n", err)
+			a.log.WithTask(task.ID).Warn("failed to save debug log", map[string]any{
+				"error": err.Error(),
+			})
 		}
 	}
 }
@@ -865,4 +928,48 @@ func (a *Agent) handleGetHistoryDebug(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write(debugLog)
+}
+
+// handleLogs returns log entries with optional filtering.
+// Query params:
+//   - level: minimum log level (debug, info, warn, error)
+//   - task_id: filter by task ID
+//   - since: RFC3339 timestamp to filter entries after
+//   - until: RFC3339 timestamp to filter entries before
+//   - limit: max entries to return (default 100)
+func (a *Agent) handleLogs(w http.ResponseWriter, r *http.Request) {
+	q := logging.Query{
+		Limit: 100, // Default limit
+	}
+
+	if level := r.URL.Query().Get("level"); level != "" {
+		q.Level = logging.Level(level)
+	}
+	if taskID := r.URL.Query().Get("task_id"); taskID != "" {
+		q.TaskID = taskID
+	}
+	if since := r.URL.Query().Get("since"); since != "" {
+		if t, err := time.Parse(time.RFC3339, since); err == nil {
+			q.Since = t
+		}
+	}
+	if until := r.URL.Query().Get("until"); until != "" {
+		if t, err := time.Parse(time.RFC3339, until); err == nil {
+			q.Until = t
+		}
+	}
+	if limit := r.URL.Query().Get("limit"); limit != "" {
+		if v, err := strconv.Atoi(limit); err == nil && v > 0 {
+			q.Limit = v
+		}
+	}
+
+	result := a.log.Query(q)
+	api.WriteJSON(w, http.StatusOK, result)
+}
+
+// handleLogStats returns log statistics without entries.
+func (a *Agent) handleLogStats(w http.ResponseWriter, r *http.Request) {
+	stats := a.log.Stats()
+	api.WriteJSON(w, http.StatusOK, stats)
 }

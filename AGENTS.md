@@ -115,6 +115,7 @@ agency/
 │   ├── config/         # YAML parsing, validation
 │   ├── github-monitor/ # GitHub repo monitor logic
 │   ├── history/        # Task history storage and outline extraction
+│   ├── logging/        # Structured JSON logging with queryable storage
 │   ├── scheduler/      # Scheduler logic, cron parsing, job runner
 │   ├── view/web/       # Web view (dashboard + discovery)
 │   └── testutil/       # Test helpers
@@ -168,7 +169,6 @@ For detailed endpoint specs, see [docs/REFERENCE.md](docs/REFERENCE.md).
 ## Known Limitations
 
 - Single-task agent (returns 409 if busy) - see [docs/WORK_QUEUE_DESIGN.md](docs/WORK_QUEUE_DESIGN.md) for planned queue
-- No structured logging (stderr only)
 - Task session data stored in memory (not persisted across web view restarts)
 - Tasks can appear stuck in "working" state - see [docs/TASK_STATE_SYNC_DESIGN.md](docs/TASK_STATE_SYNC_DESIGN.md)
 

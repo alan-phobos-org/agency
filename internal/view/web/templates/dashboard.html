@@ -411,6 +411,32 @@
             color: var(--text-tertiary);
         }
 
+        .fleet-chip-logs {
+            display: flex;
+            gap: var(--space-2);
+            margin-left: auto;
+            font-size: 0.6875rem;
+        }
+
+        .fleet-chip-log-stat {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            padding: 1px 4px;
+            border-radius: 3px;
+            background: var(--bg-active);
+        }
+
+        .fleet-chip-log-stat--error {
+            color: var(--status-error);
+            background: rgba(248, 81, 73, 0.15);
+        }
+
+        .fleet-chip-log-stat--warn {
+            color: var(--status-pending);
+            background: rgba(210, 153, 34, 0.15);
+        }
+
         /* Helper/Scheduler section */
         .helper-section {
             background: var(--bg-surface);
@@ -1524,6 +1550,18 @@
                                     <span class="fleet-chip-dot" :class="'fleet-chip-dot--' + agent.state"></span>
                                     <span class="fleet-chip-name" x-text="getComponentName(agent.url)"></span>
                                     <span class="fleet-chip-status" x-text="agent.state"></span>
+                                    <div class="fleet-chip-logs" x-show="getAgentLogStats(agent.url)">
+                                        <span class="fleet-chip-log-stat fleet-chip-log-stat--error"
+                                              x-show="getAgentLogStats(agent.url)?.error > 0"
+                                              :title="'Errors: ' + (getAgentLogStats(agent.url)?.error || 0)">
+                                            <span x-text="getAgentLogStats(agent.url)?.error || 0"></span> err
+                                        </span>
+                                        <span class="fleet-chip-log-stat fleet-chip-log-stat--warn"
+                                              x-show="getAgentLogStats(agent.url)?.warn > 0"
+                                              :title="'Warnings: ' + (getAgentLogStats(agent.url)?.warn || 0)">
+                                            <span x-text="getAgentLogStats(agent.url)?.warn || 0"></span> warn
+                                        </span>
+                                    </div>
                                 </div>
                             </template>
                         </div>
@@ -2123,6 +2161,7 @@
                 directors: [],
                 helpers: [],
                 fleetOpen: false,
+                agentLogs: {}, // { agentUrl: { debug, info, warn, error, total } }
 
                 // Queue state
                 queue: null, // { depth, max_size, oldest_age_seconds, dispatched_count, tasks: [] }
@@ -2222,6 +2261,9 @@
                     // Watch fleet state changes
                     this.$watch('fleetOpen', (value) => {
                         localStorage.setItem('agency-fleet-open', value);
+                        if (value) {
+                            this.loadAgentLogStats();
+                        }
                     });
 
                     // Watch for settings modal open to load devices
@@ -2683,6 +2725,27 @@
                     } finally {
                         form.submitting = false;
                     }
+                },
+
+                // Agent log stats
+                async loadAgentLogStats() {
+                    for (const agent of this.agents) {
+                        try {
+                            const resp = await fetch(`${agent.url}/logs/stats`, {
+                                credentials: 'omit'
+                            });
+                            if (resp.ok) {
+                                this.agentLogs[agent.url] = await resp.json();
+                            }
+                        } catch (err) {
+                            // Agent may not support logs endpoint yet
+                            console.debug('Failed to fetch log stats for', agent.url, err);
+                        }
+                    }
+                },
+
+                getAgentLogStats(agentUrl) {
+                    return this.agentLogs[agentUrl] || null;
                 },
 
                 // Settings / Device management

@@ -592,3 +592,90 @@ func TestMaxTurnsExhausted(t *testing.T) {
 	require.Equal(t, "max_turns", task.Error.Type)
 	require.Contains(t, task.Error.Message, "maximum turns limit")
 }
+
+func TestLogsStatsEndpoint(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.Default()
+	a := New(cfg, "test-version")
+
+	// The logger is initialized on agent creation, so there should be at least the startup log
+	req := httptest.NewRequest("GET", "/logs/stats", nil)
+	w := httptest.NewRecorder()
+	a.Router().ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var stats struct {
+		Debug int64 `json:"debug"`
+		Info  int64 `json:"info"`
+		Warn  int64 `json:"warn"`
+		Error int64 `json:"error"`
+		Total int64 `json:"total"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &stats))
+	require.GreaterOrEqual(t, stats.Total, int64(0))
+}
+
+func TestLogsEndpoint(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.Default()
+	a := New(cfg, "test-version")
+
+	// Query all logs
+	req := httptest.NewRequest("GET", "/logs", nil)
+	w := httptest.NewRecorder()
+	a.Router().ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var result struct {
+		Entries []struct {
+			Timestamp string `json:"timestamp"`
+			Level     string `json:"level"`
+			Message   string `json:"message"`
+			Component string `json:"component"`
+		} `json:"entries"`
+		Total  int `json:"total"`
+		Counts struct {
+			Debug int64 `json:"debug"`
+			Info  int64 `json:"info"`
+			Warn  int64 `json:"warn"`
+			Error int64 `json:"error"`
+			Total int64 `json:"total"`
+		} `json:"counts"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &result))
+
+	// All entries should have component "agent"
+	for _, entry := range result.Entries {
+		require.Equal(t, "agent", entry.Component)
+	}
+}
+
+func TestLogsEndpointWithFilters(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.Default()
+	a := New(cfg, "test-version")
+
+	// Query with level filter
+	req := httptest.NewRequest("GET", "/logs?level=error&limit=10", nil)
+	w := httptest.NewRecorder()
+	a.Router().ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var result struct {
+		Entries []struct {
+			Level string `json:"level"`
+		} `json:"entries"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &result))
+
+	// All returned entries should be error level
+	for _, entry := range result.Entries {
+		require.Equal(t, "error", entry.Level)
+	}
+}
