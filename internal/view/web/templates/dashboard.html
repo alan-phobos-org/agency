@@ -935,6 +935,12 @@
             animation: pulse 1s infinite;
         }
 
+        .io-header-actions {
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+        }
+
         .io-expand-btn {
             background: none;
             border: none;
@@ -946,6 +952,49 @@
 
         .io-expand-btn:hover {
             color: var(--text-primary);
+        }
+
+        .io-logs-btn {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            background: none;
+            border: 1px solid var(--border-muted);
+            border-radius: 3px;
+            color: var(--text-tertiary);
+            cursor: pointer;
+            font-size: 0.5625rem;
+            padding: 2px 6px;
+            transition: all 0.15s ease;
+        }
+
+        .io-logs-btn:hover {
+            color: var(--text-secondary);
+            border-color: var(--border-default);
+            background: var(--bg-hover);
+        }
+
+        .io-logs-btn--active {
+            color: var(--text-secondary);
+            border-color: var(--border-default);
+            background: rgba(136, 146, 176, 0.08);
+        }
+
+        .io-logs-btn-icon {
+            font-size: 0.5rem;
+            transition: transform 0.15s ease;
+        }
+
+        .io-logs-btn-icon--expanded {
+            transform: rotate(180deg);
+        }
+
+        .io-logs-btn-live {
+            width: 5px;
+            height: 5px;
+            background: var(--status-running);
+            border-radius: 50%;
+            animation: pulse 1.5s infinite;
         }
 
         .io-content {
@@ -1016,6 +1065,69 @@
 
         .io-content-md strong {
             font-weight: 600;
+        }
+
+        /* Inline logs within output block */
+        .io-logs-inline {
+            border-top: 1px solid var(--border-muted);
+            background: rgba(136, 146, 176, 0.03);
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .io-logs-list {
+            padding: var(--space-2) var(--space-3);
+            font-family: var(--font-mono);
+            font-size: 0.625rem;
+            line-height: 1.5;
+        }
+
+        .io-log-entry {
+            display: flex;
+            gap: var(--space-2);
+            padding: 1px 0;
+            color: var(--text-tertiary);
+        }
+
+        .io-log-entry:hover {
+            background: rgba(136, 146, 176, 0.05);
+        }
+
+        .io-log-time {
+            flex-shrink: 0;
+            width: 55px;
+            opacity: 0.7;
+        }
+
+        .io-log-level {
+            flex-shrink: 0;
+            width: 35px;
+            text-transform: uppercase;
+            font-weight: 500;
+            opacity: 0.8;
+        }
+
+        .io-log-level--debug { color: var(--text-tertiary); }
+        .io-log-level--info { color: var(--accent); opacity: 0.7; }
+        .io-log-level--warn { color: var(--status-pending); }
+        .io-log-level--error { color: var(--status-error); }
+
+        .io-log-message {
+            color: var(--text-tertiary);
+            word-break: break-word;
+        }
+
+        .io-log-fields {
+            opacity: 0.6;
+            margin-left: var(--space-1);
+        }
+
+        .io-logs-empty {
+            padding: var(--space-2) var(--space-3);
+            text-align: center;
+            color: var(--text-tertiary);
+            font-size: 0.625rem;
+            opacity: 0.6;
         }
 
         /* Compact metrics grid */
@@ -1939,7 +2051,9 @@
                                                     <div class="io-content io-content-md"
                                                          x-html="renderMarkdown(stripPromptPrefix(task.prompt || getTaskHistoryData(session.id, task.task_id)?.prompt || 'No prompt'))"></div>
                                                 </div>
-                                                <div class="io-block io-block--output" x-show="getTaskOutput(session.id, task)">
+                                                <div class="io-block io-block--output" x-show="getTaskOutput(session.id, task)"
+                                                     x-effect="handleTaskLogsEffect(session.agent_url, task)"
+                                                     x-init="if (task.state === 'completed' || task.state === 'failed') fetchTaskLogsFinal(session.agent_url, task.task_id)">
                                                     <div class="io-header">
                                                         <span>
                                                             Output
@@ -1947,10 +2061,20 @@
                                                                 <span class="io-header-live">(streaming...)</span>
                                                             </template>
                                                         </span>
-                                                        <button class="io-expand-btn"
-                                                                x-show="outputOverflows[session.id + '-' + task.task_id]"
-                                                                @click="toggleOutputExpand(session.id + '-' + task.task_id)"
-                                                                x-text="expandedOutputs[session.id + '-' + task.task_id] ? 'Collapse' : 'Expand'"></button>
+                                                        <div class="io-header-actions">
+                                                            <button class="io-expand-btn"
+                                                                    x-show="outputOverflows[session.id + '-' + task.task_id]"
+                                                                    @click.stop="toggleOutputExpand(session.id + '-' + task.task_id)"
+                                                                    x-text="expandedOutputs[session.id + '-' + task.task_id] ? 'Collapse' : 'Expand'"></button>
+                                                            <button class="io-logs-btn"
+                                                                    x-show="getTaskLogs(session.agent_url, task.task_id).length > 0"
+                                                                    @click.stop="toggleTaskLogs(session.id, task.task_id)"
+                                                                    :class="{ 'io-logs-btn--active': isTaskLogsExpanded(session, task) }">
+                                                                <span class="io-logs-btn-icon" :class="{ 'io-logs-btn-icon--expanded': isTaskLogsExpanded(session, task) }">&#9662;</span>
+                                                                <span x-text="getTaskLogStats(session.agent_url, task.task_id).info + getTaskLogStats(session.agent_url, task.task_id).warn + getTaskLogStats(session.agent_url, task.task_id).error"></span> logs
+                                                                <span class="io-logs-btn-live" x-show="task.state === 'working'"></span>
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                     <div class="io-content io-content-md"
                                                          :data-output-key="session.id + '-' + task.task_id"
@@ -1958,53 +2082,30 @@
                                                          x-html="renderMarkdown(getTaskOutput(session.id, task))"
                                                          x-effect="checkOutputOverflow(session.id + '-' + task.task_id)">
                                                     </div>
+                                                    <!-- Inline Logs Section -->
+                                                    <div class="io-logs-inline" x-show="isTaskLogsExpanded(session, task)" x-cloak>
+                                                        <div class="io-logs-list" x-show="getTaskLogs(session.agent_url, task.task_id).length > 0">
+                                                            <template x-for="log in getTaskLogs(session.agent_url, task.task_id)" :key="log.timestamp">
+                                                                <div class="io-log-entry">
+                                                                    <span class="io-log-time" x-text="formatLogTime(log.timestamp)"></span>
+                                                                    <span class="io-log-level" :class="'io-log-level--' + log.level" x-text="log.level"></span>
+                                                                    <span class="io-log-message">
+                                                                        <span x-text="log.message"></span>
+                                                                        <span class="io-log-fields" x-show="log.fields" x-text="formatLogFields(log.fields)"></span>
+                                                                    </span>
+                                                                </div>
+                                                            </template>
+                                                        </div>
+                                                        <div class="io-logs-empty" x-show="getTaskLogs(session.agent_url, task.task_id).length === 0">
+                                                            Waiting for logs...
+                                                        </div>
+                                                    </div>
                                                 </div>
                                                 <div class="io-block" x-show="getTaskError(session.id, task)">
                                                     <div class="io-header">
                                                         <span>Error</span>
                                                     </div>
                                                     <div class="io-content io-content--error" x-text="getTaskError(session.id, task)"></div>
-                                                </div>
-                                                <!-- Logs Panel - auto-expanded while running, collapsible after -->
-                                                <div class="logs-panel"
-                                                     :class="{ 'logs-panel--expanded': isTaskLogsExpanded(session, task) }"
-                                                     x-effect="handleTaskLogsEffect(session.agent_url, task)"
-                                                     x-init="if (task.state === 'completed' || task.state === 'failed') fetchTaskLogsFinal(session.agent_url, task.task_id)">
-                                                    <div class="logs-header" @click="toggleTaskLogs(session.id, task.task_id)">
-                                                        <div class="logs-header-title">
-                                                            <span>Logs</span>
-                                                            <span class="logs-header-live" x-show="task.state === 'working'">LIVE</span>
-                                                        </div>
-                                                        <div class="logs-header-stats">
-                                                            <span class="logs-stat logs-stat--info" x-show="getTaskLogStats(session.agent_url, task.task_id).info > 0">
-                                                                <span x-text="getTaskLogStats(session.agent_url, task.task_id).info"></span> info
-                                                            </span>
-                                                            <span class="logs-stat logs-stat--warn" x-show="getTaskLogStats(session.agent_url, task.task_id).warn > 0">
-                                                                <span x-text="getTaskLogStats(session.agent_url, task.task_id).warn"></span> warn
-                                                            </span>
-                                                            <span class="logs-stat logs-stat--error" x-show="getTaskLogStats(session.agent_url, task.task_id).error > 0">
-                                                                <span x-text="getTaskLogStats(session.agent_url, task.task_id).error"></span> err
-                                                            </span>
-                                                            <span class="logs-expand-icon">&#9662;</span>
-                                                        </div>
-                                                    </div>
-                                                    <div class="logs-content">
-                                                        <div class="logs-list" x-show="getTaskLogs(session.agent_url, task.task_id).length > 0">
-                                                            <template x-for="log in getTaskLogs(session.agent_url, task.task_id)" :key="log.timestamp">
-                                                                <div class="log-entry">
-                                                                    <span class="log-time" x-text="formatLogTime(log.timestamp)"></span>
-                                                                    <span class="log-level" :class="'log-level--' + log.level" x-text="log.level"></span>
-                                                                    <span class="log-message">
-                                                                        <span x-text="log.message"></span>
-                                                                        <span class="log-fields" x-show="log.fields" x-text="formatLogFields(log.fields)"></span>
-                                                                    </span>
-                                                                </div>
-                                                            </template>
-                                                        </div>
-                                                        <div class="logs-empty" x-show="getTaskLogs(session.agent_url, task.task_id).length === 0">
-                                                            Waiting for logs...
-                                                        </div>
-                                                    </div>
                                                 </div>
                                             </div>
                                         </template>

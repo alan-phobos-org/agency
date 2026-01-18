@@ -20,6 +20,9 @@ func NewToolEventLogger(log *logging.TaskLogger) *DefaultToolEventLogger {
 
 // Log logs a tool event with appropriate formatting
 func (l *DefaultToolEventLogger) Log(event *ToolEvent) {
+	if event == nil {
+		return
+	}
 	switch event.Type {
 	case EventSessionInit:
 		l.log.Debug("session initialized", nil)
@@ -131,10 +134,11 @@ func (l *DefaultToolEventLogger) logToolCall(event *ToolEvent) {
 		l.log.Info("ask user", fields)
 
 	default:
-		l.log.Info("tool call", map[string]any{
-			"tool":        event.ToolName,
-			"input_bytes": len(event.Output),
-		})
+		fields := map[string]any{"tool": event.ToolName}
+		if event.Input != nil {
+			fields["input_keys"] = len(event.Input)
+		}
+		l.log.Info("tool call", fields)
 	}
 }
 

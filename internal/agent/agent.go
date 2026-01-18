@@ -703,6 +703,13 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 			}
 		}
 
+		// Check for scanner errors (e.g., line too long, I/O error)
+		if err := scanner.Err(); err != nil {
+			taskLog.Warn("stream scanner error", map[string]any{
+				"error": err.Error(),
+			})
+		}
+
 		lastOutput = outputBuf.Bytes()
 
 		// Wait for command to complete
@@ -860,6 +867,7 @@ func extractResultFromStream(output []byte) string {
 			}
 		}
 	}
+	// Ignore scanner.Err() - we've extracted what we could from the available output
 
 	return lastText
 }

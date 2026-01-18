@@ -90,7 +90,7 @@ test.describe.serial('Agency Smoke Tests', () => {
     // Fill task form - wait for textarea to be visible and enabled
     const promptInput = page.locator('textarea[placeholder="Describe the task..."]');
     await expect(promptInput).toBeVisible({ timeout: 5000 });
-    await promptInput.fill('What is 2+2? Reply with just the number.');
+    await promptInput.fill('List the files in /tmp using bash, then tell me how many there are.');
 
     // Select Manual context to enable model selection
     const contextSelect = page.locator('select').filter({ hasText: 'Manual' }).first();
@@ -120,22 +120,22 @@ test.describe.serial('Agency Smoke Tests', () => {
     // Verify it completed successfully (not failed/cancelled)
     await expect(sessionCard.locator('.session-status--completed')).toBeVisible();
 
-    // Validate session title is properly formatted (should reflect the math question)
-    await validateSessionTitle(sessionCard, '2+2');
+    // Validate session title is properly formatted (should reflect the files task)
+    await validateSessionTitle(sessionCard, 'files');
 
-    // Expand card and verify output contains "4"
+    // Expand card and verify output contains evidence of file listing
     await sessionCard.click();
-    await expect(sessionCard).toContainText('4', { timeout: 5000 });
+    await expect(sessionCard).toContainText('files', { timeout: 5000 });
     await screenshot(page, '06-task-completed');
 
-    // Wait for logs panel to appear and click to expand it
-    const logsHeader = sessionCard.locator('.logs-header').first();
-    await expect(logsHeader).toBeVisible({ timeout: 10000 });
-    await logsHeader.click();
+    // Wait for logs button to appear and click to expand inline logs
+    const logsButton = sessionCard.locator('.io-logs-btn').first();
+    await expect(logsButton).toBeVisible({ timeout: 10000 });
+    await logsButton.click();
 
-    // Wait for logs content to be visible (expanded state)
-    const logsContent = sessionCard.locator('.logs-content').first();
-    await expect(logsContent).toBeVisible({ timeout: 5000 });
+    // Wait for inline logs to be visible (expanded state)
+    const inlineLogs = sessionCard.locator('.io-logs-inline').first();
+    await expect(inlineLogs).toBeVisible({ timeout: 5000 });
 
     // Wait a moment for logs to render
     await page.waitForTimeout(1000);
@@ -177,7 +177,7 @@ test.describe.serial('Agency Smoke Tests', () => {
 
     // Fill the new task
     const promptInput = page.locator('textarea[placeholder="Describe the task..."]');
-    await promptInput.fill('What is 3+3? Reply with just the number.');
+    await promptInput.fill('Use bash to check the current date and time, then summarize it.');
     await screenshot(page, '08-add-task-to-session');
 
     // Submit
@@ -193,15 +193,15 @@ test.describe.serial('Agency Smoke Tests', () => {
     // Verify it completed successfully
     await expect(sessionCard.locator('.session-status--completed')).toBeVisible();
 
-    // Validate session title still reflects the first task (2+2)
-    await validateSessionTitle(sessionCard, '2+2');
+    // Validate session title still reflects the first task (files)
+    await validateSessionTitle(sessionCard, 'files');
 
     // Wait for I/O content to fully load (history loading to complete)
     // Use text locator for exact match to avoid multiple element issue
     await expect(sessionCard.getByText('Loading history...', { exact: true })).toBeHidden({ timeout: 10000 });
 
-    // Now check for the expected output
-    await expect(sessionCard).toContainText('6', { timeout: 5000 });
+    // Now check for date/time related output
+    await expect(sessionCard).toContainText('2026', { timeout: 5000 });
     await screenshot(page, '09-second-task-completed');
   });
 

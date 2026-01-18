@@ -82,10 +82,13 @@ func (p *ClaudeStreamParser) ParseLine(line []byte) ([]*ToolEvent, error) {
 				// Track for later correlation with result
 				p.pendingCalls[block.ID] = block
 
-				// Parse input
+				// Parse input (ignore unmarshal errors - input will be nil if malformed)
 				var input map[string]any
 				if len(block.Input) > 0 {
-					json.Unmarshal(block.Input, &input)
+					if err := json.Unmarshal(block.Input, &input); err != nil {
+						// Log as raw string if JSON parse fails
+						input = map[string]any{"_raw": string(block.Input)}
+					}
 				}
 
 				events = append(events, &ToolEvent{

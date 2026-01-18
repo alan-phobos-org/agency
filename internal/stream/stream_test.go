@@ -442,3 +442,202 @@ func TestCountLines(t *testing.T) {
 		}
 	}
 }
+
+func TestClaudeStreamParser_MalformedInput(t *testing.T) {
+	t.Parallel()
+
+	parser := NewClaudeStreamParser()
+
+	// Tool use with malformed JSON in input field (a string instead of object)
+	// Note: json.RawMessage captures the raw bytes including quotes for strings
+	line := []byte(`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_bad","name":"Test","input":"not valid json {"}]}}`)
+	events, err := parser.ParseLine(line)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+
+	// Should have _raw field with the malformed input (as raw JSON string)
+	event := events[0]
+	if event.Input == nil {
+		t.Fatal("expected Input to be set")
+	}
+	raw, ok := event.Input["_raw"]
+	if !ok {
+		t.Error("expected _raw field for malformed input")
+	}
+	// The raw value is the JSON string literal including quotes
+	rawStr, isString := raw.(string)
+	if !isString {
+		t.Errorf("expected _raw to be string, got %T", raw)
+	}
+	if rawStr != `"not valid json {"` {
+		t.Errorf("expected raw JSON string, got %v", rawStr)
+	}
+}
+
+func TestClaudeStreamParser_UnmatchedToolResult(t *testing.T) {
+	t.Parallel()
+
+	parser := NewClaudeStreamParser()
+
+	// Send tool_result without prior tool_use - should be silently ignored
+	resultLine := []byte(`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"unknown_id","content":"orphan result"}]}}`)
+	events, err := parser.ParseLine(resultLine)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// No events should be produced for unmatched tool results
+	if len(events) != 0 {
+		t.Errorf("expected 0 events for unmatched tool result, got %d", len(events))
+	}
+}
+
+func TestClaudeStreamParser_DuplicateToolResult(t *testing.T) {
+	t.Parallel()
+
+	parser := NewClaudeStreamParser()
+
+	// Track tool_use
+	toolUseLine := []byte(`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_dup","name":"Bash","input":{"command":"echo test"}}]}}`)
+	_, _ = parser.ParseLine(toolUseLine)
+
+	// First result
+	resultLine := []byte(`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_dup","content":"test"}]}}`)
+	events1, _ := parser.ParseLine(resultLine)
+	if len(events1) != 1 {
+		t.Errorf("expected 1 event for first result, got %d", len(events1))
+	}
+
+	// Duplicate result - should be ignored (already deleted from pendingCalls)
+	events2, _ := parser.ParseLine(resultLine)
+	if len(events2) != 0 {
+		t.Errorf("expected 0 events for duplicate result, got %d", len(events2))
+	}
+}
+
+func TestClaudeStreamParser_InvalidJSON(t *testing.T) {
+	t.Parallel()
+
+	parser := NewClaudeStreamParser()
+
+	// Completely invalid JSON
+	events, err := parser.ParseLine([]byte(`{invalid json`))
+	if err == nil {
+		t.Error("expected error for invalid JSON")
+	}
+	if events != nil {
+		t.Errorf("expected nil events for invalid JSON, got %v", events)
+	}
+}
+
+func TestClaudeStreamParser_CompleteWithoutMetrics(t *testing.T) {
+	t.Parallel()
+
+	parser := NewClaudeStreamParser()
+
+	// Result without optional fields
+	line := []byte(`{"type":"result","subtype":"success"}`)
+	events, err := parser.ParseLine(line)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+
+	event := events[0]
+	if event.Type != EventComplete {
+		t.Errorf("expected EventComplete, got %v", event.Type)
+	}
+	if event.Metrics == nil {
+		t.Fatal("expected Metrics to be set")
+	}
+	// Zero values are OK
+	if event.Metrics.DurationMS != 0 {
+		t.Errorf("expected DurationMS=0, got %d", event.Metrics.DurationMS)
+	}
+}
+
+func TestToolEventLogger_NilEvent(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	log := logging.New(logging.Config{
+		Output:     &buf,
+		Level:      logging.LevelDebug,
+		Component:  "test",
+		MaxEntries: 100,
+	})
+
+	taskLog := log.WithTask("test-task")
+	logger := NewToolEventLogger(taskLog)
+
+	// Should not panic
+	logger.Log(nil)
+
+	// No output expected
+	if buf.Len() > 0 {
+		t.Errorf("expected no output for nil event, got %s", buf.String())
+	}
+}
+
+func TestToolEventLogger_CompleteWithNilMetrics(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	log := logging.New(logging.Config{
+		Output:     &buf,
+		Level:      logging.LevelDebug,
+		Component:  "test",
+		MaxEntries: 100,
+	})
+
+	taskLog := log.WithTask("test-task")
+	logger := NewToolEventLogger(taskLog)
+
+	// Should not panic with nil metrics
+	logger.Log(&ToolEvent{
+		Type:    EventComplete,
+		Metrics: nil,
+	})
+
+	output := buf.String()
+	if !bytes.Contains([]byte(output), []byte("execution complete")) {
+		t.Errorf("expected 'execution complete' in output, got %s", output)
+	}
+}
+
+func TestToolEventLogger_UnknownTool(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	log := logging.New(logging.Config{
+		Output:     &buf,
+		Level:      logging.LevelDebug,
+		Component:  "test",
+		MaxEntries: 100,
+	})
+
+	taskLog := log.WithTask("test-task")
+	logger := NewToolEventLogger(taskLog)
+
+	logger.Log(&ToolEvent{
+		Type:     EventToolCall,
+		ToolName: "SomeUnknownTool",
+		Input:    map[string]any{"key1": "val1", "key2": "val2"},
+	})
+
+	output := buf.String()
+	if !bytes.Contains([]byte(output), []byte("tool call")) {
+		t.Errorf("expected 'tool call' in output, got %s", output)
+	}
+	if !bytes.Contains([]byte(output), []byte("SomeUnknownTool")) {
+		t.Errorf("expected tool name in output, got %s", output)
+	}
+}
