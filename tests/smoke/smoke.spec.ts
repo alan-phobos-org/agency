@@ -146,7 +146,7 @@ test.describe.serial('Agency Smoke Tests', () => {
     await screenshot(page, '09-second-task-completed');
   });
 
-  test('4. Trigger Scheduled Job', async ({ page }) => {
+  test('4. Verify Smoke Nightly Maintenance Job Exists', async ({ page }) => {
     // Login first
     await page.goto('/login');
     await page.fill('#password', PASSWORD);
@@ -159,45 +159,65 @@ test.describe.serial('Agency Smoke Tests', () => {
     await screenshot(page, '10-fleet-section-expanded');
 
     // Wait for agent to show as idle (ensures previous task fully completed)
-    // Poll multiple times to ensure agent is stable idle (not transitioning)
     await expect(async () => {
       const idleChip = page.locator('.fleet-chip:has-text("idle")');
       await expect(idleChip).toBeVisible();
-      // Small delay to let discovery cache stabilize
       await page.waitForTimeout(500);
       await expect(idleChip).toBeVisible();
     }).toPass({ timeout: 10000, intervals: [1000] });
 
-    // Find the smoke-test job - wait for job list to render
-    // Give Alpine.js time to process the template
+    // Wait for job list to render
     await page.waitForTimeout(1000);
-    await screenshot(page, '11-scheduler-job-before-wait');
+    await screenshot(page, '11-scheduler-jobs-list');
 
-    // Look for the job-item or job-name containing smoke-test
+    // Verify smoke-nightly-maintenance job exists with different name from prod
+    const nightlyMaintenanceJob = page.locator('.job-item').filter({
+      hasText: 'smoke-nightly-maintenance'
+    });
+    await expect(nightlyMaintenanceJob).toBeVisible({ timeout: 10000 });
+    await screenshot(page, '12-smoke-nightly-maintenance-visible');
+
+    // Also verify the regular smoke-test job exists
     const smokeTestJob = page.locator('.job-item').filter({
       hasText: 'smoke-test'
     });
+    await expect(smokeTestJob).toBeVisible({ timeout: 5000 });
+  });
 
-    // If job-item not found, try triggering via API
-    const jobVisible = await smokeTestJob.isVisible().catch(() => false);
-    if (!jobVisible) {
-      // Fallback: use the /trigger API directly since UI might have rendering issues
-      console.log('Job item not visible in UI, triggering via API...');
-      await screenshot(page, '11b-job-list-not-visible');
+  test('5. Trigger Smoke Nightly Maintenance Job', async ({ page }) => {
+    // Login first
+    await page.goto('/login');
+    await page.fill('#password', PASSWORD);
+    await page.click('button[type="submit"]');
+    await expect(page).toHaveURL('/');
 
-      // Get the scheduler port from the helpers display
-      const helperText = await page.locator('.helper-section').first().textContent();
-      console.log('Helper section text:', helperText);
-    }
+    // Expand "Fleet" section
+    await page.click('.fleet-trigger');
+    await expect(page.locator('.fleet-content')).toBeVisible();
 
-    await expect(smokeTestJob).toBeVisible({ timeout: 10000 });
-    await screenshot(page, '11-scheduler-job-visible');
+    // Wait for agent to show as idle
+    await expect(async () => {
+      const idleChip = page.locator('.fleet-chip:has-text("idle")');
+      await expect(idleChip).toBeVisible();
+      await page.waitForTimeout(500);
+      await expect(idleChip).toBeVisible();
+    }).toPass({ timeout: 10000, intervals: [1000] });
+
+    // Wait for job list to render
+    await page.waitForTimeout(1000);
+
+    // Find the smoke-nightly-maintenance job
+    const nightlyMaintenanceJob = page.locator('.job-item').filter({
+      hasText: 'smoke-nightly-maintenance'
+    });
+    await expect(nightlyMaintenanceJob).toBeVisible({ timeout: 10000 });
+    await screenshot(page, '13-before-trigger-nightly-maintenance');
 
     // Get initial session count
     const initialSessionCount = await page.locator('.session-card').count();
 
     // Click trigger button
-    await smokeTestJob.locator('button:has-text("Run Now")').click();
+    await nightlyMaintenanceJob.locator('button:has-text("Run Now")').click();
 
     // Verify new session created
     await expect(async () => {
@@ -205,23 +225,24 @@ test.describe.serial('Agency Smoke Tests', () => {
       expect(newCount).toBeGreaterThan(initialSessionCount);
     }).toPass({ timeout: 10000, intervals: [1000] });
 
-    await screenshot(page, '12-scheduler-job-triggered');
+    await screenshot(page, '14-nightly-maintenance-triggered');
 
-    // Wait for job completion
+    // Wait for job completion (longer timeout since this is a more complex job)
     const newSession = page.locator('.session-card').first();
     const terminalStatus = newSession.locator('.session-status--completed, .session-status--failed, .session-status--cancelled');
-    await expect(terminalStatus).toBeVisible({ timeout: 90000 });
+    await expect(terminalStatus).toBeVisible({ timeout: 180000 });
 
     // Verify it completed successfully
     await expect(newSession.locator('.session-status--completed')).toBeVisible();
 
-    // Verify success state - output should contain "Smoke test OK"
+    // Verify output contains expected content related to helloworld2
     await newSession.click();
-    await expect(newSession).toContainText('Smoke test OK', { timeout: 5000 });
-    await screenshot(page, '13-scheduler-job-completed');
+    // The job should mention helloworld2 in its output since that's the target repo
+    await expect(newSession).toContainText('helloworld2', { timeout: 5000 });
+    await screenshot(page, '15-nightly-maintenance-completed');
   });
 
-  test('5. UI Navigation and Interactions', async ({ page }) => {
+  test('6. UI Navigation and Interactions', async ({ page }) => {
     // Login first
     await page.goto('/login');
     await page.fill('#password', PASSWORD);
@@ -231,7 +252,7 @@ test.describe.serial('Agency Smoke Tests', () => {
     // Wait for dashboard to load with sessions
     const sessionCard = page.locator('.session-card').first();
     await expect(sessionCard).toBeVisible({ timeout: 10000 });
-    await screenshot(page, '14-dashboard-with-sessions');
+    await screenshot(page, '16-dashboard-with-sessions');
 
     // --- Fleet Section: Expand/Collapse ---
     const fleetTrigger = page.locator('.fleet-trigger');
@@ -242,12 +263,12 @@ test.describe.serial('Agency Smoke Tests', () => {
       await fleetTrigger.click();
       await expect(fleetContent).toBeHidden();
     }
-    await screenshot(page, '15-fleet-collapsed');
+    await screenshot(page, '17-fleet-collapsed');
 
     // Expand fleet section
     await fleetTrigger.click();
     await expect(fleetContent).toBeVisible();
-    await screenshot(page, '16-fleet-expanded');
+    await screenshot(page, '18-fleet-expanded');
 
     // Verify agent and helpers are shown
     await expect(page.locator('.fleet-category-label:has-text("Agents")')).toBeVisible();
@@ -256,7 +277,7 @@ test.describe.serial('Agency Smoke Tests', () => {
     // Collapse fleet section
     await fleetTrigger.click();
     await expect(fleetContent).toBeHidden();
-    await screenshot(page, '17-fleet-collapsed-again');
+    await screenshot(page, '19-fleet-collapsed-again');
 
     // --- Session Card: Expand/Collapse ---
     // Session should be collapsed initially (from prior tests it might be expanded)
@@ -265,12 +286,12 @@ test.describe.serial('Agency Smoke Tests', () => {
       await sessionCard.locator('.session-header').click();
       await expect(sessionBody).toBeHidden();
     }
-    await screenshot(page, '18-session-collapsed');
+    await screenshot(page, '20-session-collapsed');
 
     // Expand session
     await sessionCard.locator('.session-header').click();
     await expect(sessionBody).toBeVisible();
-    await screenshot(page, '19-session-expanded');
+    await screenshot(page, '21-session-expanded');
 
     // --- Session Tabs: Switch between I/O, Details, and Metrics ---
     const ioTab = sessionCard.locator('.session-tab:has-text("I/O")');
@@ -279,36 +300,36 @@ test.describe.serial('Agency Smoke Tests', () => {
 
     // Verify I/O tab is active by default
     await expect(ioTab).toHaveClass(/session-tab--active/);
-    await screenshot(page, '20-io-tab-active');
+    await screenshot(page, '22-io-tab-active');
 
     // Switch to Details tab
     await detailsTab.click();
     await expect(detailsTab).toHaveClass(/session-tab--active/);
     await expect(ioTab).not.toHaveClass(/session-tab--active/);
-    await screenshot(page, '21-details-tab-active');
+    await screenshot(page, '23-details-tab-active');
 
     // Switch to Metrics tab
     await metricsTab.click();
     await expect(metricsTab).toHaveClass(/session-tab--active/);
     await expect(detailsTab).not.toHaveClass(/session-tab--active/);
-    await screenshot(page, '22-metrics-tab-active');
+    await screenshot(page, '24-metrics-tab-active');
 
     // Switch back to I/O tab
     await ioTab.click();
     await expect(ioTab).toHaveClass(/session-tab--active/);
-    await screenshot(page, '23-back-to-io-tab');
+    await screenshot(page, '25-back-to-io-tab');
 
     // Collapse session
     await sessionCard.locator('.session-header').click();
     await expect(sessionBody).toBeHidden();
-    await screenshot(page, '24-session-collapsed-final');
+    await screenshot(page, '26-session-collapsed-final');
 
     // --- Settings Modal: Open/Close ---
     // Settings button is in bottom nav bar (only visible on mobile viewport)
     // Temporarily switch to mobile viewport to access settings
     const originalViewport = page.viewportSize();
     await page.setViewportSize({ width: 375, height: 667 }); // iPhone SE size
-    await screenshot(page, '25-mobile-viewport');
+    await screenshot(page, '27-mobile-viewport');
 
     const settingsButton = page.locator('.nav-item:has-text("Settings")');
     await expect(settingsButton).toBeVisible({ timeout: 5000 });
@@ -318,28 +339,28 @@ test.describe.serial('Agency Smoke Tests', () => {
     const settingsModal = page.locator('.modal-backdrop--open');
     await expect(settingsModal).toBeVisible({ timeout: 5000 });
     await expect(page.locator('.modal-title:has-text("Settings")')).toBeVisible();
-    await screenshot(page, '26-settings-modal-open');
+    await screenshot(page, '28-settings-modal-open');
 
     // Close settings via backdrop click
     await settingsModal.click({ position: { x: 10, y: 10 } }); // Click near edge (backdrop)
     await expect(settingsModal).toBeHidden({ timeout: 5000 });
-    await screenshot(page, '27-settings-modal-closed');
+    await screenshot(page, '29-settings-modal-closed');
 
     // Restore desktop viewport
     if (originalViewport) {
       await page.setViewportSize(originalViewport);
     }
-    await screenshot(page, '28-back-to-desktop');
+    await screenshot(page, '30-back-to-desktop');
 
     // --- Task Modal: Open/Close with Escape ---
     await page.click('button:has-text("New Task")');
     await expect(page.locator('.modal-title:has-text("New Task")')).toBeVisible({ timeout: 5000 });
-    await screenshot(page, '29-task-modal-open');
+    await screenshot(page, '31-task-modal-open');
 
     // Close via Escape key
     await page.keyboard.press('Escape');
     await expect(page.locator('.modal-backdrop--open')).toBeHidden({ timeout: 5000 });
-    await screenshot(page, '30-task-modal-closed-via-escape');
+    await screenshot(page, '32-task-modal-closed-via-escape');
 
     // --- Keyboard Shortcuts ---
     // Click on main content to ensure no form element is focused
@@ -348,7 +369,7 @@ test.describe.serial('Agency Smoke Tests', () => {
     // 'n' should open new task modal
     await page.keyboard.press('n');
     await expect(page.locator('.modal-title:has-text("New Task")')).toBeVisible({ timeout: 5000 });
-    await screenshot(page, '31-task-modal-via-n-key');
+    await screenshot(page, '33-task-modal-via-n-key');
 
     // Close it
     await page.keyboard.press('Escape');
@@ -360,16 +381,16 @@ test.describe.serial('Agency Smoke Tests', () => {
     // 'f' should toggle fleet section (fleet is currently hidden from earlier test)
     await page.keyboard.press('f');
     await expect(fleetContent).toBeVisible({ timeout: 5000 });
-    await screenshot(page, '32-fleet-toggled-via-f-key');
+    await screenshot(page, '34-fleet-toggled-via-f-key');
 
     await page.keyboard.press('f');
     await expect(fleetContent).toBeHidden({ timeout: 5000 });
-    await screenshot(page, '33-fleet-toggled-again');
+    await screenshot(page, '35-fleet-toggled-again');
 
     // 'r' should refresh (we can verify by checking the data reloads)
     await page.keyboard.press('r');
     // Just verify page is still functional
     await expect(sessionCard).toBeVisible();
-    await screenshot(page, '34-after-refresh');
+    await screenshot(page, '36-after-refresh');
   });
 });
