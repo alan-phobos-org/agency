@@ -3062,14 +3062,12 @@
                 stripPromptPrefix(text) {
                     if (!text) return '';
 
-                    // Look for "## Task" marker - everything after it is the user's prompt
-                    const taskMarkerIdx = text.indexOf('## Task');
-                    if (taskMarkerIdx !== -1) {
+                    // Look for "## Task" marker (not "## Tasks") - everything after it is the user's prompt
+                    // Match "## Task" followed by newline or end of string, not followed by letters
+                    const taskMatch = text.match(/## Task(?:\s*\n|$)/);
+                    if (taskMatch) {
                         // Find end of the "## Task" line (skip past the header and any whitespace)
-                        let startIdx = taskMarkerIdx + '## Task'.length;
-                        while (startIdx < text.length && (text[startIdx] === '\n' || text[startIdx] === '\r')) {
-                            startIdx++;
-                        }
+                        let startIdx = taskMatch.index + taskMatch[0].length;
                         return text.slice(startIdx).trim();
                     }
 
