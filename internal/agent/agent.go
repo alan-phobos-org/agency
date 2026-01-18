@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	_ "embed"
@@ -24,6 +25,7 @@ import (
 	"phobos.org.uk/agency/internal/config"
 	"phobos.org.uk/agency/internal/history"
 	"phobos.org.uk/agency/internal/logging"
+	"phobos.org.uk/agency/internal/stream"
 )
 
 //go:embed claude.md
@@ -624,12 +626,87 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 
 		task.cmd = cmd
 
-		var stdout, stderr bytes.Buffer
-		cmd.Stdout = &stdout
+		// Set up streaming output capture
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			completedAt := time.Now()
+			a.mu.Lock()
+			setTaskCompletion(task, completedAt)
+			task.State = TaskStateFailed
+			exitCode := 1
+			task.ExitCode = &exitCode
+			task.Error = &TaskError{
+				Type:    "pipe_error",
+				Message: fmt.Sprintf("Failed to create stdout pipe: %v", err),
+			}
+			a.mu.Unlock()
+			a.saveTaskHistory(task, nil)
+			a.cleanupTask(task)
+			return
+		}
+
+		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
 
-		err := cmd.Run()
-		lastOutput = stdout.Bytes()
+		// Start command
+		if err := cmd.Start(); err != nil {
+			completedAt := time.Now()
+			a.mu.Lock()
+			setTaskCompletion(task, completedAt)
+			task.State = TaskStateFailed
+			exitCode := 1
+			task.ExitCode = &exitCode
+			task.Error = &TaskError{
+				Type:    "start_error",
+				Message: fmt.Sprintf("Failed to start Claude: %v", err),
+			}
+			a.mu.Unlock()
+			a.saveTaskHistory(task, nil)
+			a.cleanupTask(task)
+			return
+		}
+
+		// Stream and parse output line by line
+		parser := stream.NewClaudeStreamParser()
+		eventLogger := stream.NewToolEventLogger(taskLog)
+
+		var outputBuf bytes.Buffer
+		var lastResult *stream.ClaudeStreamEvent
+
+		scanner := bufio.NewScanner(stdout)
+		// Increase buffer size for potentially large JSON lines
+		const maxScannerBuffer = 10 * 1024 * 1024 // 10MB
+		scanner.Buffer(make([]byte, 64*1024), maxScannerBuffer)
+
+		for scanner.Scan() {
+			line := scanner.Bytes()
+			outputBuf.Write(line)
+			outputBuf.WriteByte('\n')
+
+			// Parse stream events and log them
+			events, parseErr := parser.ParseLine(line)
+			if parseErr != nil {
+				taskLog.Debug("stream parse error", map[string]any{
+					"error": parseErr.Error(),
+				})
+				continue
+			}
+
+			for _, event := range events {
+				eventLogger.Log(event)
+			}
+
+			// Track the last result event for final metrics
+			var rawEvent stream.ClaudeStreamEvent
+			if json.Unmarshal(line, &rawEvent) == nil && rawEvent.Type == "result" {
+				lastResult = &rawEvent
+			}
+		}
+
+		lastOutput = outputBuf.Bytes()
+
+		// Wait for command to complete
+		cmdErr := cmd.Wait()
 		completedAt := time.Now()
 
 		a.mu.Lock()
@@ -664,41 +741,24 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 			return
 		}
 
-		// Parse Claude's JSON output; fall back to raw stdout if not valid JSON
-		var claudeResp struct {
-			Type      string `json:"type"`
-			Subtype   string `json:"subtype"`
-			SessionID string `json:"session_id"`
-			Result    string `json:"result"`
-			ExitCode  int    `json:"exit_code"`
-			Usage     struct {
-				InputTokens  int `json:"input_tokens"`
-				OutputTokens int `json:"output_tokens"`
-			} `json:"usage"`
-		}
-
-		taskLog := a.log.WithTask(task.ID)
-		if jsonErr := json.Unmarshal(stdout.Bytes(), &claudeResp); jsonErr == nil {
-			// Only update session_id if Claude returns a safe, non-empty value
-			if claudeResp.SessionID != "" {
-				if isSafeSessionID(claudeResp.SessionID) {
-					task.SessionID = claudeResp.SessionID
+		// Process the final result from stream
+		if lastResult != nil {
+			// Extract session_id from the result
+			if lastResult.SessionID != "" {
+				if isSafeSessionID(lastResult.SessionID) {
+					task.SessionID = lastResult.SessionID
 				} else {
 					taskLog.Warn("ignoring unsafe session_id from Claude", map[string]any{
-						"session_id": claudeResp.SessionID,
+						"session_id": lastResult.SessionID,
 					})
 				}
 			}
-			task.Output = claudeResp.Result
-			task.TokenUsage = &TokenUsage{
-				Input:  claudeResp.Usage.InputTokens,
-				Output: claudeResp.Usage.OutputTokens,
-			}
-			exitCode := claudeResp.ExitCode
-			task.ExitCode = &exitCode
+
+			// Extract result text - look for it in the stream output
+			task.Output = extractResultFromStream(lastOutput)
 
 			// Check for max_turns limit and auto-resume if possible
-			if claudeResp.Subtype == "error_max_turns" && task.maxTurnsResumes < maxAutoResumes {
+			if lastResult.Subtype == "error_max_turns" && task.maxTurnsResumes < maxAutoResumes {
 				task.maxTurnsResumes++
 				task.ResumeSession = true
 				taskLog.Info("hit max_turns limit, auto-resuming", map[string]any{
@@ -710,7 +770,7 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 			}
 
 			// If max_turns exhausted after all retries, fail with clear error
-			if claudeResp.Subtype == "error_max_turns" {
+			if lastResult.Subtype == "error_max_turns" {
 				task.State = TaskStateFailed
 				task.Error = &TaskError{
 					Type: "max_turns",
@@ -723,15 +783,15 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 				return
 			}
 		} else {
-			// Not valid JSON - use raw output (e.g., from mock Claude in tests)
-			task.Output = stdout.String()
+			// No result event - try to extract output from raw stream
+			task.Output = extractResultFromStream(lastOutput)
 		}
 
 		// Determine final state based on command execution result
-		if err != nil {
+		if cmdErr != nil {
 			task.State = TaskStateFailed
 			exitCode := 1
-			if exitErr, ok := err.(*exec.ExitError); ok {
+			if exitErr, ok := cmdErr.(*exec.ExitError); ok {
 				if status, ok := exitErr.Sys().(syscall.WaitStatus); ok {
 					exitCode = status.ExitStatus()
 				}
@@ -768,6 +828,42 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 	}
 }
 
+// extractResultFromStream extracts the result text from Claude stream-json output.
+// It looks for the last assistant message with text content.
+func extractResultFromStream(output []byte) string {
+	var lastText string
+
+	scanner := bufio.NewScanner(bytes.NewReader(output))
+	for scanner.Scan() {
+		var event struct {
+			Type    string `json:"type"`
+			Message struct {
+				Content []struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"message"`
+			Result string `json:"result"` // For backwards compatibility with non-stream format
+		}
+		if json.Unmarshal(scanner.Bytes(), &event) == nil {
+			// Check for result field (backwards compatibility)
+			if event.Result != "" {
+				return event.Result
+			}
+			// Extract text from assistant messages
+			if event.Type == "assistant" {
+				for _, block := range event.Message.Content {
+					if block.Type == "text" && block.Text != "" {
+						lastText = block.Text
+					}
+				}
+			}
+		}
+	}
+
+	return lastText
+}
+
 // buildClaudeArgs constructs the command-line arguments for the Claude CLI.
 // It uses "--" to separate options from the prompt, preventing prompts that
 // start with dashes from being interpreted as flags.
@@ -776,7 +872,8 @@ func (a *Agent) buildClaudeArgs(task *Task) []string {
 		"--print",
 		"--dangerously-skip-permissions",
 		"--model", task.Model,
-		"--output-format", "json",
+		"--output-format", "stream-json",
+		"--verbose",
 		"--max-turns", strconv.Itoa(a.config.Claude.MaxTurns),
 	}
 

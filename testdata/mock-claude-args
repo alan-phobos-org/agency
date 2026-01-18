@@ -34,5 +34,7 @@ if [ -n "$MOCK_CLAUDE_OUTPUT" ]; then
     echo "$PROMPT" > "$MOCK_CLAUDE_OUTPUT"
 fi
 
-# Return success with the captured prompt in the result
-echo "{\"session_id\":\"test-session-args\",\"result\":\"Prompt received: $PROMPT\",\"exit_code\":0,\"usage\":{\"input_tokens\":100,\"output_tokens\":50}}"
+# Return success with stream-json format
+echo '{"type":"system","subtype":"init","session_id":"test-session-args","model":"sonnet"}'
+echo "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Prompt received: $PROMPT\"}]}}"
+echo '{"type":"result","subtype":"success","session_id":"test-session-args","duration_ms":100,"num_turns":1,"total_cost_usd":0.001}'

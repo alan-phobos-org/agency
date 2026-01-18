@@ -3,6 +3,9 @@
 # First N calls return error_max_turns, then returns success
 # Uses MOCK_MAX_TURNS_COUNTER file to track calls
 
+# Ensure basic commands are available (PATH may be restricted in subprocess)
+export PATH="/usr/bin:/bin:$PATH"
+
 SESSION_ID=""
 RESUME=false
 CAPTURE_NEXT=""
@@ -48,10 +51,17 @@ echo "$COUNT" > "$COUNTER_FILE"
 # Default: 2 (so 3rd call succeeds)
 FAIL_COUNT="${MOCK_MAX_TURNS_FAIL_COUNT:-2}"
 
+# Emit system init event
+echo "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"$SESSION_ID\",\"model\":\"sonnet\"}"
+
 if [ "$COUNT" -le "$FAIL_COUNT" ]; then
+    # Emit assistant message
+    echo "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Hit max turns limit (call $COUNT)\"}]}}"
     # Return error_max_turns - note this still has exit_code 0 like real Claude
-    echo "{\"type\":\"result\",\"subtype\":\"error_max_turns\",\"session_id\":\"$SESSION_ID\",\"result\":\"Hit max turns limit (call $COUNT)\",\"exit_code\":0,\"usage\":{\"input_tokens\":1000,\"output_tokens\":500}}"
+    echo "{\"type\":\"result\",\"subtype\":\"error_max_turns\",\"session_id\":\"$SESSION_ID\",\"duration_ms\":1000,\"num_turns\":50,\"total_cost_usd\":0.05}"
 else
+    # Emit assistant message
+    echo "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Task completed after $COUNT attempts\"}]}}"
     # Return success
-    echo "{\"type\":\"result\",\"subtype\":\"success\",\"session_id\":\"$SESSION_ID\",\"result\":\"Task completed after $COUNT attempts\",\"exit_code\":0,\"usage\":{\"input_tokens\":500,\"output_tokens\":250}}"
+    echo "{\"type\":\"result\",\"subtype\":\"success\",\"session_id\":\"$SESSION_ID\",\"duration_ms\":500,\"num_turns\":5,\"total_cost_usd\":0.01}"
 fi

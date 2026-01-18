@@ -1,4 +1,11 @@
 #!/bin/bash
 # Mock Claude CLI that sleeps for 10 seconds (for cancellation testing)
+
+# Emit init event before sleeping
+echo '{"type":"system","subtype":"init","session_id":"test-session-slow","model":"sonnet"}'
+
 sleep 10
-echo '{"session_id":"test-session-slow","result":"Slow task completed.","exit_code":0,"usage":{"input_tokens":100,"output_tokens":50}}'
+
+# Emit result if we get here (task not cancelled)
+echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Slow task completed."}]}}'
+echo '{"type":"result","subtype":"success","session_id":"test-session-slow","duration_ms":10000,"num_turns":1,"total_cost_usd":0.05}'

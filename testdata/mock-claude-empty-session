@@ -2,4 +2,6 @@
 # Mock Claude CLI that returns empty session_id
 # This simulates a bug scenario where Claude's response lacks session_id
 
-echo '{"session_id":"","result":"Task completed","exit_code":0,"usage":{"input_tokens":100,"output_tokens":50}}'
+echo '{"type":"system","subtype":"init","session_id":"","model":"sonnet"}'
+echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Task completed"}]}}'
+echo '{"type":"result","subtype":"success","session_id":"","duration_ms":100,"num_turns":1,"total_cost_usd":0.001}'
