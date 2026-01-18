@@ -235,11 +235,19 @@ test.describe.serial('Agency Smoke Tests', () => {
     // Verify it completed successfully
     await expect(newSession.locator('.session-status--completed')).toBeVisible();
 
+    // Verify session title is correctly formatted (no markdown # prefix)
+    // The title should be "Smoke Test Nightly Maintenance", NOT "# Smoke Test Nightly Maintenance"
+    const sessionSummary = newSession.locator('.session-summary');
+    const summaryText = await sessionSummary.textContent();
+    expect(summaryText).not.toMatch(/^#/);  // Should not start with # markdown heading
+    expect(summaryText).toContain('Smoke Test Nightly Maintenance');
+    await screenshot(page, '15-session-title-check');
+
     // Verify output contains expected content related to helloworld2
     await newSession.click();
     // The job should mention helloworld2 in its output since that's the target repo
     await expect(newSession).toContainText('helloworld2', { timeout: 5000 });
-    await screenshot(page, '15-nightly-maintenance-completed');
+    await screenshot(page, '16-nightly-maintenance-completed');
   });
 
   test('6. UI Navigation and Interactions', async ({ page }) => {
@@ -252,7 +260,7 @@ test.describe.serial('Agency Smoke Tests', () => {
     // Wait for dashboard to load with sessions
     const sessionCard = page.locator('.session-card').first();
     await expect(sessionCard).toBeVisible({ timeout: 10000 });
-    await screenshot(page, '16-dashboard-with-sessions');
+    await screenshot(page, '17-dashboard-with-sessions');
 
     // --- Fleet Section: Expand/Collapse ---
     const fleetTrigger = page.locator('.fleet-trigger');
@@ -263,12 +271,12 @@ test.describe.serial('Agency Smoke Tests', () => {
       await fleetTrigger.click();
       await expect(fleetContent).toBeHidden();
     }
-    await screenshot(page, '17-fleet-collapsed');
+    await screenshot(page, '18-fleet-collapsed');
 
     // Expand fleet section
     await fleetTrigger.click();
     await expect(fleetContent).toBeVisible();
-    await screenshot(page, '18-fleet-expanded');
+    await screenshot(page, '19-fleet-expanded');
 
     // Verify agent and helpers are shown
     await expect(page.locator('.fleet-category-label:has-text("Agents")')).toBeVisible();
@@ -277,7 +285,7 @@ test.describe.serial('Agency Smoke Tests', () => {
     // Collapse fleet section
     await fleetTrigger.click();
     await expect(fleetContent).toBeHidden();
-    await screenshot(page, '19-fleet-collapsed-again');
+    await screenshot(page, '20-fleet-collapsed-again');
 
     // --- Session Card: Expand/Collapse ---
     // Session should be collapsed initially (from prior tests it might be expanded)
@@ -286,12 +294,12 @@ test.describe.serial('Agency Smoke Tests', () => {
       await sessionCard.locator('.session-header').click();
       await expect(sessionBody).toBeHidden();
     }
-    await screenshot(page, '20-session-collapsed');
+    await screenshot(page, '21-session-collapsed');
 
     // Expand session
     await sessionCard.locator('.session-header').click();
     await expect(sessionBody).toBeVisible();
-    await screenshot(page, '21-session-expanded');
+    await screenshot(page, '22-session-expanded');
 
     // --- Session Tabs: Switch between I/O, Details, and Metrics ---
     const ioTab = sessionCard.locator('.session-tab:has-text("I/O")');
@@ -300,36 +308,36 @@ test.describe.serial('Agency Smoke Tests', () => {
 
     // Verify I/O tab is active by default
     await expect(ioTab).toHaveClass(/session-tab--active/);
-    await screenshot(page, '22-io-tab-active');
+    await screenshot(page, '23-io-tab-active');
 
     // Switch to Details tab
     await detailsTab.click();
     await expect(detailsTab).toHaveClass(/session-tab--active/);
     await expect(ioTab).not.toHaveClass(/session-tab--active/);
-    await screenshot(page, '23-details-tab-active');
+    await screenshot(page, '24-details-tab-active');
 
     // Switch to Metrics tab
     await metricsTab.click();
     await expect(metricsTab).toHaveClass(/session-tab--active/);
     await expect(detailsTab).not.toHaveClass(/session-tab--active/);
-    await screenshot(page, '24-metrics-tab-active');
+    await screenshot(page, '25-metrics-tab-active');
 
     // Switch back to I/O tab
     await ioTab.click();
     await expect(ioTab).toHaveClass(/session-tab--active/);
-    await screenshot(page, '25-back-to-io-tab');
+    await screenshot(page, '26-back-to-io-tab');
 
     // Collapse session
     await sessionCard.locator('.session-header').click();
     await expect(sessionBody).toBeHidden();
-    await screenshot(page, '26-session-collapsed-final');
+    await screenshot(page, '27-session-collapsed-final');
 
     // --- Settings Modal: Open/Close ---
     // Settings button is in bottom nav bar (only visible on mobile viewport)
     // Temporarily switch to mobile viewport to access settings
     const originalViewport = page.viewportSize();
     await page.setViewportSize({ width: 375, height: 667 }); // iPhone SE size
-    await screenshot(page, '27-mobile-viewport');
+    await screenshot(page, '28-mobile-viewport');
 
     const settingsButton = page.locator('.nav-item:has-text("Settings")');
     await expect(settingsButton).toBeVisible({ timeout: 5000 });
@@ -339,28 +347,28 @@ test.describe.serial('Agency Smoke Tests', () => {
     const settingsModal = page.locator('.modal-backdrop--open');
     await expect(settingsModal).toBeVisible({ timeout: 5000 });
     await expect(page.locator('.modal-title:has-text("Settings")')).toBeVisible();
-    await screenshot(page, '28-settings-modal-open');
+    await screenshot(page, '29-settings-modal-open');
 
     // Close settings via backdrop click
     await settingsModal.click({ position: { x: 10, y: 10 } }); // Click near edge (backdrop)
     await expect(settingsModal).toBeHidden({ timeout: 5000 });
-    await screenshot(page, '29-settings-modal-closed');
+    await screenshot(page, '30-settings-modal-closed');
 
     // Restore desktop viewport
     if (originalViewport) {
       await page.setViewportSize(originalViewport);
     }
-    await screenshot(page, '30-back-to-desktop');
+    await screenshot(page, '31-back-to-desktop');
 
     // --- Task Modal: Open/Close with Escape ---
     await page.click('button:has-text("New Task")');
     await expect(page.locator('.modal-title:has-text("New Task")')).toBeVisible({ timeout: 5000 });
-    await screenshot(page, '31-task-modal-open');
+    await screenshot(page, '32-task-modal-open');
 
     // Close via Escape key
     await page.keyboard.press('Escape');
     await expect(page.locator('.modal-backdrop--open')).toBeHidden({ timeout: 5000 });
-    await screenshot(page, '32-task-modal-closed-via-escape');
+    await screenshot(page, '33-task-modal-closed-via-escape');
 
     // --- Keyboard Shortcuts ---
     // Click on main content to ensure no form element is focused
@@ -369,7 +377,7 @@ test.describe.serial('Agency Smoke Tests', () => {
     // 'n' should open new task modal
     await page.keyboard.press('n');
     await expect(page.locator('.modal-title:has-text("New Task")')).toBeVisible({ timeout: 5000 });
-    await screenshot(page, '33-task-modal-via-n-key');
+    await screenshot(page, '34-task-modal-via-n-key');
 
     // Close it
     await page.keyboard.press('Escape');
@@ -381,16 +389,16 @@ test.describe.serial('Agency Smoke Tests', () => {
     // 'f' should toggle fleet section (fleet is currently hidden from earlier test)
     await page.keyboard.press('f');
     await expect(fleetContent).toBeVisible({ timeout: 5000 });
-    await screenshot(page, '34-fleet-toggled-via-f-key');
+    await screenshot(page, '35-fleet-toggled-via-f-key');
 
     await page.keyboard.press('f');
     await expect(fleetContent).toBeHidden({ timeout: 5000 });
-    await screenshot(page, '35-fleet-toggled-again');
+    await screenshot(page, '36-fleet-toggled-again');
 
     // 'r' should refresh (we can verify by checking the data reloads)
     await page.keyboard.press('r');
     // Just verify page is still functional
     await expect(sessionCard).toBeVisible();
-    await screenshot(page, '36-after-refresh');
+    await screenshot(page, '37-after-refresh');
   });
 });
