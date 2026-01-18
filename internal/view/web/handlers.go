@@ -359,6 +359,57 @@ func (h *Handlers) HandleTaskHistory(w http.ResponseWriter, r *http.Request, tas
 	io.Copy(w, resp.Body)
 }
 
+// HandleAgentLogs proxies log requests to the agent
+func (h *Handlers) HandleAgentLogs(w http.ResponseWriter, r *http.Request) {
+	agentURL := r.URL.Query().Get("agent_url")
+	if agentURL == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "agent_url query parameter is required")
+		return
+	}
+
+	// Build the proxy URL with query parameters
+	proxyURL := agentURL + "/logs"
+	queryParams := []string{}
+	if taskID := r.URL.Query().Get("task_id"); taskID != "" {
+		queryParams = append(queryParams, "task_id="+taskID)
+	}
+	if level := r.URL.Query().Get("level"); level != "" {
+		queryParams = append(queryParams, "level="+level)
+	}
+	if limit := r.URL.Query().Get("limit"); limit != "" {
+		queryParams = append(queryParams, "limit="+limit)
+	}
+	if since := r.URL.Query().Get("since"); since != "" {
+		queryParams = append(queryParams, "since="+since)
+	}
+	if until := r.URL.Query().Get("until"); until != "" {
+		queryParams = append(queryParams, "until="+until)
+	}
+	if len(queryParams) > 0 {
+		proxyURL += "?"
+		for i, param := range queryParams {
+			if i > 0 {
+				proxyURL += "&"
+			}
+			proxyURL += param
+		}
+	}
+
+	// Forward to agent
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(proxyURL)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "agent_error", "Failed to contact agent: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	// Forward response as-is
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
+}
+
 // HandleSessions returns all sessions
 func (h *Handlers) HandleSessions(w http.ResponseWriter, r *http.Request) {
 	sessions := h.sessionStore.GetAll()

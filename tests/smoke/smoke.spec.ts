@@ -127,6 +127,19 @@ test.describe.serial('Agency Smoke Tests', () => {
     await sessionCard.click();
     await expect(sessionCard).toContainText('4', { timeout: 5000 });
     await screenshot(page, '06-task-completed');
+
+    // Wait for logs panel to appear and click to expand it
+    const logsHeader = sessionCard.locator('.logs-header').first();
+    await expect(logsHeader).toBeVisible({ timeout: 10000 });
+    await logsHeader.click();
+
+    // Wait for logs content to be visible (expanded state)
+    const logsContent = sessionCard.locator('.logs-content').first();
+    await expect(logsContent).toBeVisible({ timeout: 5000 });
+
+    // Wait a moment for logs to render
+    await page.waitForTimeout(1000);
+    await screenshot(page, '06b-task-logs-expanded');
   });
 
   test('3. Add Task to Same Session', async ({ page }) => {

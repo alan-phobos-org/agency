@@ -384,9 +384,8 @@ func (a *Agent) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	a.currentTask = task
 	a.state = StateWorking
 
-	// Log task creation
-	a.log.Info("task created", map[string]any{
-		"task_id":    task.ID,
+	// Log task creation with task-scoped logger
+	a.log.WithTask(task.ID).Info("task created", map[string]any{
 		"session_id": task.SessionID,
 		"model":      task.Model,
 		"resume":     task.ResumeSession,
@@ -562,6 +561,11 @@ func (a *Agent) handleShutdown(w http.ResponseWriter, r *http.Request) {
 // The env parameter allows passing additional environment variables to Claude.
 // Auto-resumes up to 2 times if Claude hits the max_turns limit.
 func (a *Agent) executeTask(task *Task, env map[string]string) {
+	taskLog := a.log.WithTask(task.ID)
+	taskLog.Info("task started", map[string]any{
+		"timeout_seconds": task.Timeout.Seconds(),
+	})
+
 	// All task field access must happen under the lock to avoid races with Shutdown()
 	a.mu.Lock()
 	ctx, cancel := context.WithTimeout(context.Background(), task.Timeout)

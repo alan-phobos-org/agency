@@ -1079,6 +1079,160 @@
             font-family: var(--font-mono);
         }
 
+        /* Logs panel */
+        .logs-panel {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-sm);
+            overflow: hidden;
+        }
+
+        .logs-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: var(--space-2) var(--space-3);
+            background: var(--bg-elevated);
+            border-bottom: 1px solid var(--border-muted);
+            font-size: 0.75rem;
+            cursor: pointer;
+        }
+
+        .logs-header:hover {
+            background: var(--bg-hover);
+        }
+
+        .logs-header-title {
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+            font-weight: 500;
+        }
+
+        .logs-header-live {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 6px;
+            background: rgba(88, 166, 255, 0.15);
+            color: var(--status-running);
+            border-radius: 3px;
+            font-size: 0.625rem;
+            font-weight: 500;
+        }
+
+        .logs-header-live::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            background: var(--status-running);
+            border-radius: 50%;
+            animation: pulse 1.5s infinite;
+        }
+
+        .logs-header-stats {
+            display: flex;
+            gap: var(--space-2);
+        }
+
+        .logs-stat {
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.625rem;
+            font-weight: 500;
+        }
+
+        .logs-stat--info {
+            background: rgba(88, 166, 255, 0.1);
+            color: var(--accent);
+        }
+
+        .logs-stat--warn {
+            background: rgba(210, 153, 34, 0.15);
+            color: var(--status-pending);
+        }
+
+        .logs-stat--error {
+            background: rgba(248, 81, 73, 0.15);
+            color: var(--status-error);
+        }
+
+        .logs-expand-icon {
+            color: var(--text-tertiary);
+            transition: transform 0.2s ease;
+            font-size: 0.75rem;
+        }
+
+        .logs-panel--expanded .logs-expand-icon {
+            transform: rotate(180deg);
+        }
+
+        .logs-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.2s ease;
+        }
+
+        .logs-panel--expanded .logs-content {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .logs-list {
+            padding: var(--space-2);
+            font-family: var(--font-mono);
+            font-size: 0.6875rem;
+            line-height: 1.5;
+        }
+
+        .log-entry {
+            display: flex;
+            gap: var(--space-2);
+            padding: 2px 0;
+        }
+
+        .log-entry:hover {
+            background: var(--bg-hover);
+        }
+
+        .log-time {
+            color: var(--text-tertiary);
+            flex-shrink: 0;
+            width: 70px;
+        }
+
+        .log-level {
+            flex-shrink: 0;
+            width: 40px;
+            text-transform: uppercase;
+            font-weight: 500;
+        }
+
+        .log-level--debug { color: var(--text-tertiary); }
+        .log-level--info { color: var(--accent); }
+        .log-level--warn { color: var(--status-pending); }
+        .log-level--error { color: var(--status-error); }
+
+        .log-message {
+            color: var(--text-secondary);
+            word-break: break-word;
+        }
+
+        .log-fields {
+            color: var(--text-tertiary);
+            margin-left: var(--space-1);
+        }
+
+        .logs-empty {
+            padding: var(--space-3);
+            text-align: center;
+            color: var(--text-tertiary);
+            font-size: 0.75rem;
+        }
+
         /* Compact bottom navigation */
         .bottom-nav {
             position: fixed;
@@ -1811,6 +1965,47 @@
                                                     </div>
                                                     <div class="io-content io-content--error" x-text="getTaskError(session.id, task)"></div>
                                                 </div>
+                                                <!-- Logs Panel - auto-expanded while running, collapsible after -->
+                                                <div class="logs-panel"
+                                                     :class="{ 'logs-panel--expanded': isTaskLogsExpanded(session, task) }"
+                                                     x-effect="handleTaskLogsEffect(session.agent_url, task)"
+                                                     x-init="if (task.state === 'completed' || task.state === 'failed') fetchTaskLogsFinal(session.agent_url, task.task_id)">
+                                                    <div class="logs-header" @click="toggleTaskLogs(session.id, task.task_id)">
+                                                        <div class="logs-header-title">
+                                                            <span>Logs</span>
+                                                            <span class="logs-header-live" x-show="task.state === 'working'">LIVE</span>
+                                                        </div>
+                                                        <div class="logs-header-stats">
+                                                            <span class="logs-stat logs-stat--info" x-show="getTaskLogStats(session.agent_url, task.task_id).info > 0">
+                                                                <span x-text="getTaskLogStats(session.agent_url, task.task_id).info"></span> info
+                                                            </span>
+                                                            <span class="logs-stat logs-stat--warn" x-show="getTaskLogStats(session.agent_url, task.task_id).warn > 0">
+                                                                <span x-text="getTaskLogStats(session.agent_url, task.task_id).warn"></span> warn
+                                                            </span>
+                                                            <span class="logs-stat logs-stat--error" x-show="getTaskLogStats(session.agent_url, task.task_id).error > 0">
+                                                                <span x-text="getTaskLogStats(session.agent_url, task.task_id).error"></span> err
+                                                            </span>
+                                                            <span class="logs-expand-icon">&#9662;</span>
+                                                        </div>
+                                                    </div>
+                                                    <div class="logs-content">
+                                                        <div class="logs-list" x-show="getTaskLogs(session.agent_url, task.task_id).length > 0">
+                                                            <template x-for="log in getTaskLogs(session.agent_url, task.task_id)" :key="log.timestamp">
+                                                                <div class="log-entry">
+                                                                    <span class="log-time" x-text="formatLogTime(log.timestamp)"></span>
+                                                                    <span class="log-level" :class="'log-level--' + log.level" x-text="log.level"></span>
+                                                                    <span class="log-message">
+                                                                        <span x-text="log.message"></span>
+                                                                        <span class="log-fields" x-show="log.fields" x-text="formatLogFields(log.fields)"></span>
+                                                                    </span>
+                                                                </div>
+                                                            </template>
+                                                        </div>
+                                                        <div class="logs-empty" x-show="getTaskLogs(session.agent_url, task.task_id).length === 0">
+                                                            Waiting for logs...
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </template>
                                         <div x-show="!session.tasks || session.tasks.length === 0" class="empty-state">
@@ -2180,6 +2375,11 @@
                 activeTasks: {}, // { taskId: { output, state } } for real-time updates
                 taskOutputCache: {}, // { taskId: output } fallback for completed tasks
 
+                // Task logs state
+                taskLogs: {}, // { taskId: [log entries] }
+                taskLogsExpanded: {}, // { sessionId-taskId: boolean }
+                taskLogsPolling: {}, // { taskId: intervalId }
+
                 // Contexts
                 contexts: [],
 
@@ -2434,6 +2634,8 @@
                             }
                             delete this.activeTaskPolling[taskId];
                             delete this.activeTasks[taskId];
+                            // Stop task log polling too
+                            this.stopTaskLogPolling(taskId);
                         }
                     }
                 },
@@ -2458,6 +2660,8 @@
                         // If task completed, update session and stop polling
                         if (['completed', 'failed', 'cancelled'].includes(data.state)) {
                             delete this.activeTaskPolling[taskId];
+                            // Stop task log polling
+                            this.stopTaskLogPolling(taskId);
                             // Trigger refresh to get updated session state
                             this.refresh();
                             // Load history for the session
@@ -2746,6 +2950,117 @@
 
                 getAgentLogStats(agentUrl) {
                     return this.agentLogs[agentUrl] || null;
+                },
+
+                // Task logs management
+                handleTaskLogsEffect(agentUrl, task) {
+                    if (task.state === 'working') {
+                        // Start polling while task is running
+                        this.fetchTaskLogs(agentUrl, task.task_id);
+                    } else if (task.state === 'completed' || task.state === 'failed') {
+                        // Stop polling and fetch final logs
+                        this.stopTaskLogPolling(task.task_id);
+                        this.fetchTaskLogsFinal(agentUrl, task.task_id);
+                    }
+                },
+
+                async fetchTaskLogs(agentUrl, taskId) {
+                    // Don't double-poll
+                    if (this.taskLogsPolling[taskId]) return;
+
+                    const poll = async () => {
+                        try {
+                            const resp = await this.api(`/api/logs?agent_url=${encodeURIComponent(agentUrl)}&task_id=${taskId}&limit=50`);
+                            if (resp.ok) {
+                                const data = await resp.json();
+                                this.taskLogs[taskId] = data.entries || [];
+                            }
+                        } catch (err) {
+                            console.debug('Failed to fetch task logs:', err);
+                        }
+                    };
+
+                    // Fetch immediately
+                    await poll();
+
+                    // Then poll every 2 seconds while task is running
+                    this.taskLogsPolling[taskId] = setInterval(poll, 2000);
+                },
+
+                // Fetch logs once for completed tasks (no polling)
+                async fetchTaskLogsFinal(agentUrl, taskId) {
+                    // Skip if we already have logs for this task
+                    if (this.taskLogs[taskId] && this.taskLogs[taskId].length > 0) return;
+
+                    try {
+                        const resp = await this.api(`/api/logs?agent_url=${encodeURIComponent(agentUrl)}&task_id=${taskId}&limit=50`);
+                        if (resp.ok) {
+                            const data = await resp.json();
+                            this.taskLogs[taskId] = data.entries || [];
+                        }
+                    } catch (err) {
+                        console.debug('Failed to fetch final task logs:', err);
+                    }
+                },
+
+                stopTaskLogPolling(taskId) {
+                    if (this.taskLogsPolling[taskId]) {
+                        clearInterval(this.taskLogsPolling[taskId]);
+                        delete this.taskLogsPolling[taskId];
+                    }
+                },
+
+                getTaskLogs(agentUrl, taskId) {
+                    return this.taskLogs[taskId] || [];
+                },
+
+                getTaskLogStats(agentUrl, taskId) {
+                    const logs = this.taskLogs[taskId] || [];
+                    const stats = { info: 0, warn: 0, error: 0 };
+                    for (const log of logs) {
+                        if (log.level === 'info') stats.info++;
+                        else if (log.level === 'warn') stats.warn++;
+                        else if (log.level === 'error') stats.error++;
+                    }
+                    return stats;
+                },
+
+                isTaskLogsExpanded(session, task) {
+                    const key = session.id + '-' + task.task_id;
+                    // Auto-expand while task is running
+                    if (task.state === 'working') {
+                        return true;
+                    }
+                    // Otherwise use stored state
+                    return this.taskLogsExpanded[key] || false;
+                },
+
+                toggleTaskLogs(sessionId, taskId) {
+                    const key = sessionId + '-' + taskId;
+                    this.taskLogsExpanded[key] = !this.taskLogsExpanded[key];
+                },
+
+                formatLogTime(timestamp) {
+                    const d = new Date(timestamp);
+                    return d.toLocaleTimeString('en-US', {
+                        hour12: false,
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit'
+                    });
+                },
+
+                formatLogFields(fields) {
+                    if (!fields) return '';
+                    const parts = [];
+                    for (const [k, v] of Object.entries(fields)) {
+                        if (typeof v === 'object') {
+                            parts.push(`${k}=${JSON.stringify(v)}`);
+                        } else {
+                            parts.push(`${k}=${v}`);
+                        }
+                    }
+                    return parts.length > 0 ? `[${parts.join(', ')}]` : '';
                 },
 
                 // Settings / Device management
