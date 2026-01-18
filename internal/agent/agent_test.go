@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"phobos.org.uk/agency/internal/api"
 	"phobos.org.uk/agency/internal/config"
 )
 
@@ -290,6 +291,32 @@ func TestBuildClaudeArgs(t *testing.T) {
 				require.Contains(t, args, "--max-turns")
 				idx := indexOf(args, "--max-turns")
 				require.Equal(t, "50", args[idx+1]) // Default value
+			},
+		},
+		{
+			name: "prompt with project context",
+			task: &Task{
+				Model:  "sonnet",
+				Prompt: "do the task",
+				Project: &api.ProjectContext{
+					Name:   "test-project",
+					Prompt: "Project instructions here",
+				},
+			},
+			verify: func(t *testing.T, args []string) {
+				dashIdx := indexOf(args, "--")
+				require.Greater(t, dashIdx, 0, "-- should be present")
+				prompt := args[dashIdx+1]
+				// Should contain all three parts in correct order
+				require.Contains(t, prompt, "# Agent Instructions")
+				require.Contains(t, prompt, "Project instructions here")
+				require.Contains(t, prompt, "do the task")
+				// Project prompt should appear between agent instructions and task prompt
+				agentIdx := strings.Index(prompt, "# Agent Instructions")
+				projectIdx := strings.Index(prompt, "Project instructions here")
+				taskIdx := strings.Index(prompt, "do the task")
+				require.Less(t, agentIdx, projectIdx, "agent instructions should come before project prompt")
+				require.Less(t, projectIdx, taskIdx, "project prompt should come before task prompt")
 			},
 		},
 	}

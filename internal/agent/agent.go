@@ -732,10 +732,11 @@ func (a *Agent) buildClaudeArgs(task *Task) []string {
 	}
 
 	// Build prompt with agent instructions and optional project context prepended
-	prompt := a.preprompt + "\n\n" + task.Prompt
+	prompt := a.preprompt
 	if task.Project != nil && task.Project.Prompt != "" {
-		prompt = a.preprompt + "\n\n" + task.Project.Prompt + "\n\n" + task.Prompt
+		prompt = prompt + "\n\n" + task.Project.Prompt
 	}
+	prompt = prompt + "\n\n" + task.Prompt
 
 	args = append(args, "-p", "--", prompt)
 	return args
