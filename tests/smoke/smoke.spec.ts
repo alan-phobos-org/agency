@@ -1,4 +1,4 @@
-import { test, expect, Page } from '@playwright/test';
+import { test, expect, Page, Locator } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -14,6 +14,46 @@ async function screenshot(page: Page, name: string): Promise<void> {
   const filepath = path.join(SCREENSHOT_DIR, `${name}.png`);
   await page.screenshot({ path: filepath, fullPage: true });
   console.log(`Screenshot saved: ${filepath}`);
+}
+
+/**
+ * Validates that a session title is properly formatted and meaningful.
+ * Session titles should:
+ * - Not start with markdown characters (#, *, -)
+ * - Not be empty or just whitespace
+ * - Not look like truncated UUIDs or IDs (e.g., "s 1", "a1b2c3")
+ * - Be at least 3 characters of actual content
+ * - Not contain "No prompt" or "Empty session" (indicates missing data)
+ */
+async function validateSessionTitle(sessionCard: Locator, expectedContent?: string): Promise<string> {
+  const sessionSummary = sessionCard.locator('.session-summary');
+  const titleText = await sessionSummary.textContent() || '';
+
+  // Title should not be empty
+  expect(titleText.trim().length).toBeGreaterThan(0);
+
+  // Title should not start with markdown heading characters
+  expect(titleText).not.toMatch(/^[#*\-\d.]\s*/);
+
+  // Title should not look like a truncated UUID or garbage
+  // UUIDs start with hex chars, so reject short strings that look like IDs
+  expect(titleText).not.toMatch(/^[a-f0-9\s]{1,8}$/i);
+
+  // Title should not be a fallback error message
+  expect(titleText.toLowerCase()).not.toContain('no prompt');
+  expect(titleText.toLowerCase()).not.toContain('empty session');
+  expect(titleText.toLowerCase()).not.toContain('undefined');
+  expect(titleText.toLowerCase()).not.toContain('null');
+
+  // Title should have meaningful content (at least 3 chars after trimming)
+  expect(titleText.trim().length).toBeGreaterThanOrEqual(3);
+
+  // If expected content is provided, verify it's included
+  if (expectedContent) {
+    expect(titleText.toLowerCase()).toContain(expectedContent.toLowerCase());
+  }
+
+  return titleText;
 }
 
 test.describe.serial('Agency Smoke Tests', () => {
@@ -80,6 +120,9 @@ test.describe.serial('Agency Smoke Tests', () => {
     // Verify it completed successfully (not failed/cancelled)
     await expect(sessionCard.locator('.session-status--completed')).toBeVisible();
 
+    // Validate session title is properly formatted (should reflect the math question)
+    await validateSessionTitle(sessionCard, '2+2');
+
     // Expand card and verify output contains "4"
     await sessionCard.click();
     await expect(sessionCard).toContainText('4', { timeout: 5000 });
@@ -136,6 +179,9 @@ test.describe.serial('Agency Smoke Tests', () => {
 
     // Verify it completed successfully
     await expect(sessionCard.locator('.session-status--completed')).toBeVisible();
+
+    // Validate session title still reflects the first task (2+2)
+    await validateSessionTitle(sessionCard, '2+2');
 
     // Wait for I/O content to fully load (history loading to complete)
     // Use text locator for exact match to avoid multiple element issue
@@ -235,12 +281,10 @@ test.describe.serial('Agency Smoke Tests', () => {
     // Verify it completed successfully
     await expect(newSession.locator('.session-status--completed')).toBeVisible();
 
-    // Verify session title is correctly formatted (no markdown # prefix)
-    // The title should be "Smoke Test Nightly Maintenance", NOT "# Smoke Test Nightly Maintenance"
-    const sessionSummary = newSession.locator('.session-summary');
-    const summaryText = await sessionSummary.textContent();
-    expect(summaryText).not.toMatch(/^#/);  // Should not start with # markdown heading
-    expect(summaryText).toContain('Smoke Test Nightly Maintenance');
+    // Validate session title using comprehensive validation
+    // Should contain "Smoke Test Nightly Maintenance" (with markdown # stripped)
+    const title = await validateSessionTitle(newSession, 'Smoke Test Nightly Maintenance');
+    console.log(`Session title for nightly maintenance: "${title}"`);
     await screenshot(page, '15-session-title-check');
 
     // Verify output contains expected content related to helloworld2

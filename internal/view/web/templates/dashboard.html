@@ -2881,14 +2881,29 @@
 
                     // Check for agent-provided summary in history
                     const history = this.sessionHistory[session.id]?.tasks?.[firstTask.task_id];
-                    if (history?.summary) {
-                        return history.summary;
+                    if (history?.summary && typeof history.summary === 'string' && history.summary.trim().length > 2) {
+                        return history.summary.trim();
                     }
 
                     // Fall back to user prompt (stripped of context prefix)
-                    const prompt = firstTask.prompt || '';
+                    const prompt = firstTask.prompt;
+                    if (!prompt || typeof prompt !== 'string') {
+                        // Use source_job as fallback if available (for scheduler jobs)
+                        if (session.source_job) {
+                            return session.source_job.replace(/-/g, ' ');
+                        }
+                        return 'Task ' + (firstTask.task_id ? firstTask.task_id.slice(0, 8) : 'pending');
+                    }
+
                     const strippedPrompt = this.stripPromptPrefix(prompt);
-                    return this.generateSummary(strippedPrompt, 35);
+                    const summary = this.generateSummary(strippedPrompt, 35);
+
+                    // If generateSummary returned a fallback, try source_job
+                    if (summary === 'No prompt' && session.source_job) {
+                        return session.source_job.replace(/-/g, ' ');
+                    }
+
+                    return summary;
                 },
 
                 getSessionOptionLabel(session) {
@@ -2899,26 +2914,34 @@
                 },
 
                 generateSummary(prompt, maxLen = 30) {
-                    if (!prompt) return 'No prompt';
+                    if (!prompt || typeof prompt !== 'string') return 'No prompt';
 
-                    // Try first sentence
-                    const sentenceEnd = prompt.search(/[.!?]/);
-                    if (sentenceEnd > 0 && sentenceEnd < maxLen) {
-                        return prompt.slice(0, sentenceEnd).trim();
+                    // Clean up the prompt: strip markdown headers and normalize whitespace
+                    let cleaned = prompt
+                        .replace(/^#+\s*/gm, '')           // Strip markdown headers (# ## ### etc.)
+                        .replace(/^\*+\s*/gm, '')          // Strip bullet points
+                        .replace(/^-+\s*/gm, '')           // Strip dash bullets
+                        .replace(/^\d+\.\s*/gm, '')        // Strip numbered lists
+                        .replace(/\s+/g, ' ')              // Normalize all whitespace to single spaces
+                        .trim();
+
+                    // Handle empty/whitespace-only after cleanup
+                    if (!cleaned || cleaned.length < 3) {
+                        return 'No prompt';
                     }
 
-                    // Try first line
-                    const lineEnd = prompt.indexOf('\n');
-                    if (lineEnd > 0 && lineEnd < maxLen) {
-                        return prompt.slice(0, lineEnd).trim();
+                    // Try first sentence
+                    const sentenceEnd = cleaned.search(/[.!?]/);
+                    if (sentenceEnd > 0 && sentenceEnd < maxLen) {
+                        return cleaned.slice(0, sentenceEnd).trim();
                     }
 
                     // Truncate at word boundary
-                    if (prompt.length <= maxLen) {
-                        return prompt.trim();
+                    if (cleaned.length <= maxLen) {
+                        return cleaned;
                     }
 
-                    const truncated = prompt.slice(0, maxLen);
+                    const truncated = cleaned.slice(0, maxLen);
                     const lastSpace = truncated.lastIndexOf(' ');
                     if (lastSpace > maxLen / 2) {
                         return truncated.slice(0, lastSpace) + '...';
