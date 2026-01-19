@@ -26,7 +26,15 @@ jobs:
       Build today's newsletter, commit it, push, and merge the resulting PR to main.
 
       ## Setup
-      - Ensure you have the latest head of main: `git fetch origin && git checkout main && git pull`
+      1. Clone the knowledge repository fresh:
+         ```
+         git clone https://github.com/alan-phobos-org/knowledge.git
+         cd knowledge
+         ```
+      2. Ensure you are on the latest head of main:
+         ```
+         git checkout main && git reset --hard origin/main && git clean -fd
+         ```
 
       ## Tasks
       1. Build today's newsletter ({{.Date}})
