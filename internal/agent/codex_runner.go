@@ -137,6 +137,14 @@ func extractOutputText(raw map[string]interface{}) (string, bool) {
 	if v, ok := raw["content"].(string); ok {
 		return v, true
 	}
+	// Handle codex CLI format: {"type":"item.completed","item":{"type":"agent_message","text":"..."}}
+	if item, ok := raw["item"].(map[string]interface{}); ok {
+		if itemType, ok := item["type"].(string); ok && itemType == "agent_message" {
+			if text, ok := item["text"].(string); ok {
+				return text, true
+			}
+		}
+	}
 	if message, ok := raw["message"]; ok {
 		return extractMessageContent(message)
 	}

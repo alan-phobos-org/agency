@@ -937,6 +937,10 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 				usage := *parsedOutput.TokenUsage
 				task.TokenUsage = &usage
 			}
+			// Extract output from runner if available (overrides extractResultFromStream for non-Claude runners)
+			if parsedOutput.HasOutput {
+				task.Output = parsedOutput.Output
+			}
 			// For Codex, handle session directory renaming
 			if a.runner.Kind() == api.AgentKindCodex && !task.ResumeSession && task.SessionID != "" {
 				oldPath := workDir

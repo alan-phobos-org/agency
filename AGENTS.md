@@ -24,6 +24,8 @@ Deploying agents should feel like reliable infrastructure, not babysitting exper
 | [docs/PLAN.md](docs/PLAN.md) | Vision, phases, backlog | Planning work |
 | [docs/DEBUGGING_DEPLOYED.md](docs/DEBUGGING_DEPLOYED.md) | Remote system diagnostics | Debugging deployed systems |
 | [SMOKE_TEST_ROBUSTNESS.md](SMOKE_TEST_ROBUSTNESS.md) | Smoke test cleanup, build.sh refactor | Fixing test infrastructure |
+| [SMOKE_TEST_GAP_ANALYSIS.md](SMOKE_TEST_GAP_ANALYSIS.md) | Analysis of why smoke tests miss UI bugs | Understanding test coverage gaps |
+| [SMOKE_TEST_IMPROVEMENTS.md](SMOKE_TEST_IMPROVEMENTS.md) | Improvements to catch UI bugs | After fixing UI bugs |
 | [CHANGELOG.md](CHANGELOG.md) | Release history | Preparing releases |
 
 ## Quick Reference
@@ -141,7 +143,7 @@ See [docs/TESTING.md](docs/TESTING.md) for conventions, race condition preventio
 
 Quick reference: `./build.sh test` (unit), `./build.sh test-all` (unit + integration), `./build.sh check` (pre-commit).
 
-Smoke tests (Playwright): Cover both Claude and Codex agents via scheduled job triggers with trivial validation tasks.
+Smoke tests (Playwright): Cover Claude and Codex agents via scheduled jobs and manual UI selection. Tests verify output block visibility, log stability, and agent kind routing. See [SMOKE_TEST_IMPROVEMENTS.md](SMOKE_TEST_IMPROVEMENTS.md) for recent enhancements.
 
 ---
 
@@ -177,6 +179,30 @@ Quick reference: `./build.sh prepare-release` then `./build.sh release X.Y.Z`.
 - Model tiers: `fast`/`standard`/`heavy` map to provider-specific models (Claude: haiku/sonnet/opus; Codex: gpt-5.1-codex-mini/gpt-5.2-codex/gpt-5.1-codex-max)
 
 For detailed endpoint specs, see [docs/REFERENCE.md](docs/REFERENCE.md).
+
+---
+
+## Recent Fixes
+
+### Codex Agent Output Display (2026-01-19)
+
+**Issue**: Codex agent tasks completed successfully but output blocks were hidden in the web UI. The frontend's `x-show="getTaskOutput(session.id, task)"` condition evaluated to false because task output wasn't being captured.
+
+**Root Cause**:
+1. The codex CLI outputs JSON in format: `{"type":"item.completed","item":{"type":"agent_message","text":"..."}}`
+2. The `extractOutputText()` function in [codex_runner.go](internal/agent/codex_runner.go) didn't recognize this structure
+3. Even though token metrics showed output was generated, the parsed output was empty
+4. The history Entry had `Output=""`, which with `omitempty` JSON tag meant the frontend received no output field
+
+**Fix**: Two changes to [codex_runner.go](internal/agent/codex_runner.go):
+1. Added parsing for `item.text` field in codex CLI JSON output format (line 139-145)
+2. Added assignment of `parsedOutput.Output` to `task.Output` in [agent.go](internal/agent/agent.go:941-943)
+
+**Files Modified**:
+- `internal/agent/codex_runner.go`: Added extraction of `item.text` from codex CLI output
+- `internal/agent/agent.go`: Added assignment `task.Output = parsedOutput.Output` when `parsedOutput.HasOutput` is true
+
+**Testing**: Smoke test "5. Trigger Codex Scheduled Job" now passes (verifies output block visibility and content).
 
 ---
 

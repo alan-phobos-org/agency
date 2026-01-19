@@ -227,8 +227,11 @@ test.describe.serial('Agency Smoke Tests', () => {
     const inlineLogs = sessionCard.locator('.io-logs-inline').first();
     await expect(inlineLogs).toBeVisible({ timeout: 5000 });
 
-    // Wait a moment for logs to render
+    // Check for log stability - logs should not flicker (disappear after appearing)
     await page.waitForTimeout(1000);
+    await expect(inlineLogs).toBeVisible();
+    await page.waitForTimeout(1000);
+    await expect(inlineLogs).toBeVisible();
     await screenshot(page, '06b-task-logs-expanded');
   });
 
@@ -450,12 +453,111 @@ test.describe.serial('Agency Smoke Tests', () => {
     // Verify it completed successfully
     await expect(newSession.locator('.session-status--completed')).toBeVisible();
 
-    // Verify success state - output should contain "Codex smoke test OK"
+    // Expand session to see I/O
     await newSession.click();
-    await expect(newSession).toContainText('Codex smoke test OK', { timeout: 5000 });
+
+    // BUG FIX #1: Explicitly verify output block is visible (not just text somewhere)
+    const outputBlock = newSession.locator('.io-block--output').first();
+    await expect(outputBlock).toBeVisible({ timeout: 5000 });
+
+    // Verify output block contains expected text
+    await expect(outputBlock).toContainText('Codex smoke test OK', { timeout: 5000 });
     await screenshot(page, '14e-codex-job-completed');
+
+    // BUG FIX #2: Check for log flickering - logs should remain visible if expanded
+    const logsButton = newSession.locator('.io-logs-btn').first();
+    if (await logsButton.isVisible()) {
+      await logsButton.click();
+      const inlineLogs = newSession.locator('.io-logs-inline').first();
+      await expect(inlineLogs).toBeVisible({ timeout: 2000 });
+
+      // Wait and verify logs don't collapse (flicker)
+      await page.waitForTimeout(2000);
+      await expect(inlineLogs).toBeVisible();
+      await screenshot(page, '14f-codex-logs-stable');
+    }
   });
 
+
+  test('5b. Manual Codex Agent Selection', async ({ page }) => {
+    // Login first
+    await page.goto('/login');
+    await page.fill('#password', PASSWORD);
+    await page.click('button[type="submit"]');
+    await expect(page).toHaveURL('/');
+
+    // Click "New Task" button
+    await page.click('button:has-text("New Task")');
+
+    // Wait for modal
+    await expect(page.locator('.modal-title:has-text("New Task")')).toBeVisible({ timeout: 5000 });
+    await screenshot(page, '14g-manual-codex-task-modal');
+
+    // Fill task form
+    const promptInput = page.locator('textarea[placeholder="Describe the task..."]');
+    await expect(promptInput).toBeVisible({ timeout: 5000 });
+    await promptInput.fill('Reply with exactly: "Manual codex selection works"');
+
+    // Select Manual context
+    const contextSelect = page.locator('select').filter({ hasText: 'Manual' }).first();
+    await contextSelect.selectOption('manual');
+
+    // BUG FIX #3: Test manual selection of codex agent kind
+    const agentKindSelect = page.locator('select#agent-kind-select');
+    await expect(agentKindSelect).toBeVisible();
+    await expect(agentKindSelect).toBeEnabled();
+
+    // Select codex from dropdown
+    await agentKindSelect.selectOption('codex');
+
+    // Verify selection worked
+    const selectedValue = await agentKindSelect.inputValue();
+    expect(selectedValue).toBe('codex');
+    await screenshot(page, '14h-codex-kind-selected');
+
+    // Get initial session count
+    const initialSessionCount = await page.locator('.session-card').count();
+
+    // Submit the form
+    await page.click('button:has-text("Submit Task")');
+
+    // Wait for modal to close
+    await expect(page.locator('.modal-backdrop--open')).toBeHidden({ timeout: 5000 });
+
+    // Wait for new session to be created
+    await expect(async () => {
+      const newCount = await page.locator('.session-card').count();
+      expect(newCount).toBeGreaterThan(initialSessionCount);
+    }).toPass({ timeout: 10000, intervals: [1000] });
+
+    // Get the new session
+    const newSession = page.locator('.session-card').first();
+    await expect(newSession).toBeVisible({ timeout: 10000 });
+
+    // Wait for task completion
+    const terminalStatus = newSession.locator('.session-status--completed, .session-status--failed, .session-status--cancelled');
+    await expect(terminalStatus).toBeVisible({ timeout: 90000 });
+
+    // Verify it completed successfully
+    await expect(newSession.locator('.session-status--completed')).toBeVisible();
+
+    // Expand session and verify output
+    await newSession.click();
+
+    // Verify output block is visible
+    const outputBlock = newSession.locator('.io-block--output').first();
+    await expect(outputBlock).toBeVisible({ timeout: 5000 });
+    await expect(outputBlock).toContainText('Manual codex selection works', { timeout: 5000 });
+
+    // Verify session used codex agent by checking Details tab
+    const detailsTab = newSession.locator('.session-tab:has-text("Details")');
+    await detailsTab.click();
+    await expect(detailsTab).toHaveClass(/session-tab--active/);
+
+    // Check that agent_url points to codex agent (port 19001 for smoke tests)
+    await expect(newSession).toContainText('19001', { timeout: 5000 });
+    await screenshot(page, '14i-manual-codex-verified');
+  });
 
   test('6. UI Navigation and Interactions', async ({ page }) => {
     // Login first
