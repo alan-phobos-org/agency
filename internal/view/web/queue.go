@@ -23,6 +23,12 @@ const (
 	TaskStateCancelled   = "cancelled"   // Cancelled
 )
 
+// Persistence directory names
+const (
+	dirPending    = "pending"
+	dirDispatched = "dispatched"
+)
+
 // ErrQueueFull is returned when the queue is at capacity
 var ErrQueueFull = errors.New("queue is at capacity")
 
@@ -393,9 +399,9 @@ func (q *WorkQueue) Config() QueueConfig {
 // Persistence methods
 
 func (q *WorkQueue) save(task *QueuedTask) error {
-	dir := "pending"
+	dir := dirPending
 	if task.State == TaskStateDispatching || task.State == TaskStateWorking {
-		dir = "dispatched"
+		dir = dirDispatched
 	}
 	path := filepath.Join(q.dir, dir, task.QueueID+".json")
 	data, err := json.MarshalIndent(task, "", "  ")
@@ -407,7 +413,7 @@ func (q *WorkQueue) save(task *QueuedTask) error {
 
 func (q *WorkQueue) moveToDir(task *QueuedTask, targetDir string) {
 	// Remove from both directories (one will fail, that's ok)
-	for _, dir := range []string{"pending", "dispatched"} {
+	for _, dir := range []string{dirPending, dirDispatched} {
 		path := filepath.Join(q.dir, dir, task.QueueID+".json")
 		os.Remove(path)
 	}
@@ -419,7 +425,7 @@ func (q *WorkQueue) moveToDir(task *QueuedTask, targetDir string) {
 }
 
 func (q *WorkQueue) removeFile(task *QueuedTask) {
-	for _, dir := range []string{"pending", "dispatched"} {
+	for _, dir := range []string{dirPending, dirDispatched} {
 		path := filepath.Join(q.dir, dir, task.QueueID+".json")
 		os.Remove(path)
 	}
@@ -427,7 +433,7 @@ func (q *WorkQueue) removeFile(task *QueuedTask) {
 
 func (q *WorkQueue) loadFromDisk() error {
 	// Load dispatched tasks first
-	dispatchedDir := filepath.Join(q.dir, "dispatched")
+	dispatchedDir := filepath.Join(q.dir, dirDispatched)
 	entries, _ := os.ReadDir(dispatchedDir)
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
@@ -447,11 +453,11 @@ func (q *WorkQueue) loadFromDisk() error {
 		q.tasks = append(q.tasks, task)
 		q.byID[task.QueueID] = task
 		// Move file to pending
-		q.moveToDir(task, "pending")
+		q.moveToDir(task, dirPending)
 	}
 
 	// Load pending tasks
-	pendingDir := filepath.Join(q.dir, "pending")
+	pendingDir := filepath.Join(q.dir, dirPending)
 	entries, _ = os.ReadDir(pendingDir)
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {

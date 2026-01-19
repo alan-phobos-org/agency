@@ -374,11 +374,10 @@ func (a *Agent) resolveModel(req TaskRequest) (string, error) {
 }
 
 func (a *Agent) buildPrompt(task *Task) string {
-	prompt := a.preprompt + "\n\n" + task.Prompt
 	if task.Project != nil && task.Project.Prompt != "" {
-		prompt = a.preprompt + "\n\n" + task.Project.Prompt + "\n\n" + task.Prompt
+		return a.preprompt + "\n\n" + task.Project.Prompt + "\n\n" + task.Prompt
 	}
-	return prompt
+	return a.preprompt + "\n\n" + task.Prompt
 }
 
 func setTaskCompletion(task *Task, completedAt time.Time) {
@@ -751,7 +750,7 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 			task.ExitCode = &exitCode
 			task.Error = &TaskError{
 				Type:    "start_error",
-				Message: fmt.Sprintf("Failed to start CLI: %v", err),
+				Message: fmt.Sprintf("Failed to start CLI: %v", cmdErr),
 			}
 			a.mu.Unlock()
 			a.saveTaskHistory(task, nil)
