@@ -2,6 +2,13 @@
 .env
 .env.*
 
+# TLS certificates and private keys (generated at runtime)
+*.pem
+*.key
+*.crt
+.certs/
+**/.certs/
+
 # Build artifacts
 bin
 dist
@@ -35,3 +42,7 @@ tests/smoke/node_modules/
 tests/smoke/test-results/
 tests/smoke/screenshots/
 tests/smoke/console-errors.json 
+
+# Certs
+internal/agent/.certs/cert.pem
+internal/agent/.certs/key.pem
