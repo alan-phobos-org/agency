@@ -7,8 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Add `QueueDir` config option to web director for queue directory customization
+
 ### Fixed
 - Fixed prompt construction duplicating preprompt when project context is present
+- Fixed integration tests picking up external queue state by using isolated temp directories
 
 ## [2.2.0] - 2026-01-17
 
