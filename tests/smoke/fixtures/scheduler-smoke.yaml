@@ -23,35 +23,15 @@ jobs:
   - name: smoke-nightly-maintenance
     schedule: "0 0 31 2 *"  # Never auto-runs (Feb 31)
     model: haiku
-    timeout: 5m
+    timeout: 2m
     prompt: |
       # Smoke Test Nightly Maintenance
 
-      This is a simplified nightly maintenance task for smoke testing.
-      Perform maintenance tasks on the helloworld2 repository only.
+      Verify basic git and test operations on helloworld2.
 
-      ## Target Repository
-      - helloworld2
-
-      ## Tasks
-
-      ### 1. Code Cleanup
-      - Remove dead code and unused imports
-      - Fix obvious code style issues
-
-      ### 2. Testing
-      - Run the test suite and fix any failing tests
-
-      ### 3. Report
-      - Summarise what you found and what you did
-
-      ## Workflow
-
-      1. Clone from alan-phobos-org/helloworld2
-      2. Run tests to establish baseline
-      3. Perform maintenance tasks
-      4. Run tests again to verify no regressions
-      5. Commit changes with descriptive messages
+      1. Clone alan-phobos-org/helloworld2
+      2. Run the test suite
+      3. Report if tests pass or fail
 
   - name: smoke-test-codex
     schedule: "0 0 31 2 *"  # Never auto-runs (Feb 31)

@@ -8,13 +8,13 @@ Agency is a modular framework for AI-powered software engineering agents. The co
 
 ## Next Steps
 
+### v1.x
+
+* (No pending tasks)
+
 ### v2.0
 
-* ag-agent-codex: `{"type":"thread.started","thread_id":"019bce81-4adf-7372-a168-b1547122749e"} {"type":"turn.started"}` results parsing needs sorting out!
 * ag-web-view: agents need to show more detail in fleet pane (type etc)
-* ag-web-view: agent kind selection doesn't seem to work - is that because types are wrong?
-* ag-web-view: model override is unnecessary (show model-specific name though)
-* ag-web-view: put 'archive' button on collapsed session (far end?)
 
 ## Delivery Phases
 
