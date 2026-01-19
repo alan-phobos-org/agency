@@ -35,7 +35,7 @@ type Job struct {
 const (
 	DefaultPort      = 9100
 	DefaultLogLevel  = "info"
-	DefaultAgentURL  = "http://localhost:9000"
+	DefaultAgentURL  = "https://localhost:9000"
 	DefaultModel     = "sonnet"
 	DefaultTimeout   = 30 * time.Minute
 	DefaultAgentKind = api.AgentKindClaude

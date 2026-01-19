@@ -1,6 +1,7 @@
 package testutil
 
 import (
+	"crypto/tls"
 	"fmt"
 	"hash/fnv"
 	"net/http"
@@ -28,7 +29,14 @@ func AllocateTestPortN(t *testing.T, n int) int {
 func WaitForHealthy(t *testing.T, url string, timeout time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
-	client := &http.Client{Timeout: 500 * time.Millisecond}
+	client := &http.Client{
+		Timeout: 500 * time.Millisecond,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true, // Accept self-signed certificates for localhost
+			},
+		},
+	}
 
 	for time.Now().Before(deadline) {
 		resp, err := client.Get(url)
@@ -73,4 +81,16 @@ func SuccessResponse(result string) string {
 // ErrorResponse returns a mock Claude error JSON response
 func ErrorResponse(message string) string {
 	return fmt.Sprintf(`{"session_id":"test-session","result":"","exit_code":1,"error":%q}`, message)
+}
+
+// HTTPClient returns an HTTP client configured to accept self-signed certificates for localhost
+func HTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true, // Accept self-signed certificates for localhost
+			},
+		},
+	}
 }

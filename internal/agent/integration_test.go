@@ -4,6 +4,7 @@ package agent
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net/http"
 	"os"
@@ -17,6 +18,25 @@ import (
 	"phobos.org.uk/agency/internal/director/cli"
 	"phobos.org.uk/agency/internal/testutil"
 )
+
+// newHTTPExpect creates an httpexpect instance with TLS support for localhost
+func newHTTPExpect(t *testing.T, baseURL string) *httpexpect.Expect {
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true, // Accept self-signed certificates for localhost
+			},
+		},
+	}
+	return httpexpect.WithConfig(httpexpect.Config{
+		BaseURL:  baseURL,
+		Client:   client,
+		Reporter: httpexpect.NewAssertReporter(t),
+		Printers: []httpexpect.Printer{
+			httpexpect.NewDebugPrinter(t, true),
+		},
+	})
+}
 
 func TestIntegrationAgentDirectorFlow(t *testing.T) {
 	// Get project root for mock-claude
@@ -43,7 +63,7 @@ func TestIntegrationAgentDirectorFlow(t *testing.T) {
 	}
 
 	agent := New(cfg, "test-version")
-	agentURL := fmt.Sprintf("http://localhost:%d", port)
+	agentURL := fmt.Sprintf("https://localhost:%d", port)
 
 	// Start agent in background
 	go func() {
@@ -61,7 +81,7 @@ func TestIntegrationAgentDirectorFlow(t *testing.T) {
 	}()
 
 	// Test using httpexpect
-	e := httpexpect.Default(t, agentURL)
+	e := newHTTPExpect(t, agentURL)
 
 	// Check status
 	e.GET("/status").
@@ -115,7 +135,7 @@ func TestIntegrationTaskCancellation(t *testing.T) {
 	}
 
 	agent := New(cfg, "test")
-	agentURL := fmt.Sprintf("http://localhost:%d", port)
+	agentURL := fmt.Sprintf("https://localhost:%d", port)
 
 	go agent.Start()
 	testutil.WaitForHealthy(t, agentURL+"/status", 10*time.Second)
@@ -126,7 +146,7 @@ func TestIntegrationTaskCancellation(t *testing.T) {
 		agent.Shutdown(ctx)
 	}()
 
-	e := httpexpect.Default(t, agentURL)
+	e := newHTTPExpect(t, agentURL)
 
 	// Submit long-running task
 	resp := e.POST("/task").
@@ -184,7 +204,7 @@ func TestIntegrationPromptWithDashes(t *testing.T) {
 	}
 
 	agent := New(cfg, "test")
-	agentURL := fmt.Sprintf("http://localhost:%d", port)
+	agentURL := fmt.Sprintf("https://localhost:%d", port)
 
 	go agent.Start()
 	testutil.WaitForHealthy(t, agentURL+"/status", 10*time.Second)

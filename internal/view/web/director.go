@@ -192,7 +192,8 @@ func (d *Director) Router() chi.Router {
 			taskID := chi.URLParam(r, "id")
 			d.handlers.HandleTaskHistory(w, r, taskID)
 		})
-		r.Get("/logs", d.handlers.HandleAgentLogs) // Proxy agent logs
+		r.Get("/logs", d.handlers.HandleAgentLogs)           // Proxy agent logs
+		r.Get("/logs/stats", d.handlers.HandleAgentLogStats) // Proxy agent log stats
 		// Session endpoints for global session tracking (task sessions)
 		r.Get("/sessions", d.handlers.HandleSessions)
 		r.Post("/sessions", d.handlers.HandleAddSessionTask)
@@ -256,7 +257,8 @@ func (d *Director) InternalRouter() chi.Router {
 			taskID := chi.URLParam(req, "id")
 			d.handlers.HandleTaskHistory(w, req, taskID)
 		})
-		r.Get("/logs", d.handlers.HandleAgentLogs) // Proxy agent logs
+		r.Get("/logs", d.handlers.HandleAgentLogs)           // Proxy agent logs
+		r.Get("/logs/stats", d.handlers.HandleAgentLogStats) // Proxy agent log stats
 		r.Get("/sessions", d.handlers.HandleSessions)
 		// Queue endpoints
 		r.Post("/queue/task", d.queueHandlers.HandleQueueSubmit)

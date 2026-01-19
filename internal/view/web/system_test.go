@@ -133,7 +133,7 @@ func TestSystemWebViewDashboardEndpoint(t *testing.T) {
 
 	// Start agent first (use index 0 for agent port)
 	agentPort := testutil.AllocateTestPortN(t, 0)
-	agentURL := fmt.Sprintf("http://localhost:%d", agentPort)
+	agentURL := fmt.Sprintf("https://localhost:%d", agentPort)
 	agentCmd := startAgent(t, binDir, agentPort)
 
 	defer func() {
@@ -433,7 +433,7 @@ func TestSystemWebViewSessionDetail(t *testing.T) {
 
 	// Start agent that provides history endpoint
 	agentPort := testutil.AllocateTestPortN(t, 0)
-	agentURL := fmt.Sprintf("http://localhost:%d", agentPort)
+	agentURL := fmt.Sprintf("https://localhost:%d", agentPort)
 	agentCmd := startAgent(t, binDir, agentPort)
 
 	defer func() {
@@ -654,11 +654,11 @@ func TestSystemWebViewHelperDiscovery(t *testing.T) {
 
 	// Start scheduler (helper) with a job
 	schedulerPort := testutil.AllocateTestPortN(t, 0)
-	schedulerURL := fmt.Sprintf("http://localhost:%d", schedulerPort)
+	schedulerURL := fmt.Sprintf("https://localhost:%d", schedulerPort)
 
 	configContent := fmt.Sprintf(`
 port: %d
-agent_url: http://localhost:19999
+agent_url: https://localhost:19999
 jobs:
   - name: test-job
     schedule: "0 * * * *"
@@ -750,7 +750,7 @@ func TestSystemWebViewHelperJobStatusUpdate(t *testing.T) {
 
 	// Start a mock agent that accepts tasks
 	agentPort := testutil.AllocateTestPortN(t, 0)
-	agentURL := fmt.Sprintf("http://localhost:%d", agentPort)
+	agentURL := fmt.Sprintf("https://localhost:%d", agentPort)
 	agentCmd := startAgent(t, binDir, agentPort)
 
 	defer func() {
@@ -765,7 +765,7 @@ func TestSystemWebViewHelperJobStatusUpdate(t *testing.T) {
 
 	// Start scheduler with the agent configured
 	schedulerPort := testutil.AllocateTestPortN(t, 1)
-	schedulerURL := fmt.Sprintf("http://localhost:%d", schedulerPort)
+	schedulerURL := fmt.Sprintf("https://localhost:%d", schedulerPort)
 
 	configContent := fmt.Sprintf(`
 port: %d
@@ -857,7 +857,7 @@ jobs:
 	t.Logf("Initial ETag: %s", etag1)
 
 	// Trigger the job via scheduler API
-	triggerResp, err := http.Post(schedulerURL+"/trigger/trigger-test-job", "application/json", nil)
+	triggerResp, err := testutil.HTTPClient(5*time.Second).Post(schedulerURL+"/trigger/trigger-test-job", "application/json", nil)
 	require.NoError(t, err)
 	triggerResp.Body.Close()
 	require.Equal(t, http.StatusOK, triggerResp.StatusCode, "Job trigger should succeed")

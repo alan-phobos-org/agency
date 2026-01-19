@@ -29,9 +29,7 @@ func NewDispatcher(queue *WorkQueue, discovery *Discovery, sessionStore *Session
 		queue:        queue,
 		discovery:    discovery,
 		sessionStore: sessionStore,
-		client: &http.Client{
-			Timeout: queue.Config().DispatchTimeout,
-		},
+		client:       createHTTPClient(queue.Config().DispatchTimeout),
 		pollInterval: time.Second,
 	}
 }

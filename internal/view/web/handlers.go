@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	"crypto/sha256"
+	"crypto/tls"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
@@ -66,6 +67,18 @@ func (h *Handlers) SetShutdownFunc(fn func()) {
 // SetQueue sets the work queue for status reporting
 func (h *Handlers) SetQueue(q *WorkQueue) {
 	h.queue = q
+}
+
+// createHTTPClient creates an HTTP client that accepts self-signed certificates for localhost
+func createHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true, // Accept self-signed certificates for localhost
+			},
+		},
+	}
 }
 
 // HandleDashboard serves the main dashboard HTML page
@@ -209,7 +222,7 @@ func (h *Handlers) HandleTaskSubmit(w http.ResponseWriter, r *http.Request) {
 
 	// Forward to agent
 	body, _ := json.Marshal(agentReq)
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := createHTTPClient(10 * time.Second)
 	resp, err := client.Post(req.AgentURL+"/task", "application/json", bytes.NewReader(body))
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "agent_error", "Failed to contact agent: "+err.Error())
@@ -269,7 +282,7 @@ func (h *Handlers) HandleTaskStatus(w http.ResponseWriter, r *http.Request, task
 	}
 	sessionID := r.URL.Query().Get("session_id") // Optional: for auto-updating session state
 
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := createHTTPClient(5 * time.Second)
 
 	// Try the active task endpoint first
 	resp, err := client.Get(agentURL + "/task/" + taskID)
@@ -363,7 +376,7 @@ func (h *Handlers) HandleTaskHistory(w http.ResponseWriter, r *http.Request, tas
 	}
 
 	// Forward to agent
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := createHTTPClient(5 * time.Second)
 	resp, err := client.Get(agentURL + "/history/" + taskID)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "agent_error", "Failed to contact agent: "+err.Error())
@@ -414,8 +427,31 @@ func (h *Handlers) HandleAgentLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Forward to agent
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := createHTTPClient(5 * time.Second)
 	resp, err := client.Get(proxyURL)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "agent_error", "Failed to contact agent: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	// Forward response as-is
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
+}
+
+// HandleAgentLogStats proxies log stats requests to the agent
+func (h *Handlers) HandleAgentLogStats(w http.ResponseWriter, r *http.Request) {
+	agentURL := r.URL.Query().Get("agent_url")
+	if agentURL == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "agent_url query parameter is required")
+		return
+	}
+
+	// Forward to agent
+	client := createHTTPClient(5 * time.Second)
+	resp, err := client.Get(agentURL + "/logs/stats")
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "agent_error", "Failed to contact agent: "+err.Error())
 		return
@@ -817,7 +853,7 @@ func (h *Handlers) HandleArchiveSession(w http.ResponseWriter, r *http.Request, 
 
 // HandleTriggerJob proxies a job trigger request to a scheduler
 func (h *Handlers) HandleTriggerJob(w http.ResponseWriter, r *http.Request, schedulerURL, jobName string) {
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := createHTTPClient(10 * time.Second)
 
 	req, err := http.NewRequest(http.MethodPost, schedulerURL+"/trigger/"+jobName, nil)
 	if err != nil {
@@ -850,7 +886,7 @@ func (h *Handlers) HandleShutdown(w http.ResponseWriter, r *http.Request) {
 	agents := h.discovery.Agents()
 	helpers := h.discovery.Helpers()
 
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := createHTTPClient(5 * time.Second)
 	var shutdownErrors []string
 
 	// Send shutdown to agents

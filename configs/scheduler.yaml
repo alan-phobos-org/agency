@@ -14,7 +14,7 @@ port: 9010
 director_url: http://localhost:8080
 
 # Direct agent URL (fallback when director is unavailable)
-agent_url: http://localhost:9000
+agent_url: https://localhost:9000
 
 jobs:
   - name: smoke-test
@@ -28,7 +28,7 @@ jobs:
   - name: smoke-test-codex
     schedule: "0 0 31 2 *"  # Never auto-runs (Feb 31)
     agent_kind: codex
-    agent_url: http://localhost:9001
+    agent_url: https://localhost:9001
     timeout: 60s
     prompt: |
       This is a smoke test for codex. Reply with exactly: "Codex smoke test OK"

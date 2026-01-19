@@ -9,6 +9,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -95,9 +97,20 @@ func (s *Scheduler) Start() error {
 	router.Post("/shutdown", s.handleShutdown)
 	router.Post("/trigger/{job}", s.handleTrigger)
 
+	// Setup TLS certificates
+	certDir := filepath.Join(os.TempDir(), "agency", "scheduler-certs")
+	certPath := filepath.Join(certDir, "cert.pem")
+	keyPath := filepath.Join(certDir, "key.pem")
+
+	if err := ensureTLSCert(certPath, keyPath); err != nil {
+		s.mu.Unlock()
+		return fmt.Errorf("ensuring TLS cert: %w", err)
+	}
+
 	s.server = &http.Server{
-		Addr:    fmt.Sprintf(":%d", s.config.Port),
-		Handler: router,
+		Addr:      fmt.Sprintf(":%d", s.config.Port),
+		Handler:   router,
+		TLSConfig: getTLSConfig(),
 	}
 	s.running = true
 	s.mu.Unlock()
@@ -105,14 +118,14 @@ func (s *Scheduler) Start() error {
 	// Start job runner
 	go s.runJobs()
 
-	log.Printf("scheduler starting on port %d with %d jobs", s.config.Port, len(s.jobs))
+	log.Printf("scheduler starting on port %d with %d jobs (TLS enabled)", s.config.Port, len(s.jobs))
 	s.mu.RLock()
 	for _, js := range s.jobs {
 		log.Printf("  job=%s schedule=%q next_run=%s", js.Job.Name, js.Job.Schedule, js.NextRun.Format(time.RFC3339))
 	}
 	s.mu.RUnlock()
 
-	if err := s.server.ListenAndServe(); err != http.ErrServerClosed {
+	if err := s.server.ListenAndServeTLS(certPath, keyPath); err != http.ErrServerClosed {
 		return err
 	}
 	return nil

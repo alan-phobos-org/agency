@@ -119,7 +119,7 @@ func TestSystemAgentDirectorBinaries(t *testing.T) {
 
 	// Start agent process (uses real Claude CLI)
 	port := testutil.AllocateTestPort(t)
-	agentURL := fmt.Sprintf("http://localhost:%d", port)
+	agentURL := fmt.Sprintf("https://localhost:%d", port)
 	agentCmd := startAgent(t, binDir, port)
 
 	// Cleanup: kill agent on test completion
@@ -155,7 +155,7 @@ func TestSystemMultipleTasks(t *testing.T) {
 	binDir := buildBinaries(t)
 
 	port := testutil.AllocateTestPort(t)
-	agentURL := fmt.Sprintf("http://localhost:%d", port)
+	agentURL := fmt.Sprintf("https://localhost:%d", port)
 	agentCmd := startAgent(t, binDir, port)
 
 	defer func() {
@@ -186,7 +186,7 @@ func TestSystemGracefulShutdown(t *testing.T) {
 	binDir := buildBinaries(t)
 
 	port := testutil.AllocateTestPort(t)
-	agentURL := fmt.Sprintf("http://localhost:%d", port)
+	agentURL := fmt.Sprintf("https://localhost:%d", port)
 	agentCmd := startAgent(t, binDir, port)
 
 	testutil.WaitForHealthy(t, agentURL+"/status", 10*time.Second)
@@ -252,11 +252,11 @@ claude:
 		}
 	}()
 
-	agentURL := fmt.Sprintf("http://localhost:%d", port)
+	agentURL := fmt.Sprintf("https://localhost:%d", port)
 	testutil.WaitForHealthy(t, agentURL+"/status", 10*time.Second)
 
 	// Verify agent is running with correct config
-	resp, err := http.Get(agentURL + "/status")
+	resp, err := testutil.HTTPClient(5 * time.Second).Get(agentURL + "/status")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -274,7 +274,7 @@ func TestSystemHTTPAPIDirectly(t *testing.T) {
 	binDir := buildBinaries(t)
 
 	port := testutil.AllocateTestPort(t)
-	agentURL := fmt.Sprintf("http://localhost:%d", port)
+	agentURL := fmt.Sprintf("https://localhost:%d", port)
 	agentCmd := startAgent(t, binDir, port)
 
 	defer func() {
@@ -293,7 +293,7 @@ func TestSystemHTTPAPIDirectly(t *testing.T) {
 	}
 	taskBody, _ := json.Marshal(taskReq)
 
-	resp, err := http.Post(agentURL+"/task", "application/json", bytes.NewReader(taskBody))
+	resp, err := testutil.HTTPClient(5*time.Second).Post(agentURL+"/task", "application/json", bytes.NewReader(taskBody))
 	require.NoError(t, err)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 
@@ -309,7 +309,7 @@ func TestSystemHTTPAPIDirectly(t *testing.T) {
 	var finalState string
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
-		resp, err := http.Get(agentURL + "/task/" + taskID)
+		resp, err := testutil.HTTPClient(5 * time.Second).Get(agentURL + "/task/" + taskID)
 		require.NoError(t, err)
 
 		var status map[string]interface{}
@@ -331,7 +331,7 @@ func TestSystemConcurrentTaskRejection(t *testing.T) {
 	binDir := buildBinaries(t)
 
 	port := testutil.AllocateTestPort(t)
-	agentURL := fmt.Sprintf("http://localhost:%d", port)
+	agentURL := fmt.Sprintf("https://localhost:%d", port)
 	agentCmd := startAgent(t, binDir, port)
 
 	defer func() {
@@ -350,14 +350,14 @@ func TestSystemConcurrentTaskRejection(t *testing.T) {
 	}
 	taskBody, _ := json.Marshal(taskReq)
 
-	resp, err := http.Post(agentURL+"/task", "application/json", bytes.NewReader(taskBody))
+	resp, err := testutil.HTTPClient(5*time.Second).Post(agentURL+"/task", "application/json", bytes.NewReader(taskBody))
 	require.NoError(t, err)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	resp.Body.Close()
 
 	// Wait for agent to be in working state
 	testutil.Eventually(t, 10*time.Second, func() bool {
-		resp, err := http.Get(agentURL + "/status")
+		resp, err := testutil.HTTPClient(5 * time.Second).Get(agentURL + "/status")
 		if err != nil {
 			return false
 		}
@@ -374,7 +374,7 @@ func TestSystemConcurrentTaskRejection(t *testing.T) {
 	}
 	taskBody2, _ := json.Marshal(taskReq2)
 
-	resp2, err := http.Post(agentURL+"/task", "application/json", bytes.NewReader(taskBody2))
+	resp2, err := testutil.HTTPClient(5*time.Second).Post(agentURL+"/task", "application/json", bytes.NewReader(taskBody2))
 	require.NoError(t, err)
 	require.Equal(t, http.StatusConflict, resp2.StatusCode, "Should reject concurrent task")
 
@@ -442,7 +442,7 @@ func TestSystemWebDirectorDiscovery(t *testing.T) {
 
 	// Start agent
 	agentPort := testutil.AllocateTestPort(t)
-	agentURL := fmt.Sprintf("http://localhost:%d", agentPort)
+	agentURL := fmt.Sprintf("https://localhost:%d", agentPort)
 	agentCmd := startAgent(t, binDir, agentPort)
 
 	defer func() {
@@ -544,7 +544,7 @@ func TestSystemWebDirectorTaskSubmission(t *testing.T) {
 
 	// Start agent
 	agentPort := testutil.AllocateTestPort(t)
-	agentURL := fmt.Sprintf("http://localhost:%d", agentPort)
+	agentURL := fmt.Sprintf("https://localhost:%d", agentPort)
 	agentCmd := startAgent(t, binDir, agentPort)
 
 	defer func() {
@@ -632,7 +632,7 @@ func TestSystemSessionContinuation(t *testing.T) {
 	binDir := buildBinaries(t)
 
 	port := testutil.AllocateTestPort(t)
-	agentURL := fmt.Sprintf("http://localhost:%d", port)
+	agentURL := fmt.Sprintf("https://localhost:%d", port)
 	agentCmd := startAgent(t, binDir, port)
 
 	defer func() {
@@ -653,7 +653,7 @@ func TestSystemSessionContinuation(t *testing.T) {
 	}
 	taskBody1, _ := json.Marshal(taskReq1)
 
-	resp1, err := http.Post(agentURL+"/task", "application/json", bytes.NewReader(taskBody1))
+	resp1, err := testutil.HTTPClient(5*time.Second).Post(agentURL+"/task", "application/json", bytes.NewReader(taskBody1))
 	require.NoError(t, err)
 	require.Equal(t, http.StatusCreated, resp1.StatusCode)
 
@@ -668,7 +668,7 @@ func TestSystemSessionContinuation(t *testing.T) {
 	waitForTaskCompletion(t, agentURL, taskID1, 60*time.Second)
 
 	// Get the session_id from the completed task (Claude generates it)
-	resp1Status, err := http.Get(agentURL + "/task/" + taskID1)
+	resp1Status, err := testutil.HTTPClient(5 * time.Second).Get(agentURL + "/task/" + taskID1)
 	require.NoError(t, err)
 	var task1Status map[string]interface{}
 	json.NewDecoder(resp1Status.Body).Decode(&task1Status)
@@ -688,7 +688,7 @@ func TestSystemSessionContinuation(t *testing.T) {
 	}
 	taskBody2, _ := json.Marshal(taskReq2)
 
-	resp2, err := http.Post(agentURL+"/task", "application/json", bytes.NewReader(taskBody2))
+	resp2, err := testutil.HTTPClient(5*time.Second).Post(agentURL+"/task", "application/json", bytes.NewReader(taskBody2))
 	require.NoError(t, err)
 	require.Equal(t, http.StatusCreated, resp2.StatusCode)
 
@@ -704,7 +704,7 @@ func TestSystemSessionContinuation(t *testing.T) {
 	waitForTaskCompletion(t, agentURL, taskID2, 60*time.Second)
 
 	// Verify task 2 completed successfully
-	resp2Status, err := http.Get(agentURL + "/task/" + taskID2)
+	resp2Status, err := testutil.HTTPClient(5 * time.Second).Get(agentURL + "/task/" + taskID2)
 	require.NoError(t, err)
 	var task2Status map[string]interface{}
 	json.NewDecoder(resp2Status.Body).Decode(&task2Status)
@@ -723,7 +723,7 @@ func TestSystemNewSessionWithoutSessionID(t *testing.T) {
 	binDir := buildBinaries(t)
 
 	port := testutil.AllocateTestPort(t)
-	agentURL := fmt.Sprintf("http://localhost:%d", port)
+	agentURL := fmt.Sprintf("https://localhost:%d", port)
 	agentCmd := startAgent(t, binDir, port)
 
 	defer func() {
@@ -742,7 +742,7 @@ func TestSystemNewSessionWithoutSessionID(t *testing.T) {
 	}
 	taskBody, _ := json.Marshal(taskReq)
 
-	resp, err := http.Post(agentURL+"/task", "application/json", bytes.NewReader(taskBody))
+	resp, err := testutil.HTTPClient(5*time.Second).Post(agentURL+"/task", "application/json", bytes.NewReader(taskBody))
 	require.NoError(t, err)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 
@@ -757,7 +757,7 @@ func TestSystemNewSessionWithoutSessionID(t *testing.T) {
 	waitForTaskCompletion(t, agentURL, taskID, 60*time.Second)
 
 	// Get task status - session_id should be set by Claude
-	resp2, err := http.Get(agentURL + "/task/" + taskID)
+	resp2, err := testutil.HTTPClient(5 * time.Second).Get(agentURL + "/task/" + taskID)
 	require.NoError(t, err)
 
 	var taskStatus map[string]interface{}
@@ -775,7 +775,7 @@ func waitForTaskCompletion(t *testing.T, agentURL, taskID string, timeout time.D
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		resp, err := http.Get(agentURL + "/task/" + taskID)
+		resp, err := testutil.HTTPClient(5 * time.Second).Get(agentURL + "/task/" + taskID)
 		if err != nil {
 			time.Sleep(100 * time.Millisecond)
 			continue
@@ -826,7 +826,7 @@ func TestSystemVersionEmbedding(t *testing.T) {
 
 	// Step 4: Start agent and verify /status reports same version
 	port := testutil.AllocateTestPort(t)
-	agentURL := fmt.Sprintf("http://localhost:%d", port)
+	agentURL := fmt.Sprintf("https://localhost:%d", port)
 	agentCmd := startAgent(t, binDir, port)
 
 	defer func() {
@@ -839,7 +839,7 @@ func TestSystemVersionEmbedding(t *testing.T) {
 	testutil.WaitForHealthy(t, agentURL+"/status", 10*time.Second)
 
 	// Query status endpoint
-	resp, err := http.Get(agentURL + "/status")
+	resp, err := testutil.HTTPClient(5 * time.Second).Get(agentURL + "/status")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 

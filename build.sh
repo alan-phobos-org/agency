@@ -29,6 +29,53 @@ check_service() {
     fi
 }
 
+detect_running_agency() {
+    # Check common port sets to detect which mode is running
+    if curl -sf -k "https://localhost:8080/status" >/dev/null 2>&1; then
+        echo "dev"
+        return 0
+    fi
+    if curl -sf -k "https://localhost:9080/status" >/dev/null 2>&1; then
+        echo "prod"
+        return 0
+    fi
+    if curl -sf -k "https://localhost:18080/status" >/dev/null 2>&1; then
+        echo "smoke"
+        return 0
+    fi
+    return 1
+}
+
+check_smoke_ports() {
+    local ports=(18080 18443 19000 19001 19010)
+    local conflicts=()
+
+    for port in "${ports[@]}"; do
+        if lsof -ti :$port >/dev/null 2>&1; then
+            conflicts+=($port)
+        fi
+    done
+
+    if [ ${#conflicts[@]} -gt 0 ]; then
+        echo "ERROR: Smoke test ports in use: ${conflicts[*]}"
+        echo ""
+        echo "Options:"
+        echo "  1. Clean up smoke test ports: for port in ${conflicts[*]}; do lsof -ti :\$port | xargs kill -9; done"
+        echo "  2. Stop agency deployment: ./deployment/stop-agency.sh [dev|prod|smoke]"
+        echo ""
+        read -p "Auto-cleanup? [y/N] " -r response
+        if [[ "$response" =~ ^[Yy]$ ]]; then
+            for port in "${conflicts[@]}"; do
+                lsof -ti :$port | xargs kill -9 2>/dev/null || true
+            done
+            sleep 2
+            echo "Ports cleaned, retrying..."
+        else
+            return 1
+        fi
+    fi
+}
+
 case "${1:-help}" in
     build)
         build_all
@@ -176,9 +223,96 @@ case "${1:-help}" in
             exit 1
         fi
         ;;
+    deploy-local-quick)
+        # Fast deployment - skips integration and system tests
+        # Useful for rapid iteration during development
+        ./deployment/stop-agency.sh dev 2>/dev/null || true
+
+        DEPLOY_STEP=""
+        deploy_fail() {
+            echo ""
+            echo "=== DEPLOY-LOCAL-QUICK FAILED ==="
+            echo "Step: $DEPLOY_STEP"
+            echo ""
+            echo "Troubleshooting:"
+            case "$DEPLOY_STEP" in
+                "lint")
+                    echo "  - Run './build.sh lint' to see formatting issues"
+                    ;;
+                "build")
+                    echo "  - Check for Go compilation errors above"
+                    ;;
+                "unit tests")
+                    echo "  - Run './build.sh test' to re-run unit tests"
+                    echo "  - Run 'go test -v ./...' for verbose output"
+                    ;;
+                "dist packaging")
+                    echo "  - Check that all required files exist"
+                    ;;
+                *)
+                    echo "  - Review the error message above"
+                    ;;
+            esac
+            exit 1
+        }
+        trap deploy_fail ERR
+
+        echo "=== Deploy Local Quick (dev mode - skipping integration/system tests) ==="
+        echo ""
+
+        DEPLOY_STEP="lint"
+        echo "Step 1/4: Linting..."
+        $0 lint
+
+        DEPLOY_STEP="build"
+        echo "Step 2/4: Building binaries..."
+        build_all
+
+        DEPLOY_STEP="unit tests"
+        echo "Step 3/4: Running unit tests..."
+        go test -race -short ./...
+
+        DEPLOY_STEP="dist packaging"
+        echo "Step 4/4: Creating distribution..."
+        rm -rf dist/
+        mkdir -p dist/bin dist/deployment dist/configs
+        cp "${BINARIES[@]/#/bin/}" dist/bin/
+        cp deployment/agency.sh deployment/stop-agency.sh deployment/deploy-agency.sh deployment/ports.conf dist/deployment/
+        cp configs/contexts.yaml configs/scheduler.yaml dist/configs/
+        [ -f .env ] && cp .env dist/
+
+        trap - ERR
+        echo ""
+        echo "Starting services..."
+        if ! ./dist/deployment/agency.sh dev; then
+            echo ""
+            echo "=== DEPLOY-LOCAL-QUICK FAILED: start services ==="
+            echo ""
+            for log in dist/deployment/{scheduler,agent,view}-dev.log; do
+                if [ -f "$log" ] && grep -q "address already in use" "$log"; then
+                    PORT=$(grep "address already in use" "$log" | grep -oE ':[0-9]+' | tr -d ':' | head -1)
+                    echo "Port $PORT is already in use."
+                    echo "  lsof -i :$PORT        # find what's using it"
+                    echo "  kill \$(lsof -ti :$PORT)  # kill the process"
+                    exit 1
+                fi
+            done
+            echo "Check logs: dist/deployment/{view,agent,scheduler}-dev.log"
+            exit 1
+        fi
+        ;;
     stop-local)
         echo "Stopping local dev instance..."
         ./deployment/stop-agency.sh dev
+        ;;
+    quick-test)
+        # Fast iteration cycle: build + deploy + smoke test
+        echo "=== Quick Test Cycle (build + deploy-quick + smoke) ==="
+        $0 stop-local
+        $0 deploy-local-quick
+        echo ""
+        echo "Deployment complete. Running smoke tests..."
+        $0 test-smoke
         ;;
     deploy-prod)
         # Usage: ./build.sh deploy-prod [host] [ssh-port] [ssh-key]
@@ -231,12 +365,51 @@ case "${1:-help}" in
         export AG_SCHEDULER_CONFIG="$PWD/tests/smoke/fixtures/scheduler-smoke.yaml"
         export AG_WEB_PASSWORD="${AG_WEB_PASSWORD:-smoketest}"
 
+        # Check if agency is already running
+        if mode=$(detect_running_agency 2>/dev/null); then
+            echo "WARNING: Agency is running in $mode mode"
+            echo "Smoke tests need ports 18080, 18443, 19000, 19001, 19010"
+            echo ""
+            if [ "$mode" = "smoke" ]; then
+                echo "Shutting down existing smoke instance..."
+                ./deployment/stop-agency.sh smoke
+                sleep 2
+            else
+                echo "Please stop the $mode deployment first: ./deployment/stop-agency.sh $mode"
+                exit 1
+            fi
+        fi
+
+        # Check for port conflicts before starting
+        check_smoke_ports
+
         # Cleanup on any exit
-        cleanup() {
-            echo "Stopping services..."
-            ./deployment/stop-agency.sh smoke 2>/dev/null || true
+        cleanup_smoke_test() {
+            echo "Cleaning up smoke test..."
+
+            # Try graceful shutdown first
+            if curl -sf -k -X POST "https://localhost:18080/shutdown" >/dev/null 2>&1; then
+                echo "  Graceful shutdown initiated"
+                sleep 2
+            fi
+
+            # Kill by PID file
+            local pid_file="deployment/agency-smoke.pids"
+            if [ -f "$pid_file" ]; then
+                while read -r pid; do
+                    kill "$pid" 2>/dev/null || true
+                done < "$pid_file"
+                rm -f "$pid_file"
+            fi
+
+            # Force kill any remaining processes on smoke ports
+            for port in 18080 18443 19000 19001 19010; do
+                lsof -ti :$port 2>/dev/null | xargs kill -9 2>/dev/null || true
+            done
+
+            echo "Cleanup complete"
         }
-        trap cleanup EXIT
+        trap cleanup_smoke_test EXIT ERR INT TERM
 
         # Build and start
         build_all
@@ -477,8 +650,10 @@ case "${1:-help}" in
         echo "  check           Run lint + unit tests (pre-commit check)"
         echo ""
         echo "Deployment:"
-        echo "  deploy-local                               Deploy locally (dev mode)"
+        echo "  deploy-local                               Deploy locally (dev mode) with full test suite"
+        echo "  deploy-local-quick                         Deploy locally (dev mode) - skips integration/system tests"
         echo "  stop-local                                 Stop local dev instance"
+        echo "  quick-test                                 Fast iteration: build + deploy-quick + smoke tests"
         echo "  deploy-prod [host] [ssh-port] [ssh-key]    Deploy to remote (uses .env DEPLOY_* vars)"
         echo "  stop-prod [host] [ssh-port] [ssh-key]      Stop remote agency (uses .env DEPLOY_* vars)"
         echo ""

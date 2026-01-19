@@ -202,7 +202,7 @@ func (h *QueueHandlers) HandleQueueCancel(w http.ResponseWriter, r *http.Request
 
 	// If task was dispatched, try to cancel on agent
 	if wasDispatched && agentURL != "" && taskID != "" {
-		client := &http.Client{Timeout: 10 * time.Second}
+		client := createHTTPClient(10 * time.Second)
 		req, _ := http.NewRequest(http.MethodPost, agentURL+"/task/"+taskID+"/cancel", nil)
 		resp, err := client.Do(req)
 		if err == nil {
@@ -326,7 +326,7 @@ func (h *QueueHandlers) submitDirectly(w http.ResponseWriter, r *http.Request, r
 
 	// Forward to agent
 	body, _ := json.Marshal(agentReq)
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := createHTTPClient(10 * time.Second)
 	resp, err := client.Post(req.AgentURL+"/task", "application/json", bytes.NewReader(body))
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "agent_error", "Failed to contact agent: "+err.Error())

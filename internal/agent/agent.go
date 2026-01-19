@@ -205,11 +205,30 @@ func NewWithRunner(cfg *config.Config, version string, runner Runner) *Agent {
 	}
 }
 
+// corsMiddleware adds CORS headers for cross-origin requests from the web view
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Allow requests from any origin (local development)
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+		// Handle preflight requests
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 // Router returns the HTTP router
 func (a *Agent) Router() chi.Router {
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RealIP)
+	r.Use(corsMiddleware)
 
 	r.Get("/status", a.handleStatus)
 	r.Post("/task", a.handleCreateTask)
@@ -232,17 +251,29 @@ func (a *Agent) Router() chi.Router {
 // Start starts the agent server
 func (a *Agent) Start() error {
 	addr := fmt.Sprintf(":%d", a.config.Port)
+
+	// Setup TLS certificates
+	certDir := filepath.Join(a.config.SessionDir, ".certs")
+	certPath := filepath.Join(certDir, "cert.pem")
+	keyPath := filepath.Join(certDir, "key.pem")
+
+	if err := ensureTLSCert(certPath, keyPath); err != nil {
+		return fmt.Errorf("ensuring TLS cert: %w", err)
+	}
+
 	a.server = &http.Server{
-		Addr:    addr,
-		Handler: a.Router(),
+		Addr:      addr,
+		Handler:   a.Router(),
+		TLSConfig: getTLSConfig(),
 	}
 
 	a.log.Info("agent starting", map[string]any{
 		"addr":    addr,
 		"version": a.version,
 		"model":   a.config.Claude.Model,
+		"tls":     "enabled",
 	})
-	return a.server.ListenAndServe()
+	return a.server.ListenAndServeTLS(certPath, keyPath)
 }
 
 // Shutdown gracefully shuts down the agent

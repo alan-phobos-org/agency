@@ -10,15 +10,15 @@
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/core.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/javascript.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/python.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/go.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/bash.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/json.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/yaml.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/sql.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/xml.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/javascript.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/python.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/go.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/bash.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/json.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/yaml.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/sql.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/xml.min.js"></script>
     <style>
         /* ========================================
            Agency Dashboard - Alpine.js SPA
@@ -1886,11 +1886,11 @@
                         <path d="M9 18l6-6-6-6"></path>
                     </svg>
                     <span style="font-weight: 500;">Queue</span>
-                    <span class="badge" style="background: var(--warning); color: var(--text); font-size: 11px; padding: 2px 6px; border-radius: 4px;" x-text="queue.depth + ' pending'"></span>
-                    <span x-show="queue.dispatched_count > 0" class="badge" style="background: var(--info); color: var(--text); font-size: 11px; padding: 2px 6px; border-radius: 4px;" x-text="queue.dispatched_count + ' dispatched'"></span>
+                    <span class="badge" style="background: var(--warning); color: var(--text); font-size: 11px; padding: 2px 6px; border-radius: 4px;" x-text="(queue?.depth || 0) + ' pending'"></span>
+                    <span x-show="queue?.dispatched_count > 0" class="badge" style="background: var(--info); color: var(--text); font-size: 11px; padding: 2px 6px; border-radius: 4px;" x-text="(queue?.dispatched_count || 0) + ' dispatched'"></span>
                 </div>
                 <div x-show="queueOpen" class="queue-tasks" style="padding: 8px;">
-                    <template x-for="task in queue.tasks" :key="task.queue_id">
+                    <template x-for="task in (queue?.tasks || [])" :key="task.queue_id">
                         <div class="queue-task" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--surface); border-radius: 4px; margin-bottom: 4px;">
                             <div :class="'session-status session-status--' + (task.state === 'pending' ? 'pending' : 'working')" style="flex-shrink: 0;">
                                 <template x-if="task.state === 'pending'">
@@ -2039,7 +2039,7 @@
                                         <div style="margin-top: var(--space-2);">Loading history...</div>
                                     </div>
                                     <div class="empty-state" style="color: var(--status-error);" x-show="sessionHistory[session.id]?.error">
-                                        Error loading history: <span x-text="sessionHistory[session.id].error"></span>
+                                        Error loading history: <span x-text="sessionHistory[session.id]?.error"></span>
                                     </div>
                                     <div>
                                         <template x-for="(task, idx) in (session.tasks || [])" :key="task.task_id">
@@ -3078,9 +3078,7 @@
                 async loadAgentLogStats() {
                     for (const agent of this.agents) {
                         try {
-                            const resp = await fetch(`${agent.url}/logs/stats`, {
-                                credentials: 'omit'
-                            });
+                            const resp = await this.api(`/api/logs/stats?agent_url=${encodeURIComponent(agent.url)}`);
                             if (resp.ok) {
                                 this.agentLogs[agent.url] = await resp.json();
                             }

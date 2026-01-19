@@ -31,7 +31,8 @@ Requires `AG_WEB_PASSWORD` environment variable (can be set in `.env` file).
 
 ## Documentation
 
-- [AGENTS.md](AGENTS.md) - Development workflow and project structure (for AI agents and contributors)
+- [DEVELOPMENT.md](DEVELOPMENT.md) - Development workflow, testing, and iteration guide
+- [AGENTS.md](AGENTS.md) - Project structure and practices (for AI agents and contributors)
 - [CHANGELOG.md](CHANGELOG.md) - Release history
 - [docs/PLAN.md](docs/PLAN.md) - Vision, phases, and backlog
 - [docs/DESIGN.md](docs/DESIGN.md) - Architecture and technical design
@@ -42,12 +43,20 @@ Requires `AG_WEB_PASSWORD` environment variable (can be set in `.env` file).
 ## Development
 
 ```bash
-./build.sh check   # Format, lint, and test (run before commits)
-./build.sh test    # Unit tests only
-./build.sh test-all # Unit + integration tests
+# Fast iteration during development
+./build.sh quick-test        # Build + deploy + smoke tests (recommended)
+
+# Manual testing steps
+./build.sh build             # Build binaries only
+./build.sh deploy-local-quick # Deploy locally (fast - skips integration tests)
+./build.sh test-smoke        # Run E2E smoke tests
+
+# Code quality
+./build.sh check             # Format, lint, and test (run before commits)
+./build.sh deploy-local      # Full deployment with all tests
 ```
 
-See [AGENTS.md](AGENTS.md) for full development documentation.
+See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed workflow guide and [AGENTS.md](AGENTS.md) for project structure.
 
 ## License
 

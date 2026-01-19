@@ -58,7 +58,7 @@ if ! "$PROJECT_ROOT/bin/ag-agent-claude" -version >/dev/null 2>&1 || \
 fi
 
 # Check if agency is already running (via API, more reliable than PID file)
-if curl -sf "http://localhost:${WEB_INTERNAL_PORT}/status" > /dev/null 2>&1; then
+if curl -sf "https://localhost:${WEB_INTERNAL_PORT}/status" > /dev/null 2>&1; then
     echo "Agency is already running on port $WEB_INTERNAL_PORT."
     # Check if running interactively
     if [ -t 0 ]; then
@@ -66,7 +66,7 @@ if curl -sf "http://localhost:${WEB_INTERNAL_PORT}/status" > /dev/null 2>&1; the
         echo
         if [[ ! $REPLY =~ ^[Nn]$ ]]; then
             echo "Shutting down existing agency..."
-            if curl -sf -X POST "http://localhost:${WEB_INTERNAL_PORT}/shutdown" > /dev/null 2>&1; then
+            if curl -sf -X POST "https://localhost:${WEB_INTERNAL_PORT}/shutdown" > /dev/null 2>&1; then
                 echo "  Shutdown initiated, waiting for services to stop..."
                 sleep 2
                 rm -f "$PID_FILE"
@@ -81,7 +81,7 @@ if curl -sf "http://localhost:${WEB_INTERNAL_PORT}/status" > /dev/null 2>&1; the
     else
         # Non-interactive: just shut it down
         echo "Shutting down existing agency..."
-        if curl -sf -X POST "http://localhost:${WEB_INTERNAL_PORT}/shutdown" > /dev/null 2>&1; then
+        if curl -sf -X POST "https://localhost:${WEB_INTERNAL_PORT}/shutdown" > /dev/null 2>&1; then
             sleep 2
             rm -f "$PID_FILE"
         else
@@ -174,7 +174,7 @@ VIEW_LOG="$PID_DIR/view-${MODE}.log"
 SCHEDULER_LOG="$PID_DIR/scheduler-${MODE}.log"
 
 echo -n "Waiting for claude agent..."
-if ! wait_for_status "Claude agent" "http://localhost:$AGENT_PORT/status" "$AGENT_PID" "$AGENT_LOG"; then
+if ! wait_for_status "Claude agent" "https://localhost:$AGENT_PORT/status" "$AGENT_PID" "$AGENT_LOG"; then
     kill "$VIEW_PID" 2>/dev/null || true
     kill "$AGENT_CODEX_PID" 2>/dev/null || true
     [ -n "$SCHEDULER_PID" ] && kill "$SCHEDULER_PID" 2>/dev/null || true
@@ -184,7 +184,7 @@ fi
 echo " ready"
 
 echo -n "Waiting for codex agent..."
-if ! wait_for_status "Codex agent" "http://localhost:$AGENT_CODEX_PORT/status" "$AGENT_CODEX_PID" "$AGENT_CODEX_LOG"; then
+if ! wait_for_status "Codex agent" "https://localhost:$AGENT_CODEX_PORT/status" "$AGENT_CODEX_PID" "$AGENT_CODEX_LOG"; then
     kill "$VIEW_PID" 2>/dev/null || true
     kill "$AGENT_PID" 2>/dev/null || true
     [ -n "$SCHEDULER_PID" ] && kill "$SCHEDULER_PID" 2>/dev/null || true
@@ -205,7 +205,7 @@ echo " ready"
 
 if [ -n "$SCHEDULER_PID" ]; then
     echo -n "Waiting for scheduler..."
-    if ! wait_for_status "Scheduler" "http://localhost:$SCHEDULER_PORT/status" "$SCHEDULER_PID" "$SCHEDULER_LOG"; then
+    if ! wait_for_status "Scheduler" "https://localhost:$SCHEDULER_PORT/status" "$SCHEDULER_PID" "$SCHEDULER_LOG"; then
         kill "$VIEW_PID" 2>/dev/null || true
         kill "$AGENT_PID" 2>/dev/null || true
         kill "$AGENT_CODEX_PID" 2>/dev/null || true
@@ -227,7 +227,7 @@ echo "  Discovery range: $DISCOVERY_START-$DISCOVERY_END"
 echo ""
 
 echo "Dashboard: https://localhost:$WEB_PORT/"
-echo "Internal API: http://localhost:$WEB_INTERNAL_PORT/ (scheduler/CLI routing)"
+echo "Internal API: https://localhost:$WEB_INTERNAL_PORT/ (scheduler/CLI routing)"
 echo ""
 echo "Logs:"
 echo "  View:          $PID_DIR/view-${MODE}.log"

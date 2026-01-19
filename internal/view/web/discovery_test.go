@@ -17,7 +17,7 @@ func TestDiscoveryAgentClassification(t *testing.T) {
 	t.Parallel()
 
 	// Create a mock agent server
-	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	agent := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/status" {
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"type":           "agent",
@@ -57,7 +57,7 @@ func TestDiscoveryDirectorClassification(t *testing.T) {
 	t.Parallel()
 
 	// Create a mock director server
-	director := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	director := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/status" {
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"type":           "director",
@@ -92,7 +92,7 @@ func TestDiscoveryFailureRemoval(t *testing.T) {
 
 	// Create a server that will be shut down
 	callCount := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
 		if callCount <= 1 {
 			json.NewEncoder(w).Encode(map[string]interface{}{
@@ -158,7 +158,7 @@ func TestDiscoveryExcludesSelf(t *testing.T) {
 	t.Parallel()
 
 	// Create mock server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"type":    "agent",
 			"version": "test",
@@ -193,21 +193,21 @@ func TestDiscoveryMultipleComponents(t *testing.T) {
 	t.Parallel()
 
 	// Create multiple servers
-	agent1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	agent1 := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"type": "agent", "state": "idle",
 		})
 	}))
 	defer agent1.Close()
 
-	agent2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	agent2 := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"type": "agent", "state": "working",
 		})
 	}))
 	defer agent2.Close()
 
-	director := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	director := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"type": "director", "state": "running",
 		})
@@ -267,7 +267,7 @@ func TestDiscoveryHelperWithJobs(t *testing.T) {
 	jobLastTaskID := ""
 
 	// Create a mock helper server that returns jobs
-	helper := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	helper := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/status" {
 			mu.Lock()
 			status := jobLastStatus
@@ -342,7 +342,7 @@ func TestDiscoveryHelperJobStatusUpdates(t *testing.T) {
 	jobStatus := "pending"
 	nextRunTime := time.Now().Add(5 * time.Minute)
 
-	helper := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	helper := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/status" {
 			mu.Lock()
 			status := jobStatus

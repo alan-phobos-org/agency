@@ -10,7 +10,8 @@ Deploying agents should feel like reliable infrastructure, not babysitting exper
 
 | Document | Purpose | Read When |
 |----------|---------|-----------|
-| [AGENTS.md](AGENTS.md) | Development workflow, quick reference | Always |
+| [AGENTS.md](AGENTS.md) | Quick reference, commands, workflows | Always |
+| [DEVELOPMENT.md](DEVELOPMENT.md) | Development workflow, iteration guide | Developing features |
 | [README.md](README.md) | Project overview, quick start | Getting started |
 | [docs/REFERENCE.md](docs/REFERENCE.md) | API specs, endpoints, config | Implementing API changes |
 | [docs/DESIGN.md](docs/DESIGN.md) | Architecture, patterns | Major refactoring |
@@ -22,6 +23,7 @@ Deploying agents should feel like reliable infrastructure, not babysitting exper
 | [docs/WORK_QUEUE_DESIGN.md](docs/WORK_QUEUE_DESIGN.md) | Task queue architecture | Implementing work queue |
 | [docs/PLAN.md](docs/PLAN.md) | Vision, phases, backlog | Planning work |
 | [docs/DEBUGGING_DEPLOYED.md](docs/DEBUGGING_DEPLOYED.md) | Remote system diagnostics | Debugging deployed systems |
+| [SMOKE_TEST_ROBUSTNESS.md](SMOKE_TEST_ROBUSTNESS.md) | Smoke test cleanup, build.sh refactor | Fixing test infrastructure |
 | [CHANGELOG.md](CHANGELOG.md) | Release history | Preparing releases |
 
 ## Quick Reference
@@ -33,11 +35,15 @@ Use `./build.sh` for all build/test/lint/release/deploy actions. Do not use Make
 | Command | Purpose |
 |---------|---------|
 | `./build.sh check` | **Pre-commit** (format + lint + test) |
+| `./build.sh quick-test` | **Fast iteration** (build + deploy-quick + smoke tests) |
 | `./build.sh build` | Build all binaries to bin/ |
 | `./build.sh test` | Unit tests only (<5s) |
-| `./build.sh test-all` | Unit + integration tests |
-| `./build.sh lint` | Format and lint |
-| `./build.sh deploy-local` | Build and run local deployment |
+| `./build.sh test-smoke` | E2E smoke tests (see [SMOKE_TEST_ROBUSTNESS.md](SMOKE_TEST_ROBUSTNESS.md) if stuck) |
+| `./build.sh deploy-local` | Full deployment with all tests |
+| `./build.sh deploy-local-quick` | Fast deployment (skips integration/system tests) |
+| `./build.sh stop-local` | Stop local deployment |
+
+See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed workflow examples.
 
 ### Environment Variables
 
@@ -73,10 +79,12 @@ From `deployment/ports.conf`:
 
 | Trigger | Action |
 |---------|--------|
+| **Making code changes** | `./build.sh quick-test` (fast iteration cycle) |
 | Before any commit | `./build.sh check` |
+| Testing deployment | See [DEVELOPMENT.md](DEVELOPMENT.md) for iteration workflows |
 | "what's next", "status" | `./build.sh status` → read `docs/PLAN.md` → summarize (10-15 lines) |
 | "prepare release" | `./build.sh prepare-release` → update CHANGELOG.md → `./build.sh release X.Y.Z` → push |
-| "deploy locally" | `./build.sh deploy-local` (uses AG_WEB_PASSWORD from .env) |
+| Full deployment | `./build.sh deploy-local` (all tests, uses AG_WEB_PASSWORD from .env) |
 
 ---
 
@@ -177,6 +185,7 @@ For detailed endpoint specs, see [docs/REFERENCE.md](docs/REFERENCE.md).
 - Single-task agent (returns 409 if busy) - see [docs/WORK_QUEUE_DESIGN.md](docs/WORK_QUEUE_DESIGN.md) for planned queue
 - Task session data stored in memory (not persisted across web view restarts)
 - Tasks can appear stuck in "working" state - see [docs/TASK_STATE_SYNC_DESIGN.md](docs/TASK_STATE_SYNC_DESIGN.md)
+- Smoke tests leave orphaned processes on failure - see [SMOKE_TEST_ROBUSTNESS.md](SMOKE_TEST_ROBUSTNESS.md) for cleanup plan
 
 ---
 
@@ -202,6 +211,12 @@ The system has three state layers that must stay synchronized:
 ### Design Principle
 
 When in doubt, query the Agent. The Web's `/api/task/{id}` handler falls back to `/history/{id}` when task not found - this pattern should be used consistently.
+
+### HTTP Configuration
+
+**CORS**: Agents serve CORS headers (`Access-Control-Allow-Origin: *`) for cross-origin requests from web view. See `internal/agent/agent.go:corsMiddleware`.
+
+**TLS**: Agents use self-signed certs. Internal web API (port 8080/18080) uses plain HTTP. Director URL in scheduler config must match protocol.
 
 ---
 

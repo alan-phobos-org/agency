@@ -23,7 +23,7 @@ func TestIntegrationSchedulerStartStop(t *testing.T) {
 	port := testutil.AllocateTestPort(t)
 	cfg := &Config{
 		Port:     port,
-		AgentURL: "http://localhost:9000",
+		AgentURL: "https://localhost:9000",
 		Jobs: []Job{
 			{
 				Name:     "test-job",
@@ -42,11 +42,11 @@ func TestIntegrationSchedulerStartStop(t *testing.T) {
 	}()
 
 	// Wait for scheduler to be ready
-	schedulerURL := fmt.Sprintf("http://localhost:%d", port)
+	schedulerURL := fmt.Sprintf("https://localhost:%d", port)
 	testutil.WaitForHealthy(t, schedulerURL+"/status", 10*time.Second)
 
 	// Verify status endpoint works
-	resp, err := http.Get(schedulerURL + "/status")
+	resp, err := testutil.HTTPClient(5 * time.Second).Get(schedulerURL + "/status")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -215,7 +215,7 @@ func TestIntegrationSchedulerShutdownEndpoint(t *testing.T) {
 	port := testutil.AllocateTestPort(t)
 	cfg := &Config{
 		Port:     port,
-		AgentURL: "http://localhost:9000",
+		AgentURL: "https://localhost:9000",
 		Jobs: []Job{
 			{
 				Name:     "test-job",
@@ -232,11 +232,11 @@ func TestIntegrationSchedulerShutdownEndpoint(t *testing.T) {
 		errCh <- s.Start()
 	}()
 
-	schedulerURL := fmt.Sprintf("http://localhost:%d", port)
+	schedulerURL := fmt.Sprintf("https://localhost:%d", port)
 	testutil.WaitForHealthy(t, schedulerURL+"/status", 10*time.Second)
 
 	// Call shutdown endpoint
-	resp, err := http.Post(schedulerURL+"/shutdown", "application/json", nil)
+	resp, err := testutil.HTTPClient(5*time.Second).Post(schedulerURL+"/shutdown", "application/json", nil)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
@@ -433,11 +433,11 @@ func TestIntegrationSchedulerStatusIncludesDirectorURL(t *testing.T) {
 		errCh <- s.Start()
 	}()
 
-	schedulerURL := fmt.Sprintf("http://localhost:%d", port)
+	schedulerURL := fmt.Sprintf("https://localhost:%d", port)
 	testutil.WaitForHealthy(t, schedulerURL+"/status", 10*time.Second)
 
 	// Verify status endpoint includes director_url
-	resp, err := http.Get(schedulerURL + "/status")
+	resp, err := testutil.HTTPClient(5 * time.Second).Get(schedulerURL + "/status")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 

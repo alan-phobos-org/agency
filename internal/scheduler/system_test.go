@@ -71,7 +71,7 @@ func TestSystemSchedulerBinary(t *testing.T) {
 	port := testutil.AllocateTestPort(t)
 	configContent := fmt.Sprintf(`
 port: %d
-agent_url: http://localhost:9000
+agent_url: https://localhost:9000
 jobs:
   - name: test-job
     schedule: "0 1 * * *"
@@ -93,12 +93,12 @@ jobs:
 	}()
 
 	// Wait for scheduler to be ready
-	schedulerURL := fmt.Sprintf("http://localhost:%d", port)
+	schedulerURL := fmt.Sprintf("https://localhost:%d", port)
 	testutil.WaitForHealthy(t, schedulerURL+"/status", 10*time.Second)
 	t.Log("Scheduler is healthy")
 
 	// Verify status
-	resp, err := http.Get(schedulerURL + "/status")
+	resp, err := testutil.HTTPClient(5 * time.Second).Get(schedulerURL + "/status")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -148,15 +148,26 @@ func TestSystemSchedulerWithMockAgent(t *testing.T) {
 		}),
 	}
 
-	// Start mock agent
-	agentPort := testutil.AllocateTestPort(t)
+	// Start mock agent (HTTP only for testing - real agents use HTTPS)
+	agentPort := testutil.AllocateTestPortN(t, 0)
 	mockAgent.Addr = fmt.Sprintf(":%d", agentPort)
 	go mockAgent.ListenAndServe()
 	defer mockAgent.Shutdown(context.Background())
 
 	// Wait for mock agent
 	agentURL := fmt.Sprintf("http://localhost:%d", agentPort)
-	testutil.WaitForHealthy(t, agentURL+"/status", 5*time.Second)
+	client := testutil.HTTPClient(500 * time.Millisecond)
+	testutil.Eventually(t, 5*time.Second, func() bool {
+		resp, err := client.Get(agentURL + "/status")
+		if err == nil && resp.StatusCode == http.StatusOK {
+			resp.Body.Close()
+			return true
+		}
+		if resp != nil {
+			resp.Body.Close()
+		}
+		return false
+	})
 
 	// Create scheduler config with job that runs every minute
 	schedulerPort := testutil.AllocateTestPortN(t, 1)
@@ -185,12 +196,12 @@ jobs:
 		}
 	}()
 
-	schedulerURL := fmt.Sprintf("http://localhost:%d", schedulerPort)
+	schedulerURL := fmt.Sprintf("https://localhost:%d", schedulerPort)
 	testutil.WaitForHealthy(t, schedulerURL+"/status", 10*time.Second)
 
 	// Trigger job manually via API (avoids 60s wait for cron)
 	t.Log("Triggering job via /trigger endpoint...")
-	resp, err := http.Post(schedulerURL+"/trigger/frequent-job", "application/json", nil)
+	resp, err := testutil.HTTPClient(5*time.Second).Post(schedulerURL+"/trigger/frequent-job", "application/json", nil)
 	require.NoError(t, err)
 	resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -202,7 +213,7 @@ jobs:
 	t.Logf("Job executed %d time(s)", count)
 
 	// Verify status shows job info
-	statusResp, err := http.Get(schedulerURL + "/status")
+	statusResp, err := testutil.HTTPClient(5 * time.Second).Get(schedulerURL + "/status")
 	require.NoError(t, err)
 	defer statusResp.Body.Close()
 
@@ -221,7 +232,7 @@ func TestSystemSchedulerGracefulShutdown(t *testing.T) {
 	port := testutil.AllocateTestPort(t)
 	configContent := fmt.Sprintf(`
 port: %d
-agent_url: http://localhost:9000
+agent_url: https://localhost:9000
 jobs:
   - name: test-job
     schedule: "0 1 * * *"
@@ -234,7 +245,7 @@ jobs:
 
 	cmd := startScheduler(t, binDir, configFile, 0)
 
-	schedulerURL := fmt.Sprintf("http://localhost:%d", port)
+	schedulerURL := fmt.Sprintf("https://localhost:%d", port)
 	testutil.WaitForHealthy(t, schedulerURL+"/status", 10*time.Second)
 
 	// Send SIGTERM
@@ -290,7 +301,7 @@ func TestSystemSchedulerVersionEmbedding(t *testing.T) {
 	port := testutil.AllocateTestPort(t)
 	configContent := fmt.Sprintf(`
 port: %d
-agent_url: http://localhost:9000
+agent_url: https://localhost:9000
 jobs:
   - name: test-job
     schedule: "0 1 * * *"
@@ -309,10 +320,10 @@ jobs:
 		}
 	}()
 
-	schedulerURL := fmt.Sprintf("http://localhost:%d", port)
+	schedulerURL := fmt.Sprintf("https://localhost:%d", port)
 	testutil.WaitForHealthy(t, schedulerURL+"/status", 10*time.Second)
 
-	resp, err := http.Get(schedulerURL + "/status")
+	resp, err := testutil.HTTPClient(5 * time.Second).Get(schedulerURL + "/status")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -330,7 +341,7 @@ func TestSystemSchedulerMultipleJobs(t *testing.T) {
 	port := testutil.AllocateTestPort(t)
 	configContent := fmt.Sprintf(`
 port: %d
-agent_url: http://localhost:9000
+agent_url: https://localhost:9000
 jobs:
   - name: daily-maintenance
     schedule: "0 1 * * *"
@@ -358,10 +369,10 @@ jobs:
 		}
 	}()
 
-	schedulerURL := fmt.Sprintf("http://localhost:%d", port)
+	schedulerURL := fmt.Sprintf("https://localhost:%d", port)
 	testutil.WaitForHealthy(t, schedulerURL+"/status", 10*time.Second)
 
-	resp, err := http.Get(schedulerURL + "/status")
+	resp, err := testutil.HTTPClient(5 * time.Second).Get(schedulerURL + "/status")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -390,7 +401,7 @@ func TestSystemSchedulerPortOverride(t *testing.T) {
 	// Config with port 9100
 	configContent := `
 port: 9100
-agent_url: http://localhost:9000
+agent_url: https://localhost:9000
 jobs:
   - name: test-job
     schedule: "0 1 * * *"
@@ -411,16 +422,16 @@ jobs:
 	}()
 
 	// Should be on override port, not config port
-	schedulerURL := fmt.Sprintf("http://localhost:%d", overridePort)
+	schedulerURL := fmt.Sprintf("https://localhost:%d", overridePort)
 	testutil.WaitForHealthy(t, schedulerURL+"/status", 10*time.Second)
 
 	// Config port should not be listening
 	client := &http.Client{Timeout: 500 * time.Millisecond}
-	_, err = client.Get("http://localhost:9100/status")
+	_, err = client.Get("https://localhost:9100/status")
 	// This may or may not error depending on what's listening on 9100
 	// The key point is that our scheduler is on overridePort
 
-	resp, err := http.Get(schedulerURL + "/status")
+	resp, err := testutil.HTTPClient(5 * time.Second).Get(schedulerURL + "/status")
 	require.NoError(t, err)
 	resp.Body.Close()
 	t.Logf("Scheduler running on override port %d", overridePort)
@@ -448,13 +459,25 @@ func TestSystemSchedulerAgentBusy(t *testing.T) {
 		}),
 	}
 
-	agentPort := testutil.AllocateTestPort(t)
+	agentPort := testutil.AllocateTestPortN(t, 0)
 	mockAgent.Addr = fmt.Sprintf(":%d", agentPort)
 	go mockAgent.ListenAndServe()
 	defer mockAgent.Shutdown(context.Background())
 
+	// Wait for mock agent (HTTP only for testing)
 	agentURL := fmt.Sprintf("http://localhost:%d", agentPort)
-	testutil.WaitForHealthy(t, agentURL+"/status", 5*time.Second)
+	client := testutil.HTTPClient(500 * time.Millisecond)
+	testutil.Eventually(t, 5*time.Second, func() bool {
+		resp, err := client.Get(agentURL + "/status")
+		if err == nil && resp.StatusCode == http.StatusOK {
+			resp.Body.Close()
+			return true
+		}
+		if resp != nil {
+			resp.Body.Close()
+		}
+		return false
+	})
 
 	schedulerPort := testutil.AllocateTestPortN(t, 1)
 	configContent := fmt.Sprintf(`
@@ -478,12 +501,12 @@ jobs:
 		}
 	}()
 
-	schedulerURL := fmt.Sprintf("http://localhost:%d", schedulerPort)
+	schedulerURL := fmt.Sprintf("https://localhost:%d", schedulerPort)
 	testutil.WaitForHealthy(t, schedulerURL+"/status", 10*time.Second)
 
 	// Trigger job manually via API (avoids 60s wait for cron)
 	t.Log("Triggering job via /trigger endpoint...")
-	resp, err := http.Post(schedulerURL+"/trigger/busy-test", "application/json", nil)
+	resp, err := testutil.HTTPClient(5*time.Second).Post(schedulerURL+"/trigger/busy-test", "application/json", nil)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -502,7 +525,7 @@ func TestSystemSchedulerShutdownEndpoint(t *testing.T) {
 	port := testutil.AllocateTestPort(t)
 	configContent := fmt.Sprintf(`
 port: %d
-agent_url: http://localhost:9000
+agent_url: https://localhost:9000
 jobs:
   - name: test-job
     schedule: "0 1 * * *"
@@ -515,11 +538,11 @@ jobs:
 
 	cmd := startScheduler(t, binDir, configFile, 0)
 
-	schedulerURL := fmt.Sprintf("http://localhost:%d", port)
+	schedulerURL := fmt.Sprintf("https://localhost:%d", port)
 	testutil.WaitForHealthy(t, schedulerURL+"/status", 10*time.Second)
 
 	// Trigger shutdown via HTTP endpoint
-	resp, err := http.Post(schedulerURL+"/shutdown", "application/json", bytes.NewReader([]byte("{}")))
+	resp, err := testutil.HTTPClient(5*time.Second).Post(schedulerURL+"/shutdown", "application/json", bytes.NewReader([]byte("{}")))
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)

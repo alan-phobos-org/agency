@@ -2,16 +2,34 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
 var version = "dev"
+
+// createHTTPClient creates an HTTP client with TLS skip for localhost HTTPS
+func createHTTPClient(timeout time.Duration, url string) *http.Client {
+	client := &http.Client{Timeout: timeout}
+
+	// Skip TLS verification for localhost HTTPS (self-signed certs)
+	if strings.HasPrefix(url, "https://localhost") || strings.HasPrefix(url, "https://127.0.0.1") {
+		client.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		}
+	}
+
+	return client
+}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -80,7 +98,7 @@ func taskCmd(args []string) {
 	}
 	prompt := remaining[0]
 
-	client := &http.Client{Timeout: 5 * time.Minute}
+	client := createHTTPClient(5*time.Minute, *agentURL)
 
 	// Submit task
 	taskReq := map[string]interface{}{
@@ -205,7 +223,7 @@ func statusCmd(args []string) {
 		*url = remaining[0]
 	}
 
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := createHTTPClient(5*time.Second, *url)
 	resp, err := client.Get(*url + "/status")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -231,13 +249,12 @@ func discoverCmd(args []string) {
 	portEnd := fs.Int("port-end", 9009, "End of port range")
 	fs.Parse(args)
 
-	client := &http.Client{Timeout: 500 * time.Millisecond}
-
 	fmt.Printf("Scanning ports %d-%d...\n\n", *portStart, *portEnd)
 
 	found := 0
 	for port := *portStart; port <= *portEnd; port++ {
-		url := fmt.Sprintf("http://localhost:%d/status", port)
+		url := fmt.Sprintf("https://localhost:%d/status", port)
+		client := createHTTPClient(500*time.Millisecond, url)
 		resp, err := client.Get(url)
 		if err != nil {
 			continue
@@ -290,7 +307,7 @@ func queueCmd(args []string) {
 	}
 	prompt := remaining[0]
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := createHTTPClient(30*time.Second, *directorURL)
 
 	// Submit to queue
 	queueReq := map[string]interface{}{
@@ -347,7 +364,7 @@ func queueStatusCmd(args []string) {
 	directorURL := fs.String("director", "http://localhost:8080", "Director URL")
 	fs.Parse(args)
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := createHTTPClient(10*time.Second, *directorURL)
 
 	// Check if specific queue ID provided
 	remaining := fs.Args()
@@ -437,7 +454,7 @@ func queueCancelCmd(args []string) {
 	}
 	queueID := remaining[0]
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := createHTTPClient(10*time.Second, *directorURL)
 
 	req, _ := http.NewRequest(http.MethodPost, *directorURL+"/api/queue/"+queueID+"/cancel", nil)
 	resp, err := client.Do(req)

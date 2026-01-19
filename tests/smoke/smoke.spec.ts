@@ -10,6 +10,16 @@ if (!fs.existsSync(SCREENSHOT_DIR)) {
   fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
 }
 
+// Console error tracking
+interface ConsoleMessage {
+  type: string;
+  text: string;
+  location: string;
+}
+
+const consoleErrors: ConsoleMessage[] = [];
+const consoleWarnings: ConsoleMessage[] = [];
+
 async function screenshot(page: Page, name: string): Promise<void> {
   const filepath = path.join(SCREENSHOT_DIR, `${name}.png`);
   await page.screenshot({ path: filepath, fullPage: true });
@@ -57,6 +67,77 @@ async function validateSessionTitle(sessionCard: Locator, expectedContent?: stri
 }
 
 test.describe.serial('Agency Smoke Tests', () => {
+  // Clear console errors before each test
+  test.beforeEach(async ({ page }) => {
+    consoleErrors.length = 0;
+    consoleWarnings.length = 0;
+
+    // Listen for console messages
+    page.on('console', msg => {
+      const type = msg.type();
+      const text = msg.text();
+      const location = msg.location();
+
+      if (type === 'error') {
+        consoleErrors.push({
+          type,
+          text,
+          location: `${location.url}:${location.lineNumber}`
+        });
+      } else if (type === 'warning') {
+        consoleWarnings.push({
+          type,
+          text,
+          location: `${location.url}:${location.lineNumber}`
+        });
+      }
+    });
+
+    // Listen for page errors (uncaught exceptions)
+    page.on('pageerror', error => {
+      consoleErrors.push({
+        type: 'pageerror',
+        text: error.message,
+        location: error.stack || 'unknown'
+      });
+    });
+  });
+
+  // Check for console errors after each test
+  test.afterEach(async ({ page }, testInfo) => {
+    // Log any console errors/warnings found
+    if (consoleErrors.length > 0) {
+      console.error('\n❌ Console Errors detected:');
+      consoleErrors.forEach((err, i) => {
+        console.error(`  ${i + 1}. [${err.type}] ${err.text}`);
+        console.error(`     at ${err.location}`);
+      });
+    }
+
+    if (consoleWarnings.length > 0) {
+      console.warn('\n⚠️  Console Warnings detected:');
+      consoleWarnings.forEach((warn, i) => {
+        console.warn(`  ${i + 1}. [${warn.type}] ${warn.text}`);
+        console.warn(`     at ${warn.location}`);
+      });
+    }
+
+    // Fail the test if any console errors or warnings were detected
+    if (consoleErrors.length > 0 || consoleWarnings.length > 0) {
+      const errorCount = consoleErrors.length;
+      const warningCount = consoleWarnings.length;
+      throw new Error(
+        `Browser console had ${errorCount} error(s) and ${warningCount} warning(s). ` +
+        `Tests must not generate console errors or warnings.`
+      );
+    }
+  });
+
+  // Final cleanup after all tests
+  test.afterAll(async () => {
+    console.log('\nSmoke tests completed - browser cleanup handled by Playwright');
+  });
+
   test('1. Login', async ({ page }) => {
     // Navigate to root - should redirect to login
     await page.goto('/');

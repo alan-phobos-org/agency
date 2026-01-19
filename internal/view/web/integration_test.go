@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"phobos.org.uk/agency/internal/testutil"
 )
 
 // TestIntegrationDiscoveryAndAPI tests the full flow of discovery + API endpoints
@@ -335,7 +336,7 @@ func TestIntegrationDiscoveryPolling(t *testing.T) {
 	// Create mock agent that changes state
 	stateIdx := 0
 	states := []string{"idle", "working", "completed", "idle"}
-	mockAgent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mockAgent := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		state := states[stateIdx%len(states)]
 		stateIdx++
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -1366,7 +1367,7 @@ func TestIntegrationSessionDetailHistoryFetch(t *testing.T) {
 
 	t.Run("agent history endpoint is accessible", func(t *testing.T) {
 		// Directly fetch from agent's history endpoint (simulating what JS does)
-		resp, err := http.Get(mockAgent.URL + "/history/task-history-123")
+		resp, err := testutil.HTTPClient(5 * time.Second).Get(mockAgent.URL + "/history/task-history-123")
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
@@ -1408,7 +1409,7 @@ func TestIntegrationSessionDetailHistoryFetch(t *testing.T) {
 
 		// Both task histories should be accessible from agent
 		for _, taskID := range []string{"task-history-123", "task-history-456"} {
-			resp, err := http.Get(mockAgent.URL + "/history/" + taskID)
+			resp, err := testutil.HTTPClient(5 * time.Second).Get(mockAgent.URL + "/history/" + taskID)
 			require.NoError(t, err)
 			resp.Body.Close()
 			require.Equal(t, http.StatusOK, resp.StatusCode)

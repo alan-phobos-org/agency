@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -80,6 +81,11 @@ func NewDiscovery(cfg DiscoveryConfig) *Discovery {
 		components:      make(map[string]*ComponentStatus),
 		client: &http.Client{
 			Timeout: 500 * time.Millisecond,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true, // Accept self-signed certificates for localhost
+				},
+			},
 		},
 		doneCh: make(chan struct{}),
 	}
@@ -143,7 +149,7 @@ func (d *Discovery) scan() {
 
 // checkPort queries a single port for /status
 func (d *Discovery) checkPort(port int) {
-	url := fmt.Sprintf("http://localhost:%d", port)
+	url := fmt.Sprintf("https://localhost:%d", port)
 	statusURL := url + "/status"
 
 	resp, err := d.client.Get(statusURL)

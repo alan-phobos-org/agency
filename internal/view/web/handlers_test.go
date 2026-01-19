@@ -52,7 +52,7 @@ func TestHandleAgents(t *testing.T) {
 	t.Parallel()
 
 	// Setup mock agent
-	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	agent := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"type":       "agent",
 			"interfaces": []string{"statusable", "taskable"},
@@ -105,7 +105,7 @@ func TestHandleDirectors(t *testing.T) {
 	t.Parallel()
 
 	// Setup mock director
-	director := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	director := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"type":       "director",
 			"interfaces": []string{"statusable", "observable", "taskable"},
@@ -196,7 +196,7 @@ func TestHandleTaskSubmitAgentBusy(t *testing.T) {
 	t.Parallel()
 
 	// Setup mock agent in working state
-	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	agent := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"type":       "agent",
 			"interfaces": []string{"statusable", "taskable"},
@@ -233,7 +233,7 @@ func TestHandleTaskSubmitSuccess(t *testing.T) {
 
 	// Setup mock agent that accepts tasks
 	taskReceived := false
-	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	agent := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/status":
 			json.NewEncoder(w).Encode(map[string]interface{}{
@@ -296,7 +296,7 @@ func TestHandleTaskStatusForwarding(t *testing.T) {
 	t.Parallel()
 
 	// Setup mock agent
-	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	agent := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/task/") {
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"task_id": "task-123",
@@ -376,7 +376,7 @@ func TestHandleDashboardData(t *testing.T) {
 	t.Parallel()
 
 	// Create mock agent
-	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	agent := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"type":       "agent",
 			"interfaces": []string{"statusable", "taskable"},
@@ -387,7 +387,7 @@ func TestHandleDashboardData(t *testing.T) {
 	defer agent.Close()
 
 	// Create mock director
-	director := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	director := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"type":       "director",
 			"interfaces": []string{"statusable", "observable", "taskable"},
@@ -653,7 +653,7 @@ func TestHandleTaskStatusFallbackToHistory(t *testing.T) {
 	t.Parallel()
 
 	// Setup mock agent that returns 404 for /task but has history
-	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	agent := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/task/"):
 			// Task not found (moved to history)
@@ -694,7 +694,7 @@ func TestHandleTaskStatusFallbackUpdatesSessionStore(t *testing.T) {
 	t.Parallel()
 
 	// Setup mock agent that returns 404 for /task but has history
-	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	agent := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/task/"):
 			w.WriteHeader(http.StatusNotFound)
@@ -733,7 +733,7 @@ func TestHandleTaskStatusNotFoundInHistoryEither(t *testing.T) {
 	t.Parallel()
 
 	// Setup mock agent that returns 404 for both /task and /history
-	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	agent := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error":   "not_found",
