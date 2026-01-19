@@ -91,6 +91,7 @@ func TestIntegrationDiscoveryAndAPI(t *testing.T) {
 		PortStart:       agentPort,
 		PortEnd:         directorPort,
 		RefreshInterval: 100 * time.Millisecond,
+		QueueDir:        filepath.Join(tmpDir, "queue"),
 		TLS: TLSConfig{
 			CertFile:     certPath,
 			KeyFile:      keyPath,
@@ -391,6 +392,7 @@ func TestIntegrationRateLimiting(t *testing.T) {
 		PortStart:       59000, // Use high ports to avoid conflicts
 		PortEnd:         59000,
 		RefreshInterval: time.Hour, // Disable polling
+		QueueDir:        filepath.Join(tmpDir, "queue"),
 		TLS: TLSConfig{
 			CertFile:     certPath,
 			KeyFile:      keyPath,
@@ -463,6 +465,7 @@ func TestIntegrationAccessLogging(t *testing.T) {
 		PortEnd:         59001,
 		RefreshInterval: time.Hour,
 		AccessLogPath:   accessLogPath,
+		QueueDir:        filepath.Join(tmpDir, "queue"),
 		TLS: TLSConfig{
 			CertFile:     certPath,
 			KeyFile:      keyPath,
@@ -582,6 +585,7 @@ func TestIntegrationMultiBrowserSession(t *testing.T) {
 		PortStart:       59010,
 		PortEnd:         59010,
 		RefreshInterval: time.Hour,
+		QueueDir:        filepath.Join(tmpDir, "queue"),
 		TLS: TLSConfig{
 			CertFile:     certPath,
 			KeyFile:      keyPath,
@@ -746,6 +750,7 @@ func TestIntegrationMultiBrowserSessionRace(t *testing.T) {
 		PortStart:       59011,
 		PortEnd:         59011,
 		RefreshInterval: time.Hour,
+		QueueDir:        filepath.Join(tmpDir, "queue"),
 		TLS: TLSConfig{
 			CertFile:     certPath,
 			KeyFile:      keyPath,
@@ -920,6 +925,7 @@ func TestIntegrationSessionBouncing(t *testing.T) {
 		PortStart:       59012,
 		PortEnd:         59012,
 		RefreshInterval: time.Hour,
+		QueueDir:        filepath.Join(tmpDir, "queue"),
 		TLS: TLSConfig{
 			CertFile:     filepath.Join(tmpDir, "cert.pem"),
 			KeyFile:      filepath.Join(tmpDir, "key.pem"),
@@ -1083,6 +1089,7 @@ func TestIntegrationSessionAPI(t *testing.T) {
 		PortStart:       59002,
 		PortEnd:         59002,
 		RefreshInterval: time.Hour,
+		QueueDir:        filepath.Join(tmpDir, "queue"),
 		TLS: TLSConfig{
 			CertFile:     certPath,
 			KeyFile:      keyPath,
@@ -1292,6 +1299,7 @@ func TestIntegrationSessionDetailHistoryFetch(t *testing.T) {
 		PortStart:       59030,
 		PortEnd:         59030,
 		RefreshInterval: time.Hour,
+		QueueDir:        filepath.Join(tmpDir, "queue"),
 		TLS: TLSConfig{
 			CertFile:     filepath.Join(tmpDir, "cert.pem"),
 			KeyFile:      filepath.Join(tmpDir, "key.pem"),
@@ -1440,6 +1448,7 @@ func TestIntegrationConsolidatedDashboard(t *testing.T) {
 		PortStart:       59020,
 		PortEnd:         59020,
 		RefreshInterval: time.Hour,
+		QueueDir:        filepath.Join(tmpDir, "queue"),
 		TLS: TLSConfig{
 			CertFile:     filepath.Join(tmpDir, "cert.pem"),
 			KeyFile:      filepath.Join(tmpDir, "key.pem"),
@@ -1645,6 +1654,7 @@ func TestIntegrationTaskCompletionRaceCondition(t *testing.T) {
 		PortStart:       59040,
 		PortEnd:         59040,
 		RefreshInterval: time.Hour,
+		QueueDir:        filepath.Join(tmpDir, "queue"),
 		TLS: TLSConfig{
 			CertFile:     filepath.Join(tmpDir, "cert.pem"),
 			KeyFile:      filepath.Join(tmpDir, "key.pem"),
@@ -1809,6 +1819,7 @@ func TestIntegrationTaskCompletionAutoUpdate(t *testing.T) {
 		PortStart:       59050,
 		PortEnd:         59050,
 		RefreshInterval: time.Hour,
+		QueueDir:        filepath.Join(tmpDir, "queue"),
 		TLS: TLSConfig{
 			CertFile:     filepath.Join(tmpDir, "cert.pem"),
 			KeyFile:      filepath.Join(tmpDir, "key.pem"),
@@ -1938,6 +1949,7 @@ func TestIntegrationTaskStatusWithoutSessionID(t *testing.T) {
 		PortStart:       59060,
 		PortEnd:         59060,
 		RefreshInterval: time.Hour,
+		QueueDir:        filepath.Join(tmpDir, "queue"),
 		TLS: TLSConfig{
 			CertFile:     filepath.Join(tmpDir, "cert.pem"),
 			KeyFile:      filepath.Join(tmpDir, "key.pem"),

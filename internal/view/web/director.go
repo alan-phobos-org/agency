@@ -26,6 +26,7 @@ type Config struct {
 	TLS             TLSConfig
 	AccessLogPath   string // Path for access log file (empty = no logging)
 	ContextsPath    string // Path to contexts YAML file (optional)
+	QueueDir        string // Path to work queue directory (empty = default)
 }
 
 // Director is the web director server
@@ -103,7 +104,10 @@ func New(cfg *Config, version string) (*Director, error) {
 	}
 
 	// Create work queue
-	queueDir := DefaultQueuePath()
+	queueDir := cfg.QueueDir
+	if queueDir == "" {
+		queueDir = DefaultQueuePath()
+	}
 	queue, err := NewWorkQueue(QueueConfig{
 		Dir:             queueDir,
 		MaxSize:         DefaultMaxSize,

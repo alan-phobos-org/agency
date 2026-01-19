@@ -1000,7 +1000,6 @@ func extractResultFromStream(output []byte) string {
 	return lastText
 }
 
-
 // saveTaskHistory saves a completed task to the history store.
 func (a *Agent) saveTaskHistory(task *Task, rawOutput []byte) {
 	if a.history == nil {
