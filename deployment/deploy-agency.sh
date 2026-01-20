@@ -80,7 +80,7 @@ cd "$PROJECT_ROOT"
 GOOS=linux GOARCH=amd64 ./build.sh build
 
 # Verify binaries exist
-for bin in ag-view-web ag-agent-claude ag-scheduler; do
+for bin in ag-view-web ag-agent-claude ag-agent-codex ag-scheduler; do
     if [ ! -f "$PROJECT_ROOT/bin/$bin" ]; then
         echo "ERROR: Binary $bin not found"
         exit 1
@@ -94,7 +94,7 @@ fi
 
 # Create remote directory structure
 echo "Creating remote directory..."
-ssh $SSH_OPTS "$REMOTE_HOST" "mkdir -p $REMOTE_DIR/bin $REMOTE_DIR/deployment $REMOTE_DIR/configs"
+ssh $SSH_OPTS "$REMOTE_HOST" "mkdir -p $REMOTE_DIR/bin $REMOTE_DIR/deployment $REMOTE_DIR/configs $REMOTE_DIR/prompts"
 
 # Stop running services before copying (binaries can't be overwritten while running)
 echo "Stopping existing services..."
@@ -105,6 +105,7 @@ echo "Copying binaries..."
 scp $SCP_OPTS \
     "$PROJECT_ROOT/bin/ag-view-web" \
     "$PROJECT_ROOT/bin/ag-agent-claude" \
+    "$PROJECT_ROOT/bin/ag-agent-codex" \
     "$PROJECT_ROOT/bin/ag-scheduler" \
     "$REMOTE_HOST:$REMOTE_DIR/bin/"
 
@@ -121,6 +122,13 @@ if [ -n "$SCHEDULER_CONFIG" ] && [ -f "$SCHEDULER_CONFIG" ]; then
     sed -e "s|director_url: http://localhost:[0-9]*|director_url: http://localhost:$WEB_INTERNAL_PORT|" \
         -e "s|agent_url: http://localhost:[0-9]*|agent_url: http://localhost:$AGENT_PORT|" \
         "$SCHEDULER_CONFIG" | ssh $SSH_OPTS "$REMOTE_HOST" "cat > $REMOTE_DIR/configs/scheduler.yaml"
+fi
+
+# Copy prompts
+if [ -d "$PROJECT_ROOT/prompts" ]; then
+    echo "Copying agency prompts..."
+    scp $SCP_OPTS "$PROJECT_ROOT/prompts/"*-prod.md "$REMOTE_HOST:$REMOTE_DIR/prompts/" 2>/dev/null || \
+        echo "  (No production prompts found, skipping)"
 fi
 
 # Copy deployment scripts
@@ -148,10 +156,12 @@ PID_FILE="\$AGENCY_DIR/agency.pids"
 WEB_PORT=$WEB_PORT
 WEB_INTERNAL_PORT=$WEB_INTERNAL_PORT
 AGENT_PORT=$AGENT_PORT
+AGENT_CODEX_PORT=$AGENT_CODEX_PORT
 SCHEDULER_PORT=$SCHEDULER_PORT
 DISCOVERY_START=$DISCOVERY_START
 DISCOVERY_END=$DISCOVERY_END
 SCHEDULER_CONFIG="\$AGENCY_DIR/configs/scheduler.yaml"
+AGENCY_PROMPTS_DIR="\$AGENCY_DIR/prompts"
 
 # Load env vars from .env if not set
 if [ -f "\$AGENCY_DIR/.env" ]; then
@@ -173,6 +183,11 @@ if [ -f "\$AGENCY_DIR/.env" ]; then
     fi
 fi
 
+# Set prompts directory if it exists
+if [ -d "\$AGENCY_PROMPTS_DIR" ]; then
+    export AGENCY_PROMPTS_DIR
+fi
+
 # Check if already running
 if [ -f "\$PID_FILE" ]; then
     echo "Agency appears to be running. Stop it first."
@@ -189,6 +204,11 @@ echo "Starting claude agent on port \$AGENT_PORT..."
 "\$AGENCY_DIR/bin/ag-agent-claude" -port "\$AGENT_PORT" > "\$AGENCY_DIR/agent.log" 2>&1 &
 AGENT_PID=\$!
 
+# Start codex agent
+echo "Starting codex agent on port \$AGENT_CODEX_PORT..."
+"\$AGENCY_DIR/bin/ag-agent-codex" -port "\$AGENT_CODEX_PORT" > "\$AGENCY_DIR/agent-codex.log" 2>&1 &
+AGENT_CODEX_PID=\$!
+
 # Start scheduler (optional)
 SCHEDULER_PID=""
 if [ -f "\$SCHEDULER_CONFIG" ]; then
@@ -200,6 +220,7 @@ fi
 # Save PIDs
 echo "\$WEB_PID" > "\$PID_FILE"
 echo "\$AGENT_PID" >> "\$PID_FILE"
+echo "\$AGENT_CODEX_PID" >> "\$PID_FILE"
 if [ -n "\$SCHEDULER_PID" ]; then
     echo "\$SCHEDULER_PID" >> "\$PID_FILE"
 fi
@@ -215,8 +236,18 @@ if ! kill -0 "\$WEB_PID" 2>/dev/null; then
 fi
 
 if ! kill -0 "\$AGENT_PID" 2>/dev/null; then
-    echo "ERROR: Agent failed to start. Check agent.log"
+    echo "ERROR: Claude agent failed to start. Check agent.log"
     kill "\$WEB_PID" 2>/dev/null || true
+    kill "\$AGENT_CODEX_PID" 2>/dev/null || true
+    [ -n "\$SCHEDULER_PID" ] && kill "\$SCHEDULER_PID" 2>/dev/null || true
+    rm -f "\$PID_FILE"
+    exit 1
+fi
+
+if ! kill -0 "\$AGENT_CODEX_PID" 2>/dev/null; then
+    echo "ERROR: Codex agent failed to start. Check agent-codex.log"
+    kill "\$WEB_PID" 2>/dev/null || true
+    kill "\$AGENT_PID" 2>/dev/null || true
     [ -n "\$SCHEDULER_PID" ] && kill "\$SCHEDULER_PID" 2>/dev/null || true
     rm -f "\$PID_FILE"
     exit 1
@@ -226,6 +257,7 @@ if [ -n "\$SCHEDULER_PID" ] && ! kill -0 "\$SCHEDULER_PID" 2>/dev/null; then
     echo "ERROR: Scheduler failed to start. Check scheduler.log"
     kill "\$WEB_PID" 2>/dev/null || true
     kill "\$AGENT_PID" 2>/dev/null || true
+    kill "\$AGENT_CODEX_PID" 2>/dev/null || true
     rm -f "\$PID_FILE"
     exit 1
 fi
@@ -233,7 +265,8 @@ fi
 echo ""
 echo "Agency started!"
 echo "  Web View PID: \$WEB_PID (HTTPS: \$WEB_PORT, Internal: \$WEB_INTERNAL_PORT)"
-echo "  Agent PID: \$AGENT_PID"
+echo "  Claude Agent PID: \$AGENT_PID (port: \$AGENT_PORT)"
+echo "  Codex Agent PID: \$AGENT_CODEX_PID (port: \$AGENT_CODEX_PORT)"
 if [ -n "\$SCHEDULER_PID" ]; then
     echo "  Scheduler PID: \$SCHEDULER_PID"
 fi

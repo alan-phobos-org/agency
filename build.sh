@@ -111,11 +111,12 @@ case "${1:-help}" in
         $0 test-release
         echo "Building distribution package..."
         rm -rf dist/
-        mkdir -p dist/bin dist/deployment dist/configs
+        mkdir -p dist/bin dist/deployment dist/configs dist/prompts
         cp "${BINARIES[@]/#/bin/}" dist/bin/
         cp deployment/agency.sh deployment/stop-agency.sh deployment/deploy-agency.sh deployment/ports.conf dist/deployment/
         cp configs/scheduler.yaml dist/configs/
-        tar -czf "dist/agency-$VERSION.tar.gz" -C dist bin deployment configs
+        [ -d prompts ] && cp prompts/*.md dist/prompts/ || true
+        tar -czf "dist/agency-$VERSION.tar.gz" -C dist bin deployment configs prompts
         echo "Created dist/agency-$VERSION.tar.gz"
         ;;
     lint)
@@ -196,10 +197,11 @@ case "${1:-help}" in
         DEPLOY_STEP="dist packaging"
         echo "Step 6/6: Creating distribution..."
         rm -rf dist/
-        mkdir -p dist/bin dist/deployment dist/configs
+        mkdir -p dist/bin dist/deployment dist/configs dist/prompts
         cp "${BINARIES[@]/#/bin/}" dist/bin/
         cp deployment/agency.sh deployment/stop-agency.sh deployment/deploy-agency.sh deployment/ports.conf dist/deployment/
         cp configs/scheduler.yaml dist/configs/
+        [ -d prompts ] && cp prompts/*.md dist/prompts/ || true
         [ -f .env ] && cp .env dist/
 
         trap - ERR
@@ -275,10 +277,11 @@ case "${1:-help}" in
         DEPLOY_STEP="dist packaging"
         echo "Step 4/4: Creating distribution..."
         rm -rf dist/
-        mkdir -p dist/bin dist/deployment dist/configs
+        mkdir -p dist/bin dist/deployment dist/configs dist/prompts
         cp "${BINARIES[@]/#/bin/}" dist/bin/
         cp deployment/agency.sh deployment/stop-agency.sh deployment/deploy-agency.sh deployment/ports.conf dist/deployment/
         cp configs/scheduler.yaml dist/configs/
+        [ -d prompts ] && cp prompts/*.md dist/prompts/ || true
         [ -f .env ] && cp .env dist/
 
         trap - ERR

@@ -48,6 +48,11 @@ if [ -f "$PROJECT_ROOT/.env" ]; then
     fi
 fi
 
+# Set prompts directory if it exists
+if [ -d "$PROJECT_ROOT/prompts" ] && [ -z "${AGENCY_PROMPTS_DIR:-}" ]; then
+    export AGENCY_PROMPTS_DIR="$PROJECT_ROOT/prompts"
+fi
+
 # Build binaries if needed (verify they exist AND can run)
 if ! "$PROJECT_ROOT/bin/ag-agent-claude" -version >/dev/null 2>&1 || \
    ! "$PROJECT_ROOT/bin/ag-agent-codex" -version >/dev/null 2>&1 || \
