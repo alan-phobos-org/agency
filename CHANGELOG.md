@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-01-20
+
 ### Breaking Changes
 - **Removed contexts system**: The `contexts.yaml` configuration and `/api/contexts` endpoint have been removed
 - **Removed model field from APIs**: Use `tier` (fast/standard/heavy) instead of specific model names
@@ -132,7 +134,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit, integration, component, and system tests
 - Race condition detection in tests
 
-[Unreleased]: https://github.com/alan-phobos-org/agency/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/alan-phobos-org/agency/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/alan-phobos-org/agency/compare/v2.2.0...v3.0.0
 [2.2.0]: https://github.com/alan-phobos-org/agency/compare/v2.1.0...v2.2.0
 [1.1.0]: https://github.com/alan-phobos-org/agency/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/alan-phobos-org/agency/compare/v1.0.0...v1.0.1
