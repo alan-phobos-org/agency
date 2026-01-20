@@ -28,6 +28,7 @@ jobs:
   - name: smoke-test-codex
     schedule: "0 0 31 2 *"  # Never auto-runs (Feb 31)
     agent_kind: codex
+    tier: fast
     agent_url: https://localhost:9001
     timeout: 60s
     prompt: |
@@ -56,8 +57,8 @@ jobs:
 
       ### 1. Code Cleanup
       - Remove dead code and unused imports
-      - Fix obvious code style issues
-      - Refactor out any duplication
+      - Fix code style issues, ensure the code is highly maintainable
+      - Refactor out duplication
       - Fix inconsistencies or logic errors
 
       ### 2. Testing
@@ -95,7 +96,7 @@ jobs:
     tier: heavy
     timeout: 30m
     prompt: |
-      Build today's newsletter, commit it, push, and merge the resulting PR to main.
+      Build today's newsletter, commit and push it to main
 
       ## Setup
       1. Clone the knowledge repository fresh:
@@ -110,11 +111,8 @@ jobs:
 
       ## Tasks
       1. Build today's newsletter ({{.Date}})
-      2. Create a new branch for the newsletter
       3. Commit the newsletter changes
       4. Push the branch
-      5. Create a pull request
-      6. Merge the PR to main
 
       When complete, provide a brief summary in <summary> tags:
       <summary>

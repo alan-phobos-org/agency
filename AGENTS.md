@@ -166,7 +166,6 @@ Quick reference: `./build.sh prepare-release` then `./build.sh release X.Y.Z`.
   - Standard 5-field cron expressions
   - Configurable agent URL, model, and timeout per job
   - Status endpoint at `/status` showing job states and next run times
-  - Smoke test config at `tests/smoke/fixtures/scheduler-smoke.yaml` (uses haiku, targets helloworld2)
   - System test config at `tests/system/fixtures/scheduler-system.yaml` (no smoke-nightly-maintenance job)
 
 ### Key Behaviors
