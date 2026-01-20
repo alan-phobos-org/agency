@@ -162,7 +162,7 @@ jobs:
   - name: test-job
     schedule: "0 1 * * *"
     prompt: "Test prompt"
-    model: opus
+    tier: heavy
     timeout: 1h
 `
 	cfg, err := Parse([]byte(yaml))
@@ -172,7 +172,7 @@ jobs:
 	assert.Equal(t, "http://localhost:9000", cfg.AgentURL)
 	assert.Len(t, cfg.Jobs, 1)
 	assert.Equal(t, "test-job", cfg.Jobs[0].Name)
-	assert.Equal(t, "opus", cfg.Jobs[0].Model)
+	assert.Equal(t, "heavy", cfg.Jobs[0].Tier)
 	assert.Equal(t, time.Hour, cfg.Jobs[0].Timeout)
 }
 
@@ -233,15 +233,15 @@ jobs:
 			wantErr: "invalid schedule",
 		},
 		{
-			name: "invalid model",
+			name: "invalid tier",
 			yaml: `
 jobs:
   - name: test
     schedule: "0 1 * * *"
     prompt: "test"
-    model: invalid
+    tier: invalid
 `,
-			wantErr: "model must be opus, sonnet, or haiku",
+			wantErr: "tier must be fast, standard, or heavy",
 		},
 		{
 			name: "missing prompt",
@@ -286,7 +286,7 @@ jobs:
 	assert.Equal(t, DefaultAgentKind, cfg.AgentKind)
 
 	// Job defaults
-	assert.Equal(t, "", cfg.GetModel(&cfg.Jobs[0]))
+	assert.Equal(t, DefaultTier, cfg.GetTier(&cfg.Jobs[0]))
 	assert.Equal(t, DefaultAgentKind, cfg.GetAgentKind(&cfg.Jobs[0]))
 	assert.Equal(t, DefaultTimeout, cfg.GetTimeout(&cfg.Jobs[0]))
 	assert.Equal(t, DefaultAgentURL, cfg.GetAgentURL(&cfg.Jobs[0]))
@@ -302,7 +302,7 @@ jobs:
     schedule: "0 1 * * *"
     prompt: "test"
     agent_url: http://custom:9000
-    model: opus
+    tier: heavy
     timeout: 2h
 `
 	cfg, err := Parse([]byte(yaml))
@@ -310,7 +310,7 @@ jobs:
 
 	job := &cfg.Jobs[0]
 	assert.Equal(t, "http://custom:9000", cfg.GetAgentURL(job))
-	assert.Equal(t, "opus", cfg.GetModel(job))
+	assert.Equal(t, "heavy", cfg.GetTier(job))
 	assert.Equal(t, 2*time.Hour, cfg.GetTimeout(job))
 }
 
@@ -395,7 +395,7 @@ func TestSchedulerJobSubmission(t *testing.T) {
 				Name:     "test-job",
 				Schedule: "0 1 * * *",
 				Prompt:   "Test prompt",
-				Model:    "opus",
+				Tier:     "heavy",
 				Timeout:  time.Hour,
 			},
 		},
@@ -418,7 +418,7 @@ func TestSchedulerJobSubmission(t *testing.T) {
 	select {
 	case req := <-submitted:
 		assert.Equal(t, "Test prompt", req["prompt"])
-		assert.Equal(t, "opus", req["model"])
+		assert.Equal(t, "heavy", req["tier"])
 		assert.Equal(t, float64(3600), req["timeout_seconds"])
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for job submission")
@@ -688,7 +688,7 @@ func TestSchedulerDirectorRouting(t *testing.T) {
 				Name:     "test-job",
 				Schedule: "0 1 * * *",
 				Prompt:   "Test prompt",
-				Model:    "opus",
+				Tier:     "heavy",
 				Timeout:  time.Hour,
 			},
 		},
@@ -711,7 +711,7 @@ func TestSchedulerDirectorRouting(t *testing.T) {
 
 	// Verify request format (queue submission doesn't include agent_url)
 	assert.Equal(t, "Test prompt", receivedReq["prompt"])
-	assert.Equal(t, "opus", receivedReq["model"])
+	assert.Equal(t, "heavy", receivedReq["tier"])
 	assert.Equal(t, float64(3600), receivedReq["timeout_seconds"])
 	assert.Equal(t, "scheduler", receivedReq["source"])
 	assert.Equal(t, "test-job", receivedReq["source_job"])

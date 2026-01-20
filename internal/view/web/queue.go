@@ -39,15 +39,12 @@ type QueuedTask struct {
 	CreatedAt time.Time `json:"created_at"` // Queue entry time
 
 	// Original request
-	Prompt         string              `json:"prompt"`
-	Model          string              `json:"model,omitempty"`
-	Tier           string              `json:"tier,omitempty"`
-	TimeoutSeconds int                 `json:"timeout_seconds,omitempty"`
-	SessionID      string              `json:"session_id,omitempty"`
-	Project        *api.ProjectContext `json:"project,omitempty"`
-	Env            map[string]string   `json:"env,omitempty"`
-	Thinking       *bool               `json:"thinking,omitempty"`
-	AgentKind      string              `json:"agent_kind,omitempty"`
+	Prompt         string            `json:"prompt"`
+	Tier           string            `json:"tier,omitempty"`
+	TimeoutSeconds int               `json:"timeout_seconds,omitempty"`
+	SessionID      string            `json:"session_id,omitempty"`
+	Env            map[string]string `json:"env,omitempty"`
+	AgentKind      string            `json:"agent_kind,omitempty"`
 
 	// Dispatch tracking
 	DispatchedAt *time.Time `json:"dispatched_at,omitempty"` // When sent to agent
@@ -121,17 +118,14 @@ func NewWorkQueue(cfg QueueConfig) (*WorkQueue, error) {
 
 // QueueSubmitRequest represents a request to add a task to the queue
 type QueueSubmitRequest struct {
-	Prompt         string              `json:"prompt"`
-	Model          string              `json:"model,omitempty"`
-	Tier           string              `json:"tier,omitempty"`
-	TimeoutSeconds int                 `json:"timeout_seconds,omitempty"`
-	SessionID      string              `json:"session_id,omitempty"`
-	Project        *api.ProjectContext `json:"project,omitempty"`
-	Env            map[string]string   `json:"env,omitempty"`
-	Thinking       *bool               `json:"thinking,omitempty"`
-	Source         string              `json:"source,omitempty"`     // "web", "scheduler", "cli"
-	SourceJob      string              `json:"source_job,omitempty"` // Job name (if scheduler)
-	AgentKind      string              `json:"agent_kind,omitempty"`
+	Prompt         string            `json:"prompt"`
+	Tier           string            `json:"tier,omitempty"`
+	TimeoutSeconds int               `json:"timeout_seconds,omitempty"`
+	SessionID      string            `json:"session_id,omitempty"`
+	Env            map[string]string `json:"env,omitempty"`
+	Source         string            `json:"source,omitempty"`     // "web", "scheduler", "cli"
+	SourceJob      string            `json:"source_job,omitempty"` // Job name (if scheduler)
+	AgentKind      string            `json:"agent_kind,omitempty"`
 }
 
 // Add adds a task to the queue. Returns the task, position, and error.
@@ -163,13 +157,10 @@ func (q *WorkQueue) Add(req QueueSubmitRequest) (*QueuedTask, int, error) {
 		State:          TaskStatePending,
 		CreatedAt:      time.Now(),
 		Prompt:         req.Prompt,
-		Model:          req.Model,
 		Tier:           req.Tier,
 		TimeoutSeconds: req.TimeoutSeconds,
 		SessionID:      req.SessionID,
-		Project:        req.Project,
 		Env:            req.Env,
-		Thinking:       req.Thinking,
 		AgentKind:      agentKind,
 		Source:         req.Source,
 		SourceJob:      req.SourceJob,

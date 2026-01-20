@@ -24,7 +24,6 @@ type Job struct {
 	Name      string        `yaml:"name"`
 	Schedule  string        `yaml:"schedule"`
 	Prompt    string        `yaml:"prompt"`
-	Model     string        `yaml:"model,omitempty"`
 	Tier      string        `yaml:"tier,omitempty"`
 	Timeout   time.Duration `yaml:"timeout,omitempty"`
 	AgentURL  string        `yaml:"agent_url,omitempty"`
@@ -36,7 +35,7 @@ const (
 	DefaultPort      = 9100
 	DefaultLogLevel  = "info"
 	DefaultAgentURL  = "https://localhost:9000"
-	DefaultModel     = "sonnet"
+	DefaultTier      = api.TierStandard
 	DefaultTimeout   = 30 * time.Minute
 	DefaultAgentKind = api.AgentKindClaude
 )
@@ -112,13 +111,6 @@ func (c *Config) Validate() error {
 		if job.Tier != "" && !api.IsValidTier(job.Tier) {
 			return fmt.Errorf("job[%d] %q: tier must be fast, standard, or heavy, got %q", i, job.Name, job.Tier)
 		}
-
-		if job.Model != "" && jobKind == api.AgentKindClaude {
-			validModels := map[string]bool{"opus": true, "sonnet": true, "haiku": true}
-			if !validModels[job.Model] {
-				return fmt.Errorf("job[%d] %q: model must be opus, sonnet, or haiku, got %q", i, job.Name, job.Model)
-			}
-		}
 	}
 
 	return nil
@@ -143,9 +135,12 @@ func (c *Config) GetAgentKind(job *Job) string {
 	return api.AgentKindClaude
 }
 
-// GetModel returns the model override for a job.
-func (c *Config) GetModel(job *Job) string {
-	return job.Model
+// GetTier returns the tier for a job, using the default if not specified
+func (c *Config) GetTier(job *Job) string {
+	if job.Tier != "" {
+		return job.Tier
+	}
+	return DefaultTier
 }
 
 // GetTimeout returns the timeout for a job, using the default if not specified

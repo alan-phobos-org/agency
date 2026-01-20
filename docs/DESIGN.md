@@ -202,7 +202,6 @@ Environment variables:
 Command-line flags:
 - `-port` - HTTPS port
 - `-port-start`, `-port-end` - Discovery scan range
-- `-contexts` - Path to contexts YAML file
 - `-access-log` - Path to access log file
 
 ### Credential Storage
@@ -235,11 +234,13 @@ Agents use a shared session directory instead of per-task workdirs:
 - New sessions: directory is created fresh
 - Resumed sessions: directory is reused with existing state
 
-### Embedded Instructions
+### Agency Prompts
 
-Components have embedded CLAUDE.md files prepended to all prompts:
-- `internal/agent/claude.md` - Agent instructions
-- `internal/director/claude.md` - Director instructions
+Agents load instructions from file-based "agency prompts" at task start:
+- Location: `~/.agency/prompts/` (or `AGENCY_PROMPTS_DIR` env var)
+- Files: `<agent_kind>-<mode>.md` (e.g., `claude-prod.md`, `claude-dev.md`)
+- Mode: Set via `AGENCY_MODE` env var (`prod` or `dev`, default: `prod`)
+- Hot-reloadable: Prompt files are loaded fresh for each task
 
 ---
 

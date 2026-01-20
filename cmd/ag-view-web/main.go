@@ -27,7 +27,6 @@ func main() {
 	certFile := flag.String("cert", "", "Path to TLS certificate")
 	keyFile := flag.String("key", "", "Path to TLS private key")
 	accessLog := flag.String("access-log", "", "Path to access log file (logs all connection attempts)")
-	contextsFile := flag.String("contexts", "", "Path to contexts YAML file for predefined task settings")
 	regenCert := flag.Bool("regen-cert", false, "Regenerate self-signed certificate")
 	showVersion := flag.Bool("version", false, "Show version")
 	flag.Parse()
@@ -97,7 +96,6 @@ func main() {
 		PortEnd:         *portEnd,
 		RefreshInterval: time.Second,
 		AccessLogPath:   *accessLog,
-		ContextsPath:    *contextsFile,
 		TLS: web.TLSConfig{
 			CertFile:     certPath,
 			KeyFile:      keyPath,

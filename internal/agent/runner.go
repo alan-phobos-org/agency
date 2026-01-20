@@ -22,7 +22,6 @@ type RunnerOutput struct {
 type Runner interface {
 	Kind() string
 	ResolveBin() string
-	DefaultPreprompt() string
 	BuildCommand(task *Task, prompt string, cfg *config.Config) RunnerCommand
 	ParseOutput(stdout []byte) (RunnerOutput, bool)
 	ErrorType() string

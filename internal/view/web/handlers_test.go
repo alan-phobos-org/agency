@@ -13,13 +13,13 @@ import (
 )
 
 // newTestHandlers creates a Handlers instance for testing with a temporary auth store
-func newTestHandlers(t *testing.T, d *Discovery, version string, contexts *ContextsConfig) *Handlers {
+func newTestHandlers(t *testing.T, d *Discovery, version string) *Handlers {
 	t.Helper()
 	dir := t.TempDir()
 	authStore, err := NewAuthStore(filepath.Join(dir, "auth.json"), "")
 	require.NoError(t, err)
 
-	h, err := NewHandlers(d, version, contexts, authStore, false)
+	h, err := NewHandlers(d, version, authStore, false)
 	require.NoError(t, err)
 	return h
 }
@@ -28,7 +28,7 @@ func TestHandleStatus(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h := newTestHandlers(t, d, "test-version", nil)
+	h := newTestHandlers(t, d, "test-version")
 
 	req := httptest.NewRequest("GET", "/status", nil)
 	rec := httptest.NewRecorder()
@@ -66,7 +66,7 @@ func TestHandleAgents(t *testing.T) {
 	d := NewDiscovery(DiscoveryConfig{PortStart: port, PortEnd: port})
 	d.scan()
 
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	req := httptest.NewRequest("GET", "/api/agents", nil)
 	rec := httptest.NewRecorder()
@@ -86,7 +86,7 @@ func TestHandleAgentsEmpty(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	req := httptest.NewRequest("GET", "/api/agents", nil)
 	rec := httptest.NewRecorder()
@@ -119,7 +119,7 @@ func TestHandleDirectors(t *testing.T) {
 	d := NewDiscovery(DiscoveryConfig{PortStart: port, PortEnd: port})
 	d.scan()
 
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	req := httptest.NewRequest("GET", "/api/directors", nil)
 	rec := httptest.NewRecorder()
@@ -139,7 +139,7 @@ func TestHandleTaskSubmitValidation(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	tests := []struct {
 		name    string
@@ -180,7 +180,7 @@ func TestHandleTaskSubmitAgentNotFound(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	body := `{"agent_url": "http://localhost:59999", "prompt": "test"}`
 	req := httptest.NewRequest("POST", "/api/task", strings.NewReader(body))
@@ -216,7 +216,7 @@ func TestHandleTaskSubmitAgentBusy(t *testing.T) {
 	}
 	d.mu.Unlock()
 
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	body := `{"agent_url": "` + agent.URL + `", "prompt": "test"}`
 	req := httptest.NewRequest("POST", "/api/task", strings.NewReader(body))
@@ -259,7 +259,7 @@ func TestHandleTaskSubmitSuccess(t *testing.T) {
 	}
 	d.mu.Unlock()
 
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	body := `{"agent_url": "` + agent.URL + `", "prompt": "test prompt"}`
 	req := httptest.NewRequest("POST", "/api/task", strings.NewReader(body))
@@ -281,7 +281,7 @@ func TestHandleTaskStatusMissingAgentURL(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	req := httptest.NewRequest("GET", "/api/task/task-123", nil)
 	rec := httptest.NewRecorder()
@@ -315,7 +315,7 @@ func TestHandleTaskStatusForwarding(t *testing.T) {
 		State: "idle",
 	}
 	d.mu.Unlock()
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	req := httptest.NewRequest("GET", "/api/task/task-123?agent_url="+agent.URL, nil)
 	rec := httptest.NewRecorder()
@@ -334,7 +334,7 @@ func TestHandleDashboard(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	req := httptest.NewRequest("GET", "/", nil)
 	rec := httptest.NewRecorder()
@@ -351,7 +351,7 @@ func TestNewHandlersTemplateLoading(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h := newTestHandlers(t, d, "v1.2.3", nil)
+	h := newTestHandlers(t, d, "v1.2.3")
 	require.NotNil(t, h)
 	require.Equal(t, "v1.2.3", h.version)
 	require.False(t, h.startTime.IsZero())
@@ -361,7 +361,7 @@ func TestHandleStatusUptime(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	// Wait a bit to get measurable uptime
 	time.Sleep(10 * time.Millisecond)
@@ -413,7 +413,7 @@ func TestHandleDashboardData(t *testing.T) {
 	d.checkPort(agentPort)
 	d.checkPort(directorPort)
 
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	// Add some sessions
 	h.sessionStore.AddTask("sess-1", "http://agent:9000", "task-1", "completed", "prompt 1")
@@ -440,7 +440,7 @@ func TestHandleDashboardDataEmpty(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	req := httptest.NewRequest("GET", "/api/dashboard", nil)
 	rec := httptest.NewRecorder()
@@ -462,7 +462,7 @@ func TestHandleDashboardDataETag(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	// First request - should return data and ETag
 	req1 := httptest.NewRequest("GET", "/api/dashboard", nil)
@@ -489,7 +489,7 @@ func TestHandleDashboardDataETagChangesOnUpdate(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	// First request
 	req1 := httptest.NewRequest("GET", "/api/dashboard", nil)
@@ -521,7 +521,7 @@ func TestHandleDashboardDataETagMismatch(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	// Request with wrong ETag should return 200 with data
 	req := httptest.NewRequest("GET", "/api/dashboard", nil)
@@ -537,7 +537,7 @@ func TestHandleDashboardDataSessionsSorted(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	// Add sessions with different timestamps
 	h.sessionStore.AddTask("sess-old", "http://agent:9000", "task-1", "completed", "old")
@@ -556,33 +556,11 @@ func TestHandleDashboardDataSessionsSorted(t *testing.T) {
 	require.Equal(t, "sess-old", data.Sessions[1].ID, "Older session should be second")
 }
 
-func TestHandleContextsNoContexts(t *testing.T) {
-	t.Parallel()
-
-	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h := newTestHandlers(t, d, "test", nil)
-
-	req := httptest.NewRequest("GET", "/api/contexts", nil)
-	rec := httptest.NewRecorder()
-	h.HandleContexts(rec, req)
-
-	require.Equal(t, http.StatusOK, rec.Code)
-
-	var contexts []Context
-	err := json.Unmarshal(rec.Body.Bytes(), &contexts)
-	require.NoError(t, err)
-
-	// Should have just manual context
-	require.Len(t, contexts, 1)
-	require.Equal(t, "manual", contexts[0].ID)
-	require.Equal(t, "Manual", contexts[0].Name)
-}
-
 func TestHandleDashboardContainsSessionDetail(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	req := httptest.NewRequest("GET", "/", nil)
 	rec := httptest.NewRecorder()
@@ -610,7 +588,7 @@ func TestHandleDashboardSessionDetailCSS(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	req := httptest.NewRequest("GET", "/", nil)
 	rec := httptest.NewRecorder()
@@ -631,7 +609,7 @@ func TestHandleDashboardContainsReconciliation(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	req := httptest.NewRequest("GET", "/", nil)
 	rec := httptest.NewRecorder()
@@ -688,7 +666,7 @@ func TestHandleTaskStatusFallbackToHistory(t *testing.T) {
 		State: "idle",
 	}
 	d.mu.Unlock()
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	req := httptest.NewRequest("GET", "/api/task/task-123?agent_url="+agent.URL, nil)
 	rec := httptest.NewRecorder()
@@ -730,7 +708,7 @@ func TestHandleTaskStatusFallbackUpdatesSessionStore(t *testing.T) {
 		State: "idle",
 	}
 	d.mu.Unlock()
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	// Pre-populate session store with task in "working" state
 	h.sessionStore.AddTask("sess-abc", agent.URL, "task-456", "working", "test prompt")
@@ -771,7 +749,7 @@ func TestHandleTaskStatusNotFoundInHistoryEither(t *testing.T) {
 		State: "idle",
 	}
 	d.mu.Unlock()
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	req := httptest.NewRequest("GET", "/api/task/task-missing?agent_url="+agent.URL, nil)
 	rec := httptest.NewRecorder()
@@ -781,66 +759,13 @@ func TestHandleTaskStatusNotFoundInHistoryEither(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, rec.Code)
 }
 
-func TestHandleContextsWithContexts(t *testing.T) {
-	t.Parallel()
-
-	thinking := true
-	cfg := &ContextsConfig{
-		Contexts: []Context{
-			{
-				ID:             "dev",
-				Name:           "Development",
-				Description:    "Dev workflow",
-				Model:          "opus",
-				Thinking:       &thinking,
-				TimeoutSeconds: 1800,
-				PromptPrefix:   "Dev prefix",
-			},
-			{
-				ID:          "quick",
-				Name:        "Quick Task",
-				Description: "Fast responses",
-				Model:       "haiku",
-			},
-		},
-	}
-
-	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h := newTestHandlers(t, d, "test", cfg)
-
-	req := httptest.NewRequest("GET", "/api/contexts", nil)
-	rec := httptest.NewRecorder()
-	h.HandleContexts(rec, req)
-
-	require.Equal(t, http.StatusOK, rec.Code)
-
-	var contexts []Context
-	err := json.Unmarshal(rec.Body.Bytes(), &contexts)
-	require.NoError(t, err)
-
-	// Should have manual + 2 configured contexts
-	require.Len(t, contexts, 3)
-	require.Equal(t, "manual", contexts[0].ID)
-	require.Equal(t, "dev", contexts[1].ID)
-	require.Equal(t, "quick", contexts[2].ID)
-
-	// Verify dev context fields
-	require.Equal(t, "Development", contexts[1].Name)
-	require.Equal(t, "Dev workflow", contexts[1].Description)
-	require.Equal(t, "opus", contexts[1].Model)
-	require.NotNil(t, contexts[1].Thinking)
-	require.True(t, *contexts[1].Thinking)
-	require.Equal(t, 1800, contexts[1].TimeoutSeconds)
-	require.Equal(t, "Dev prefix", contexts[1].PromptPrefix)
-}
-
 // Archive interaction tests for dashboard
 
 func TestHandleDashboardDataExcludesArchivedSessions(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	// Add sessions, archive one
 	h.sessionStore.AddTask("sess-1", "http://agent:9000", "task-1", "completed", "prompt 1")
@@ -872,7 +797,7 @@ func TestHandleDashboardDataETagChangesOnArchive(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	// Add sessions
 	h.sessionStore.AddTask("sess-1", "http://agent:9000", "task-1", "completed", "prompt 1")
@@ -908,7 +833,7 @@ func TestHandleDashboardDataAllSessionsArchived(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	// Add and archive all sessions
 	h.sessionStore.AddTask("sess-1", "http://agent:9000", "task-1", "completed", "prompt 1")
@@ -935,7 +860,7 @@ func TestHandleDashboardDataWithHelpers(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	// Manually add a helper with jobs to the discovery
 	helperURL := "http://localhost:9001"
@@ -1003,7 +928,7 @@ func TestHandleDashboardDataHelperJobStatusETagBehavior(t *testing.T) {
 	t.Parallel()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
-	h := newTestHandlers(t, d, "test", nil)
+	h := newTestHandlers(t, d, "test")
 
 	// Add a helper with a job
 	helperURL := "http://localhost:9002"

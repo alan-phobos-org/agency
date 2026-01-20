@@ -114,7 +114,7 @@ case "${1:-help}" in
         mkdir -p dist/bin dist/deployment dist/configs
         cp "${BINARIES[@]/#/bin/}" dist/bin/
         cp deployment/agency.sh deployment/stop-agency.sh deployment/deploy-agency.sh deployment/ports.conf dist/deployment/
-        cp configs/contexts.yaml configs/scheduler.yaml dist/configs/
+        cp configs/scheduler.yaml dist/configs/
         tar -czf "dist/agency-$VERSION.tar.gz" -C dist bin deployment configs
         echo "Created dist/agency-$VERSION.tar.gz"
         ;;
@@ -199,7 +199,7 @@ case "${1:-help}" in
         mkdir -p dist/bin dist/deployment dist/configs
         cp "${BINARIES[@]/#/bin/}" dist/bin/
         cp deployment/agency.sh deployment/stop-agency.sh deployment/deploy-agency.sh deployment/ports.conf dist/deployment/
-        cp configs/contexts.yaml configs/scheduler.yaml dist/configs/
+        cp configs/scheduler.yaml dist/configs/
         [ -f .env ] && cp .env dist/
 
         trap - ERR
@@ -278,7 +278,7 @@ case "${1:-help}" in
         mkdir -p dist/bin dist/deployment dist/configs
         cp "${BINARIES[@]/#/bin/}" dist/bin/
         cp deployment/agency.sh deployment/stop-agency.sh deployment/deploy-agency.sh deployment/ports.conf dist/deployment/
-        cp configs/contexts.yaml configs/scheduler.yaml dist/configs/
+        cp configs/scheduler.yaml dist/configs/
         [ -f .env ] && cp .env dist/
 
         trap - ERR

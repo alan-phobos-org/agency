@@ -46,7 +46,7 @@ func (h *QueueHandlers) HandleQueueSubmit(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "validation_error", "prompt is required")
 		return
 	}
-	if req.Model == "" && req.Tier != "" && !api.IsValidTier(req.Tier) {
+	if req.Tier != "" && !api.IsValidTier(req.Tier) {
 		writeError(w, http.StatusBadRequest, "validation_error", "tier must be fast, standard, or heavy")
 		return
 	}
@@ -235,7 +235,7 @@ func (h *QueueHandlers) HandleTaskSubmitViaQueue(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, "validation_error", "prompt is required")
 		return
 	}
-	if req.Model == "" && req.Tier != "" && !api.IsValidTier(req.Tier) {
+	if req.Tier != "" && !api.IsValidTier(req.Tier) {
 		writeError(w, http.StatusBadRequest, "validation_error", "tier must be fast, standard, or heavy")
 		return
 	}
@@ -268,12 +268,10 @@ func (h *QueueHandlers) HandleTaskSubmitViaQueue(w http.ResponseWriter, r *http.
 
 	queueReq := QueueSubmitRequest{
 		Prompt:         req.Prompt,
-		Model:          req.Model,
 		Tier:           req.Tier,
 		TimeoutSeconds: req.TimeoutSeconds,
 		SessionID:      req.SessionID,
 		Env:            req.Env,
-		Thinking:       req.Thinking,
 		Source:         source,
 		SourceJob:      req.SourceJob,
 		AgentKind:      req.AgentKind,
@@ -302,7 +300,7 @@ func (h *QueueHandlers) HandleTaskSubmitViaQueue(w http.ResponseWriter, r *http.
 // submitDirectly handles direct submission to an idle agent (backward compatible path)
 func (h *QueueHandlers) submitDirectly(w http.ResponseWriter, r *http.Request, req TaskSubmitRequest, agent *ComponentStatus) {
 	// Build agent task request
-	agentReq := buildAgentRequest(req.Prompt, req.Model, req.Tier, req.TimeoutSeconds, req.SessionID, req.Env, req.Thinking)
+	agentReq := buildAgentRequest(req.Prompt, req.Tier, req.TimeoutSeconds, req.SessionID, req.Env)
 
 	// Forward to agent
 	body, _ := json.Marshal(agentReq)

@@ -25,7 +25,6 @@ type Config struct {
 	RefreshInterval time.Duration
 	TLS             TLSConfig
 	AccessLogPath   string // Path for access log file (empty = no logging)
-	ContextsPath    string // Path to contexts YAML file (optional)
 	QueueDir        string // Path to work queue directory (empty = default)
 }
 
@@ -69,17 +68,6 @@ func New(cfg *Config, version string) (*Director, error) {
 		SelfPort:        cfg.Port,
 	})
 
-	// Load contexts if path specified
-	var contexts *ContextsConfig
-	if cfg.ContextsPath != "" {
-		var err error
-		contexts, err = LoadContexts(cfg.ContextsPath)
-		if err != nil {
-			return nil, fmt.Errorf("loading contexts: %w", err)
-		}
-		fmt.Fprintf(os.Stderr, "Loaded %d contexts from %s\n", len(contexts.Contexts), cfg.ContextsPath)
-	}
-
 	// Create access logger if path configured
 	var accessLogger *AccessLogger
 	if cfg.AccessLogPath != "" {
@@ -94,7 +82,7 @@ func New(cfg *Config, version string) (*Director, error) {
 	// Determine if we should use secure cookies (HTTPS)
 	secureCookie := true // Always use secure cookies since we use HTTPS
 
-	handlers, err := NewHandlers(discovery, version, contexts, cfg.AuthStore, secureCookie)
+	handlers, err := NewHandlers(discovery, version, cfg.AuthStore, secureCookie)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +165,6 @@ func (d *Director) Router() chi.Router {
 		r.Get("/dashboard", d.handlers.HandleDashboardData) // Consolidated endpoint with ETag
 		r.Get("/agents", d.handlers.HandleAgents)
 		r.Get("/directors", d.handlers.HandleDirectors)
-		r.Get("/contexts", d.handlers.HandleContexts)             // Available task contexts
 		r.Post("/task", d.queueHandlers.HandleTaskSubmitViaQueue) // Route through queue
 		r.Get("/task/{id}", func(w http.ResponseWriter, r *http.Request) {
 			taskID := chi.URLParam(r, "id")

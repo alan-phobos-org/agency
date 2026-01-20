@@ -7,8 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+- **Removed contexts system**: The `contexts.yaml` configuration and `/api/contexts` endpoint have been removed
+- **Removed model field from APIs**: Use `tier` (fast/standard/heavy) instead of specific model names
+- **Removed thinking field from APIs**: Extended thinking is now always enabled
+- **Removed project context from APIs**: Project-specific instructions should be in agency prompts
+- **Removed embedded preprompts**: Agent instructions now come from file-based agency prompts
+
 ### Added
+- **Agency Prompts**: File-based agent instructions loaded from `~/.agency/prompts/`
+  - Files: `<agent_kind>-<mode>.md` (e.g., `claude-prod.md`, `claude-dev.md`)
+  - Mode: Set via `AGENCY_MODE` env var (`prod` or `dev`, default: `prod`)
+  - Hot-reloadable: Prompts loaded fresh for each task
 - Add `QueueDir` config option to web director for queue directory customization
+
+### Changed
+- Scheduler jobs now use `tier` field instead of `model` field
+- Web UI simplified: removed context dropdown, model selector, and thinking toggle
+- Task submission now only accepts `tier` for model selection (fast/standard/heavy)
+
+### Removed
+- `configs/contexts.yaml` - contexts configuration file
+- `internal/view/web/contexts.go` - contexts loading code
+- `internal/agent/claude.md` - embedded preprompt (replaced by agency prompts)
+- `internal/agent/codex.md` - embedded preprompt (replaced by agency prompts)
+- `-contexts` command-line flag from ag-view-web
 
 ### Fixed
 - Fixed prompt construction duplicating preprompt when project context is present

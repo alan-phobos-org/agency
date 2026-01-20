@@ -1,7 +1,6 @@
 package agent
 
 import (
-	_ "embed"
 	"encoding/json"
 	"os"
 	"strconv"
@@ -9,9 +8,6 @@ import (
 	"phobos.org.uk/agency/internal/api"
 	"phobos.org.uk/agency/internal/config"
 )
-
-//go:embed claude.md
-var agentClaudeMD string
 
 type claudeRunner struct{}
 
@@ -25,10 +21,6 @@ func (claudeRunner) ResolveBin() string {
 		claudeBin = "claude"
 	}
 	return claudeBin
-}
-
-func (claudeRunner) DefaultPreprompt() string {
-	return agentClaudeMD
 }
 
 func (claudeRunner) BuildCommand(task *Task, prompt string, cfg *config.Config) RunnerCommand {

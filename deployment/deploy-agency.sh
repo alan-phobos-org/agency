@@ -115,11 +115,6 @@ if [ -f "$PROJECT_ROOT/.env" ]; then
 fi
 
 # Copy configs if they exist
-if [ -f "$PROJECT_ROOT/configs/contexts.yaml" ]; then
-    echo "Copying contexts config..."
-    scp $SCP_OPTS "$PROJECT_ROOT/configs/contexts.yaml" "$REMOTE_HOST:$REMOTE_DIR/configs/"
-fi
-
 if [ -n "$SCHEDULER_CONFIG" ] && [ -f "$SCHEDULER_CONFIG" ]; then
     echo "Copying scheduler config (adjusting ports for $MODE mode)..."
     # Transform director_url and agent_url ports to match deployment mode
@@ -185,12 +180,8 @@ if [ -f "\$PID_FILE" ]; then
 fi
 
 # Start web view (with internal API port for scheduler/CLI routing)
-CONTEXTS_ARG=""
-if [ -f "\$AGENCY_DIR/configs/contexts.yaml" ]; then
-    CONTEXTS_ARG="-contexts \$AGENCY_DIR/configs/contexts.yaml"
-fi
 echo "Starting web view on port \$WEB_PORT (internal: \$WEB_INTERNAL_PORT, discovery: \$DISCOVERY_START-\$DISCOVERY_END)..."
-"\$AGENCY_DIR/bin/ag-view-web" -port "\$WEB_PORT" -internal-port "\$WEB_INTERNAL_PORT" -port-start "\$DISCOVERY_START" -port-end "\$DISCOVERY_END" -env "\$AGENCY_DIR/.env" \$CONTEXTS_ARG > "\$AGENCY_DIR/web.log" 2>&1 &
+"\$AGENCY_DIR/bin/ag-view-web" -port "\$WEB_PORT" -internal-port "\$WEB_INTERNAL_PORT" -port-start "\$DISCOVERY_START" -port-end "\$DISCOVERY_END" -env "\$AGENCY_DIR/.env" > "\$AGENCY_DIR/web.log" 2>&1 &
 WEB_PID=\$!
 
 # Start claude agent

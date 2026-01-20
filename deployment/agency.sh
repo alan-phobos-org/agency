@@ -97,7 +97,7 @@ fi
 
 # Start web view (with internal API port for scheduler/CLI routing)
 echo "Starting web view on port $WEB_PORT (internal: $WEB_INTERNAL_PORT, discovery: $DISCOVERY_START-$DISCOVERY_END)..."
-"$PROJECT_ROOT/bin/ag-view-web" -port "$WEB_PORT" -internal-port "$WEB_INTERNAL_PORT" -port-start "$DISCOVERY_START" -port-end "$DISCOVERY_END" -env "$PROJECT_ROOT/.env" -contexts "$PROJECT_ROOT/configs/contexts.yaml" > "$PID_DIR/view-${MODE}.log" 2>&1 &
+"$PROJECT_ROOT/bin/ag-view-web" -port "$WEB_PORT" -internal-port "$WEB_INTERNAL_PORT" -port-start "$DISCOVERY_START" -port-end "$DISCOVERY_END" -env "$PROJECT_ROOT/.env" > "$PID_DIR/view-${MODE}.log" 2>&1 &
 VIEW_PID=$!
 
 # Start claude agent

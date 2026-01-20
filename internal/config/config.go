@@ -12,23 +12,17 @@ import (
 
 // Config represents the agent configuration
 type Config struct {
-	Port          int             `yaml:"port"`
-	Name          string          `yaml:"name"` // Agent name (used for history directory)
-	LogLevel      string          `yaml:"log_level"`
-	SessionDir    string          `yaml:"session_dir"`    // Base directory for session workspaces
-	HistoryDir    string          `yaml:"history_dir"`    // Directory for task history storage
-	PrepromptFile string          `yaml:"preprompt_file"` // Optional path to custom preprompt file
-	AgentKind     string          `yaml:"agent_kind"`     // claude, codex
-	Tiers         TierConfig      `yaml:"tiers"`
-	Claude        ClaudeConfig    `yaml:"claude"`
-	Codex         CodexConfig     `yaml:"codex"`
-	Projects      []ProjectConfig `yaml:"projects,omitempty"`
-}
-
-// ProjectConfig defines a project context that can be prepended to task prompts
-type ProjectConfig struct {
-	Name   string `yaml:"name"`
-	Prompt string `yaml:"prompt"`
+	Port             int          `yaml:"port"`
+	Name             string       `yaml:"name"` // Agent name (used for history directory)
+	LogLevel         string       `yaml:"log_level"`
+	SessionDir       string       `yaml:"session_dir"`        // Base directory for session workspaces
+	HistoryDir       string       `yaml:"history_dir"`        // Directory for task history storage
+	AgencyPromptsDir string       `yaml:"agency_prompts_dir"` // Directory for agency prompt files
+	AgencyPromptFile string       `yaml:"agency_prompt_file"` // Optional explicit path to agency prompt file
+	AgentKind        string       `yaml:"agent_kind"`         // claude, codex
+	Tiers            TierConfig   `yaml:"tiers"`
+	Claude           ClaudeConfig `yaml:"claude"`
+	Codex            CodexConfig  `yaml:"codex"`
 }
 
 // ClaudeConfig holds Claude CLI settings
@@ -235,4 +229,31 @@ func DefaultSessionPath() string {
 		root = filepath.Join(home, ".agency")
 	}
 	return filepath.Join(root, "sessions")
+}
+
+// DefaultPromptsPath returns the default agency prompts directory path.
+// Uses AGENCY_PROMPTS_DIR env var if set, otherwise ~/.agency/prompts
+func DefaultPromptsPath() string {
+	if dir := os.Getenv("AGENCY_PROMPTS_DIR"); dir != "" {
+		return dir
+	}
+	root := os.Getenv("AGENCY_ROOT")
+	if root == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			home = "/tmp"
+		}
+		root = filepath.Join(home, ".agency")
+	}
+	return filepath.Join(root, "prompts")
+}
+
+// AgencyMode returns the current agency mode (prod or dev).
+// Uses AGENCY_MODE env var, defaults to "prod".
+func AgencyMode() string {
+	mode := os.Getenv("AGENCY_MODE")
+	if mode == "" {
+		return "prod"
+	}
+	return mode
 }

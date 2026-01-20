@@ -189,13 +189,11 @@ Dashboard (root)
 │
 ├── Task Submission
 │   ├── Agent selector
-│   ├── Context picker
 │   ├── Prompt input
-│   └── Options (model, timeout, thinking)
+│   └── Options (tier, timeout)
 │
 └── Settings
     ├── Paired devices
-    ├── Contexts management
     └── Preferences
 ```
 
@@ -325,11 +323,6 @@ Full-screen on mobile, modal on desktop.
 │  │ agent-01 (idle)                              ▼  │   │
 │  └─────────────────────────────────────────────────┘   │
 │                                                         │
-│  Context                                                │
-│  ┌─────────────────────────────────────────────────┐   │
-│  │ None (custom prompt)                         ▼  │   │
-│  └─────────────────────────────────────────────────┘   │
-│                                                         │
 │  Prompt                                                 │
 │  ┌─────────────────────────────────────────────────┐   │
 │  │                                                 │   │
@@ -337,7 +330,7 @@ Full-screen on mobile, modal on desktop.
 │  │                                                 │   │
 │  └─────────────────────────────────────────────────┘   │
 │                                                         │
-│  Options                                           ▼    │
+│  Options (tier, timeout)                           ▼    │
 │                                                         │
 │  ┌─────────────────────────────────────────────────┐   │
 │  │                                      Submit ▶   │   │

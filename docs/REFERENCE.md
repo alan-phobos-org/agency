@@ -11,7 +11,7 @@ Detailed endpoint specifications and technical reference for Agency components.
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/status` | GET | Agent state, version, agent kind, config, current task preview |
-| `/task` | POST | Submit task (prompt, timeout, env, model, tier, session_id, project, thinking) |
+| `/task` | POST | Submit task (prompt, timeout, env, tier, session_id) |
 | `/task/:id` | GET | Task status and output (includes session_id) |
 | `/task/:id/cancel` | POST | Cancel running task |
 | `/shutdown` | POST | Graceful shutdown (supports force flag) |
@@ -38,13 +38,12 @@ idle → working → idle
   "prompt": "string (required)",
   "timeout_seconds": "int (optional)",
   "env": "map[string]string (optional)",
-  "model": "string (optional, overrides tier)",
   "tier": "string (optional: fast|standard|heavy, default: standard)",
-  "session_id": "string (optional, generates if omitted)",
-  "project": {"name": "string", "prompt": "string"} (optional),
-  "thinking": "bool (optional)"
+  "session_id": "string (optional, generates if omitted)"
 }
 ```
+
+Note: Extended thinking is always enabled. The agent maps tiers to models internally.
 
 ---
 
@@ -68,7 +67,6 @@ idle → working → idle
 | `/logout` | POST | End session |
 | `/api/agents` | GET | List discovered agents |
 | `/api/directors` | GET | List discovered directors |
-| `/api/contexts` | GET | List available task contexts |
 | `/api/task` | POST | Submit task to selected agent |
 | `/api/task/:id` | GET | Get task status (requires agent_url param) |
 | `/api/sessions` | GET | List all sessions |
@@ -91,7 +89,6 @@ The work queue allows tasks to be queued when agents are busy. The dispatcher au
 POST /api/queue/task
 {
   "prompt": "string (required)",
-  "model": "string (optional, overrides tier)",
   "tier": "string (optional: fast|standard|heavy)",
   "timeout_seconds": "int (optional)",
   "session_id": "string (optional)",
@@ -149,7 +146,6 @@ port: 9000
 log_level: info
 session_dir: ~/.agency/sessions
 history_dir: ~/.agency/history
-preprompt_file: /path/to/custom.md  # optional, falls back to embedded
 
 agent_kind: claude  # claude or codex
 tiers:
@@ -158,14 +154,21 @@ tiers:
   heavy: opus
 
 claude:
-  model: sonnet      # default model (overridable per-task)
+  model: sonnet      # default model
   timeout: 30m       # default timeout (overridable per-task)
   max_turns: 50      # conversation turn limit
 
 codex:
-  model: ""          # default model (overridable per-task)
+  model: ""          # default model
   timeout: 30m       # default timeout (overridable per-task)
 ```
+
+### Agency Prompts
+
+Agents load instructions from file-based prompts:
+- Location: `~/.agency/prompts/` (or `AGENCY_PROMPTS_DIR` env var)
+- Files: `<agent_kind>-<mode>.md` (e.g., `claude-prod.md`, `claude-dev.md`)
+- Mode: Set via `AGENCY_MODE` env var (`prod` or `dev`, default: `prod`)
 
 ### Web View Config
 
@@ -194,23 +197,7 @@ The agent uses `--model` flag with shorthand names: `haiku`, `sonnet`, `opus`.
 Command-line flags:
 - `-port` - HTTPS port
 - `-port-start`, `-port-end` - Discovery scan range (default: 9000-9010; deployments often set 9000-9010/9100-9110)
-- `-contexts` - Path to contexts YAML file
 - `-access-log` - Path to access log file
-
-### Task Contexts (YAML)
-
-```yaml
-contexts:
-  - id: my-context
-    name: My Context
-    description: Description shown in UI
-    model: opus
-    tier: heavy
-    thinking: true
-    timeout_seconds: 1800
-    prompt_prefix: |
-      Instructions prepended to all prompts...
-```
 
 ---
 
@@ -294,4 +281,4 @@ See [DESIGN.md](DESIGN.md) for fallback behavior, embedded instructions, and ses
 
 ## Extended Thinking
 
-The `thinking` parameter is accepted for future use. Extended thinking is automatically enabled by the Claude CLI for compatible models (no CLI flag exists to control it). The UI toggle and contexts `thinking` field are preserved for compatibility.
+Extended thinking is always enabled. The Claude CLI automatically enables it for compatible models.

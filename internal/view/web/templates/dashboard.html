@@ -2159,15 +2159,6 @@
                                                                     </select>
                                                                 </div>
                                                                 <div class="inline-form-group">
-                                                                    <label class="inline-form-label">Model Override</label>
-                                                                    <select class="inline-form-select" x-model="getInlineForm(session.id).model">
-                                                                        <option value="">default</option>
-                                                                        <option value="opus">opus</option>
-                                                                        <option value="sonnet">sonnet</option>
-                                                                        <option value="haiku">haiku</option>
-                                                                    </select>
-                                                                </div>
-                                                                <div class="inline-form-group">
                                                                     <label class="inline-form-label">Timeout</label>
                                                                     <input type="number"
                                                                            class="inline-form-input"
@@ -2175,10 +2166,6 @@
                                                                            min="60"
                                                                            max="7200">
                                                                 </div>
-                                                                <label class="inline-form-checkbox-label">
-                                                                    <input type="checkbox" x-model="getInlineForm(session.id).thinking">
-                                                                    Extended Thinking
-                                                                </label>
                                                             </div>
                                                         </div>
                                                     </div>
@@ -2253,10 +2240,6 @@
                                             <div class="metric-label">Duration</div>
                                             <div class="metric-value" x-text="formatDuration(getSessionMetrics(session).duration) || '—'"></div>
                                         </div>
-                                        <div class="metric-card">
-                                            <div class="metric-label">Model</div>
-                                            <div class="metric-value" x-text="getSessionMetrics(session).model || '—'"></div>
-                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -2319,14 +2302,6 @@
                         </select>
                     </div>
                     <div class="form-group-inline">
-                        <label class="form-label" for="context-select">Context</label>
-                        <select class="form-select" id="context-select" x-model="taskForm.contextId" @change="onContextChange()">
-                            <template x-for="ctx in contexts" :key="ctx.id">
-                                <option :value="ctx.id" x-text="ctx.name"></option>
-                            </template>
-                        </select>
-                    </div>
-                    <div class="form-group-inline">
                         <label class="form-label" for="agent-select">Agent</label>
                         <div style="flex: 1;">
                             <select class="form-select" id="agent-select" x-model="taskForm.agentUrl" style="width: 100%;">
@@ -2365,31 +2340,16 @@
                                 <div class="form-row">
                                     <div class="form-group">
                                         <label class="form-label" for="tier-select">Tier</label>
-                                        <select class="form-select" id="tier-select" x-model="taskForm.tier" :disabled="taskForm.contextId !== 'manual'">
+                                        <select class="form-select" id="tier-select" x-model="taskForm.tier">
                                             <option value="fast">fast</option>
                                             <option value="standard">standard</option>
                                             <option value="heavy">heavy</option>
                                         </select>
                                     </div>
                                     <div class="form-group">
-                                        <label class="form-label" for="model-select">Model Override</label>
-                                        <select class="form-select" id="model-select" x-model="taskForm.model" :disabled="taskForm.contextId !== 'manual'">
-                                            <option value="">default</option>
-                                            <option value="opus">opus</option>
-                                            <option value="sonnet">sonnet</option>
-                                            <option value="haiku">haiku</option>
-                                        </select>
-                                    </div>
-                                    <div class="form-group">
                                         <label class="form-label" for="timeout-input">Timeout (s)</label>
-                                        <input type="number" class="form-input" id="timeout-input" x-model.number="taskForm.timeout" min="60" max="7200" :disabled="taskForm.contextId !== 'manual'">
+                                        <input type="number" class="form-input" id="timeout-input" x-model.number="taskForm.timeout" min="60" max="7200">
                                     </div>
-                                </div>
-                                <div class="form-group" style="margin-top: var(--space-2);">
-                                    <label style="display: flex; align-items: center; gap: var(--space-2); cursor: pointer;">
-                                        <input type="checkbox" x-model="taskForm.thinking" :disabled="taskForm.contextId !== 'manual'">
-                                        <span class="form-label" style="margin: 0;">Extended Thinking</span>
-                                    </label>
                                 </div>
                             </div>
                         </div>
@@ -2523,9 +2483,6 @@
                 taskLogsExpanded: {}, // { sessionId-taskId: boolean }
                 taskLogsPolling: {}, // { taskId: intervalId }
 
-                // Contexts
-                contexts: [],
-
                 // Task modal
                 taskModalOpen: false,
                 taskOptionsOpen: false,
@@ -2533,18 +2490,15 @@
                     agentUrl: '',
                     agentKind: 'claude',
                     sessionId: '',
-                    contextId: 'manual',
                     prompt: '',
                     tier: 'standard',
-                    model: '',
-                    timeout: 1800,
-                    thinking: true
+                    timeout: 1800
                 },
                 taskSubmitting: false,
                 taskError: '',
 
                 // Inline task forms (per-session)
-                inlineTaskForms: {}, // { sessionId: { expanded, optionsOpen, prompt, tier, model, timeout, thinking, submitting, error } }
+                inlineTaskForms: {}, // { sessionId: { expanded, optionsOpen, prompt, tier, timeout, submitting, error } }
 
                 // Settings modal
                 settingsOpen: false,
@@ -2581,7 +2535,6 @@
                 // Lifecycle
                 init() {
                     // Load initial data
-                    this.loadContexts();
                     this.refresh();
 
                     // Start polling
@@ -2834,24 +2787,6 @@
                     }
                 },
 
-                // Load contexts
-                async loadContexts() {
-                    try {
-                        const resp = await this.api('/api/contexts');
-                        this.contexts = await resp.json();
-                        if (this.contexts.length > 0) {
-                            const preferred = this.contexts.find(c => c.id === 'phobos-dev');
-                            // Select preferred context by default, fall back to first (usually 'manual')
-                            this.taskForm.contextId = (preferred || this.contexts[0]).id;
-                            this.onContextChange();
-                        }
-                    } catch (err) {
-                        console.error('Failed to load contexts:', err);
-                        // Fallback to manual context
-                        this.contexts = [{ id: 'manual', name: 'Manual' }];
-                    }
-                },
-
                 // Session management
                 toggleSession(sessionId) {
                     if (this.expandedSession === sessionId) {
@@ -2933,39 +2868,17 @@
                     this.taskModalOpen = false;
                 },
 
-                onContextChange() {
-                    const ctx = this.contexts.find(c => c.id === this.taskForm.contextId);
-                    if (ctx && ctx.id !== 'manual') {
-                        // Apply context settings
-                        if (ctx.model) this.taskForm.model = ctx.model;
-                        if (ctx.tier) this.taskForm.tier = ctx.tier;
-                        if (ctx.timeout_seconds) this.taskForm.timeout = ctx.timeout_seconds;
-                        if (ctx.thinking !== undefined) this.taskForm.thinking = ctx.thinking;
-                    }
-                },
-
                 async submitTask() {
                     this.taskSubmitting = true;
                     this.taskError = '';
 
                     try {
-                        const ctx = this.contexts.find(c => c.id === this.taskForm.contextId);
                         const prompt = this.taskForm.prompt.trim();
 
-                        // Build full prompt with context prefix if applicable
-                        let fullPrompt = prompt;
-                        if (ctx && ctx.prompt_prefix) {
-                            fullPrompt = ctx.prompt_prefix + prompt;
-                        }
-
                         const body = {
-                            prompt: fullPrompt,
-                            timeout_seconds: this.taskForm.timeout,
-                            thinking: this.taskForm.thinking
+                            prompt: prompt,
+                            timeout_seconds: this.taskForm.timeout
                         };
-                        if (this.taskForm.model) {
-                            body.model = this.taskForm.model;
-                        }
                         if (this.taskForm.tier) {
                             body.tier = this.taskForm.tier;
                         }
@@ -3017,9 +2930,7 @@
                             optionsOpen: false,
                             prompt: '',
                             tier: 'standard',
-                            model: '',
                             timeout: 1800,
-                            thinking: true,
                             submitting: false,
                             error: ''
                         };
@@ -3064,12 +2975,8 @@
                             agent_url: session.agent_url,
                             session_id: sessionId,
                             prompt: prompt,
-                            timeout_seconds: form.timeout,
-                            thinking: form.thinking
+                            timeout_seconds: form.timeout
                         };
-                        if (form.model) {
-                            body.model = form.model;
-                        }
                         if (form.tier) {
                             body.tier = form.tier;
                         }
@@ -3491,12 +3398,10 @@
                 },
 
                 getSessionMetrics(session) {
-                    // TODO: Aggregate metrics from task history when observability improvements land
-                    // For now, return placeholder data from history if available
+                    // Aggregate metrics from task history
                     const tasks = session.tasks || [];
                     let totalTokens = 0;
                     let totalDuration = 0;
-                    let model = null;
 
                     for (const task of tasks) {
                         const history = this.sessionHistory[session.id]?.tasks?.[task.task_id];
@@ -3507,16 +3412,12 @@
                             if (history.duration_seconds) {
                                 totalDuration += history.duration_seconds;
                             }
-                            if (history.model && !model) {
-                                model = history.model;
-                            }
                         }
                     }
 
                     return {
                         tokens: totalTokens || null,
-                        duration: totalDuration || null,
-                        model: model
+                        duration: totalDuration || null
                     };
                 },
 

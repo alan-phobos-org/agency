@@ -20,7 +20,7 @@ jobs:
   - name: smoke-test
     schedule: "0 0 31 2 *"  # Never auto-runs (Feb 31)
     agent_kind: claude
-    model: haiku
+    tier: fast
     timeout: 60s
     prompt: |
       This is a smoke test. Reply with exactly: "Smoke test OK"
@@ -36,7 +36,7 @@ jobs:
   - name: nightly-maintenance
     schedule: "0 1 * * *"
     agent_kind: claude
-    model: opus
+    tier: heavy
     timeout: 2h
     prompt: |
       # Nightly Maintenance Run
@@ -92,7 +92,7 @@ jobs:
   - name: daily-newsletter
     schedule: "0 6 * * *"  # 06:00 UTC daily
     agent_kind: claude
-    model: opus
+    tier: heavy
     timeout: 30m
     prompt: |
       Build today's newsletter, commit it, push, and merge the resulting PR to main.

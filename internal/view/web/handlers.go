@@ -32,7 +32,6 @@ type Handlers struct {
 	startTime    time.Time
 	tmpl         *template.Template
 	sessionStore *SessionStore
-	contexts     *ContextsConfig
 	authStore    *AuthStore
 	secureCookie bool       // Whether to set Secure flag on cookies (HTTPS)
 	shutdownFunc func()     // Callback to trigger graceful shutdown
@@ -40,7 +39,7 @@ type Handlers struct {
 }
 
 // NewHandlers creates handlers with dependencies
-func NewHandlers(discovery *Discovery, version string, contexts *ContextsConfig, authStore *AuthStore, secureCookie bool) (*Handlers, error) {
+func NewHandlers(discovery *Discovery, version string, authStore *AuthStore, secureCookie bool) (*Handlers, error) {
 	tmpl, err := template.ParseFS(assetsFS, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parsing templates: %w", err)
@@ -52,7 +51,6 @@ func NewHandlers(discovery *Discovery, version string, contexts *ContextsConfig,
 		startTime:    time.Now(),
 		tmpl:         tmpl,
 		sessionStore: NewSessionStore(),
-		contexts:     contexts,
 		authStore:    authStore,
 		secureCookie: secureCookie,
 	}, nil
@@ -147,12 +145,10 @@ type TaskSubmitRequest struct {
 	AgentURL       string            `json:"agent_url"`
 	AgentKind      string            `json:"agent_kind,omitempty"`
 	Prompt         string            `json:"prompt"`
-	Model          string            `json:"model,omitempty"`
 	Tier           string            `json:"tier,omitempty"`
 	TimeoutSeconds int               `json:"timeout_seconds,omitempty"`
 	SessionID      string            `json:"session_id,omitempty"` // Continue existing session
 	Env            map[string]string `json:"env,omitempty"`
-	Thinking       *bool             `json:"thinking,omitempty"`   // Enable extended thinking (default: true)
 	Source         string            `json:"source,omitempty"`     // "web", "scheduler", "cli" (default: "web")
 	SourceJob      string            `json:"source_job,omitempty"` // Job name for scheduler
 }
@@ -180,7 +176,7 @@ func (h *Handlers) HandleTaskSubmit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "validation_error", "prompt is required")
 		return
 	}
-	if req.Model == "" && req.Tier != "" && !api.IsValidTier(req.Tier) {
+	if req.Tier != "" && !api.IsValidTier(req.Tier) {
 		writeError(w, http.StatusBadRequest, "validation_error", "tier must be fast, standard, or heavy")
 		return
 	}
@@ -205,7 +201,7 @@ func (h *Handlers) HandleTaskSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build agent task request
-	agentReq := buildAgentRequest(req.Prompt, req.Model, req.Tier, req.TimeoutSeconds, req.SessionID, req.Env, req.Thinking)
+	agentReq := buildAgentRequest(req.Prompt, req.Tier, req.TimeoutSeconds, req.SessionID, req.Env)
 
 	// Forward to agent
 	body, _ := json.Marshal(agentReq)
@@ -619,11 +615,6 @@ func (h *Handlers) HandleDashboardData(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("ETag", etag)
 	w.WriteHeader(http.StatusOK)
 	w.Write(jsonData)
-}
-
-// HandleContexts returns available contexts
-func (h *Handlers) HandleContexts(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, h.contexts.GetAllContexts())
 }
 
 // HandleLoginPage renders the login form

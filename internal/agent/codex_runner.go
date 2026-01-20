@@ -3,7 +3,6 @@ package agent
 import (
 	"bufio"
 	"bytes"
-	_ "embed"
 	"encoding/json"
 	"os"
 	"strings"
@@ -11,9 +10,6 @@ import (
 	"phobos.org.uk/agency/internal/api"
 	"phobos.org.uk/agency/internal/config"
 )
-
-//go:embed codex.md
-var agentCodexMD string
 
 type codexRunner struct{}
 
@@ -27,10 +23,6 @@ func (codexRunner) ResolveBin() string {
 		codexBin = "codex"
 	}
 	return codexBin
-}
-
-func (codexRunner) DefaultPreprompt() string {
-	return agentCodexMD
 }
 
 func (codexRunner) BuildCommand(task *Task, prompt string, cfg *config.Config) RunnerCommand {

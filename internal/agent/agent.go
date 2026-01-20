@@ -49,23 +49,21 @@ const (
 
 // Task represents a task execution
 type Task struct {
-	ID              string              `json:"task_id"`
-	State           TaskState           `json:"state"`
-	Prompt          string              `json:"-"`
-	Model           string              `json:"-"`
-	Timeout         time.Duration       `json:"-"`
-	StartedAt       *time.Time          `json:"started_at,omitempty"`
-	CompletedAt     *time.Time          `json:"completed_at,omitempty"`
-	ExitCode        *int                `json:"exit_code,omitempty"`
-	Output          string              `json:"output,omitempty"`
-	Error           *TaskError          `json:"error,omitempty"`
-	SessionID       string              `json:"session_id,omitempty"`
-	ResumeSession   bool                `json:"-"` // True if continuing an existing session
-	WorkDir         string              `json:"-"` // Working directory for task execution
-	Project         *api.ProjectContext `json:"-"` // Project context for prompt prepending
-	Thinking        bool                `json:"-"` // Enable extended thinking mode
-	TokenUsage      *TokenUsage         `json:"token_usage,omitempty"`
-	DurationSeconds float64             `json:"duration_seconds,omitempty"`
+	ID              string        `json:"task_id"`
+	State           TaskState     `json:"state"`
+	Prompt          string        `json:"-"`
+	Model           string        `json:"-"`
+	Timeout         time.Duration `json:"-"`
+	StartedAt       *time.Time    `json:"started_at,omitempty"`
+	CompletedAt     *time.Time    `json:"completed_at,omitempty"`
+	ExitCode        *int          `json:"exit_code,omitempty"`
+	Output          string        `json:"output,omitempty"`
+	Error           *TaskError    `json:"error,omitempty"`
+	SessionID       string        `json:"session_id,omitempty"`
+	ResumeSession   bool          `json:"-"` // True if continuing an existing session
+	WorkDir         string        `json:"-"` // Working directory for task execution
+	TokenUsage      *TokenUsage   `json:"token_usage,omitempty"`
+	DurationSeconds float64       `json:"duration_seconds,omitempty"`
 
 	maxTurnsResumes int // Number of auto-resumes due to max_turns limit
 	cmd             *exec.Cmd
@@ -86,14 +84,11 @@ type TokenUsage struct {
 
 // TaskRequest represents a task submission request
 type TaskRequest struct {
-	Prompt         string              `json:"prompt"`
-	Model          string              `json:"model,omitempty"`
-	Tier           string              `json:"tier,omitempty"`
-	TimeoutSeconds int                 `json:"timeout_seconds,omitempty"`
-	SessionID      string              `json:"session_id,omitempty"`
-	Project        *api.ProjectContext `json:"project,omitempty"`
-	Env            map[string]string   `json:"env,omitempty"`
-	Thinking       *bool               `json:"thinking,omitempty"` // Enable extended thinking (default: true)
+	Prompt         string            `json:"prompt"`
+	Tier           string            `json:"tier,omitempty"`
+	TimeoutSeconds int               `json:"timeout_seconds,omitempty"`
+	SessionID      string            `json:"session_id,omitempty"`
+	Env            map[string]string `json:"env,omitempty"`
 }
 
 const maxSessionIDLen = 128
@@ -123,7 +118,6 @@ type Agent struct {
 	config    *config.Config
 	version   string
 	startTime time.Time
-	preprompt string // Preprompt instructions loaded at startup
 	history   *history.Store
 	log       *logging.Logger
 	runner    Runner
@@ -166,20 +160,6 @@ func NewWithRunner(cfg *config.Config, version string, runner Runner) *Agent {
 		MaxEntries: 1000,
 	})
 
-	// Load preprompt: try custom file first, fallback to embedded default
-	preprompt := runner.DefaultPreprompt()
-	if cfg.PrepromptFile != "" {
-		if data, err := os.ReadFile(cfg.PrepromptFile); err == nil {
-			preprompt = string(data)
-			log.Info("loaded preprompt", map[string]any{"path": cfg.PrepromptFile})
-		} else {
-			log.Warn("failed to load preprompt file, using default", map[string]any{
-				"path":  cfg.PrepromptFile,
-				"error": err.Error(),
-			})
-		}
-	}
-
 	// Initialize history store
 	var historyStore *history.Store
 	if cfg.HistoryDir != "" {
@@ -194,7 +174,6 @@ func NewWithRunner(cfg *config.Config, version string, runner Runner) *Agent {
 		config:    cfg,
 		version:   version,
 		startTime: time.Now(),
-		preprompt: preprompt,
 		history:   historyStore,
 		log:       log,
 		runner:    runner,
@@ -383,11 +362,7 @@ func (a *Agent) modelForTier(tier string) string {
 	return ""
 }
 
-func (a *Agent) resolveModel(req TaskRequest) (string, error) {
-	if req.Model != "" {
-		return req.Model, nil
-	}
-	tier := req.Tier
+func (a *Agent) resolveModel(tier string) (string, error) {
 	if tier == "" {
 		tier = api.TierStandard
 	}
@@ -404,11 +379,57 @@ func (a *Agent) resolveModel(req TaskRequest) (string, error) {
 	return model, nil
 }
 
-func (a *Agent) buildPrompt(task *Task) string {
-	if task.Project != nil && task.Project.Prompt != "" {
-		return a.preprompt + "\n\n" + task.Project.Prompt + "\n\n" + task.Prompt
+// loadAgencyPrompt loads the agency prompt file for this agent.
+// It looks for the prompt file in this order:
+// 1. Explicit AgencyPromptFile from config
+// 2. <AgencyPromptsDir>/<agent_kind>-<mode>.md (e.g., claude-prod.md)
+// 3. <AgencyPromptsDir>/<agent_kind>-prod.md (fallback if dev variant missing)
+// Returns error if no prompt file is found (forces proper installation).
+func (a *Agent) loadAgencyPrompt() (string, error) {
+	// 1. Try explicit file path from config
+	if a.config.AgencyPromptFile != "" {
+		data, err := os.ReadFile(a.config.AgencyPromptFile)
+		if err != nil {
+			return "", fmt.Errorf("reading agency prompt file %s: %w", a.config.AgencyPromptFile, err)
+		}
+		return string(data), nil
 	}
-	return a.preprompt + "\n\n" + task.Prompt
+
+	// 2. Determine prompts directory
+	promptsDir := a.config.AgencyPromptsDir
+	if promptsDir == "" {
+		promptsDir = config.DefaultPromptsPath()
+	}
+
+	// 3. Try mode-specific file (e.g., claude-dev.md)
+	mode := config.AgencyMode()
+	promptFile := filepath.Join(promptsDir, fmt.Sprintf("%s-%s.md", a.agentKind, mode))
+	if data, err := os.ReadFile(promptFile); err == nil {
+		return string(data), nil
+	}
+
+	// 4. Fallback to prod variant if dev variant missing
+	if mode != "prod" {
+		prodFile := filepath.Join(promptsDir, fmt.Sprintf("%s-prod.md", a.agentKind))
+		if data, err := os.ReadFile(prodFile); err == nil {
+			a.log.Info("using prod agency prompt (dev variant not found)", map[string]any{
+				"prod_file": prodFile,
+				"dev_file":  promptFile,
+			})
+			return string(data), nil
+		}
+	}
+
+	return "", fmt.Errorf("agency prompt file not found: tried %s (install agency prompts to %s)", promptFile, promptsDir)
+}
+
+func (a *Agent) buildPrompt(task *Task) (string, error) {
+	// Load agency prompt fresh each task (allows hot-reload)
+	agencyPrompt, err := a.loadAgencyPrompt()
+	if err != nil {
+		return "", err
+	}
+	return agencyPrompt + "\n\n" + task.Prompt, nil
 }
 
 func setTaskCompletion(task *Task, completedAt time.Time) {
@@ -433,7 +454,7 @@ func (a *Agent) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Model == "" && req.Tier != "" && !api.IsValidTier(req.Tier) {
+	if req.Tier != "" && !api.IsValidTier(req.Tier) {
 		api.WriteError(w, http.StatusBadRequest, "validation_error", "tier must be fast, standard, or heavy")
 		return
 	}
@@ -468,14 +489,9 @@ func (a *Agent) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		sessionID = uuid.New().String()
 	}
 
-	// Default thinking to true if not specified
-	thinking := true
-	if req.Thinking != nil {
-		thinking = *req.Thinking
-	}
-
-	model, err := a.resolveModel(req)
+	model, err := a.resolveModel(req.Tier)
 	if err != nil {
+		a.mu.Unlock()
 		api.WriteError(w, http.StatusInternalServerError, "configuration_error", err.Error())
 		return
 	}
@@ -488,8 +504,6 @@ func (a *Agent) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		SessionID:     sessionID,
 		ResumeSession: resumeSession,
 		WorkDir:       sessionID,
-		Project:       req.Project,
-		Thinking:      thinking,
 	}
 
 	if req.TimeoutSeconds > 0 {
@@ -729,7 +743,23 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 
 	// Execution loop: runs once normally, up to 2 more times for max_turns auto-resume
 	for {
-		prompt := a.buildPrompt(task)
+		prompt, promptErr := a.buildPrompt(task)
+		if promptErr != nil {
+			completedAt := time.Now()
+			a.mu.Lock()
+			setTaskCompletion(task, completedAt)
+			task.State = TaskStateFailed
+			exitCode := 1
+			task.ExitCode = &exitCode
+			task.Error = &TaskError{
+				Type:    "prompt_error",
+				Message: promptErr.Error(),
+			}
+			a.mu.Unlock()
+			a.saveTaskHistory(task, nil)
+			a.cleanupTask(task)
+			return
+		}
 		cmdSpec := a.runner.BuildCommand(task, prompt, a.config)
 
 		cmd := exec.CommandContext(ctx, runnerBin, cmdSpec.Args...)

@@ -13,14 +13,14 @@ agent_url: http://localhost:19000
 jobs:
   - name: smoke-test
     schedule: "0 0 31 2 *"  # Never auto-runs (Feb 31)
-    model: haiku
+    tier: fast
     timeout: 60s
     prompt: |
       This is a smoke test. Reply with exactly: "Smoke test OK"
 
   - name: daily-newsletter
     schedule: "0 6 * * *"  # 06:00 UTC daily
-    model: opus
+    tier: heavy
     timeout: 30m
     prompt: |
       Build today's newsletter, commit it, push, and merge the resulting PR to main.

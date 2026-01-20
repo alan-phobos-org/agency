@@ -56,11 +56,6 @@ func verifyBinaries(t *testing.T, binDir string) {
 
 // startWebView starts the web view binary
 func startWebView(t *testing.T, binDir string, port int, token string, agentPortStart, agentPortEnd int) *exec.Cmd {
-	return startWebViewWithContexts(t, binDir, port, token, agentPortStart, agentPortEnd, "")
-}
-
-// startWebViewWithContexts starts the web view binary with optional contexts file
-func startWebViewWithContexts(t *testing.T, binDir string, port int, token string, agentPortStart, agentPortEnd int, contextsPath string) *exec.Cmd {
 	t.Helper()
 
 	webBin := filepath.Join(binDir, "ag-view-web")
@@ -68,9 +63,6 @@ func startWebViewWithContexts(t *testing.T, binDir string, port int, token strin
 		"-port", fmt.Sprintf("%d", port),
 		"-port-start", fmt.Sprintf("%d", agentPortStart),
 		"-port-end", fmt.Sprintf("%d", agentPortEnd),
-	}
-	if contextsPath != "" {
-		args = append(args, "-contexts", contextsPath)
 	}
 
 	cmd := exec.Command(webBin, args...)
@@ -302,132 +294,6 @@ func TestSystemWebViewSessionOrdering(t *testing.T) {
 	require.Equal(t, "sess-old", data.Sessions[1].ID, "Older session should be second")
 }
 
-func TestSystemWebViewContexts(t *testing.T) {
-	binDir := buildBinaries(t)
-
-	// Create a test contexts file
-	tmpDir := t.TempDir()
-	contextsPath := filepath.Join(tmpDir, "contexts.yaml")
-	contextsContent := `contexts:
-  - id: test-dev
-    name: Test Development
-    description: Test development workflow
-    model: opus
-    thinking: true
-    timeout_seconds: 1800
-    prompt_prefix: |
-      Test prefix for development tasks.
-  - id: test-quick
-    name: Quick Task
-    description: Fast responses
-    model: haiku
-    thinking: false
-    timeout_seconds: 300
-`
-	err := os.WriteFile(contextsPath, []byte(contextsContent), 0644)
-	require.NoError(t, err)
-
-	// Start web view with contexts
-	webPort := testutil.AllocateTestPortN(t, 0)
-	webURL := fmt.Sprintf("https://localhost:%d", webPort)
-	token := "test-contexts-token"
-
-	webCmd := startWebViewWithContexts(t, binDir, webPort, token, 59900, 59900, contextsPath)
-
-	defer func() {
-		if webCmd.Process != nil {
-			webCmd.Process.Signal(syscall.SIGTERM)
-			webCmd.Wait()
-		}
-	}()
-
-	waitForHTTPS(t, webURL+"/status", 15*time.Second)
-	t.Log("Web view with contexts is healthy")
-
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-	}
-
-	t.Run("contexts endpoint returns configured contexts", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", webURL+"/api/contexts", nil)
-		req.Header.Set("Authorization", "Bearer "+token)
-
-		resp, err := client.Do(req)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-
-		require.Equal(t, http.StatusOK, resp.StatusCode)
-
-		var contexts []Context
-		body, _ := io.ReadAll(resp.Body)
-		err = json.Unmarshal(body, &contexts)
-		require.NoError(t, err)
-
-		// Should have manual + 2 configured contexts
-		require.Len(t, contexts, 3)
-		require.Equal(t, "manual", contexts[0].ID)
-		require.Equal(t, "test-dev", contexts[1].ID)
-		require.Equal(t, "test-quick", contexts[2].ID)
-	})
-
-	t.Run("contexts have correct settings", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", webURL+"/api/contexts", nil)
-		req.Header.Set("Authorization", "Bearer "+token)
-
-		resp, err := client.Do(req)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-
-		var contexts []Context
-		body, _ := io.ReadAll(resp.Body)
-		json.Unmarshal(body, &contexts)
-
-		// Find test-dev context
-		var devCtx *Context
-		for i := range contexts {
-			if contexts[i].ID == "test-dev" {
-				devCtx = &contexts[i]
-				break
-			}
-		}
-		require.NotNil(t, devCtx, "test-dev context should exist")
-		require.Equal(t, "Test Development", devCtx.Name)
-		require.Equal(t, "Test development workflow", devCtx.Description)
-		require.Equal(t, "opus", devCtx.Model)
-		require.NotNil(t, devCtx.Thinking)
-		require.True(t, *devCtx.Thinking)
-		require.Equal(t, 1800, devCtx.TimeoutSeconds)
-		require.Contains(t, devCtx.PromptPrefix, "Test prefix")
-
-		// Find test-quick context
-		var quickCtx *Context
-		for i := range contexts {
-			if contexts[i].ID == "test-quick" {
-				quickCtx = &contexts[i]
-				break
-			}
-		}
-		require.NotNil(t, quickCtx, "test-quick context should exist")
-		require.Equal(t, "Quick Task", quickCtx.Name)
-		require.Equal(t, "haiku", quickCtx.Model)
-		require.NotNil(t, quickCtx.Thinking)
-		require.False(t, *quickCtx.Thinking)
-		require.Equal(t, 300, quickCtx.TimeoutSeconds)
-	})
-
-	t.Run("contexts requires auth", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", webURL+"/api/contexts", nil)
-		resp, err := client.Do(req)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-
-		require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
-	})
-}
-
 func TestSystemWebViewSessionDetail(t *testing.T) {
 	binDir := buildBinaries(t)
 
@@ -581,54 +447,6 @@ func TestSystemWebViewSessionDetail(t *testing.T) {
 	})
 }
 
-func TestSystemWebViewNoContexts(t *testing.T) {
-	binDir := buildBinaries(t)
-
-	// Start web view without contexts
-	webPort := testutil.AllocateTestPortN(t, 0)
-	webURL := fmt.Sprintf("https://localhost:%d", webPort)
-	token := "test-no-contexts-token"
-
-	webCmd := startWebView(t, binDir, webPort, token, 59900, 59900)
-
-	defer func() {
-		if webCmd.Process != nil {
-			webCmd.Process.Signal(syscall.SIGTERM)
-			webCmd.Wait()
-		}
-	}()
-
-	waitForHTTPS(t, webURL+"/status", 15*time.Second)
-
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-	}
-
-	t.Run("contexts endpoint returns only manual without config", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", webURL+"/api/contexts", nil)
-		req.Header.Set("Authorization", "Bearer "+token)
-
-		resp, err := client.Do(req)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-
-		require.Equal(t, http.StatusOK, resp.StatusCode)
-
-		var contexts []Context
-		body, _ := io.ReadAll(resp.Body)
-		err = json.Unmarshal(body, &contexts)
-		require.NoError(t, err)
-
-		// Should have only manual context
-		require.Len(t, contexts, 1)
-		require.Equal(t, "manual", contexts[0].ID)
-		require.Equal(t, "Manual", contexts[0].Name)
-	})
-}
-
 // startScheduler starts a scheduler binary with the given config
 func startScheduler(t *testing.T, binDir string, configPath string, port int) *exec.Cmd {
 	t.Helper()
@@ -774,7 +592,7 @@ jobs:
   - name: trigger-test-job
     schedule: "0 0 1 1 *"
     prompt: "Test task for trigger"
-    model: haiku
+    tier: fast
     timeout: 5m
 `, schedulerPort, agentURL)
 

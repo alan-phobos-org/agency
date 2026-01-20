@@ -1,7 +1,7 @@
 # Smoke Test Scheduler Configuration
 # Mirrors production scheduler config but with:
 # - Smoke test ports
-# - Simplified nightly maintenance (single repo, haiku model)
+# - Simplified nightly maintenance (single repo, fast tier)
 
 port: 19010
 
@@ -15,14 +15,14 @@ jobs:
   - name: smoke-test
     schedule: "0 0 31 2 *"  # Never auto-runs (Feb 31)
     agent_kind: claude
-    model: haiku
+    tier: fast
     timeout: 60s
     prompt: |
       This is a smoke test. Reply with exactly: "Smoke test OK"
 
   - name: smoke-nightly-maintenance
     schedule: "0 0 31 2 *"  # Never auto-runs (Feb 31)
-    model: haiku
+    tier: fast
     timeout: 2m
     prompt: |
       # Smoke Test Nightly Maintenance

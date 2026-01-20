@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"phobos.org.uk/agency/internal/api"
 	"phobos.org.uk/agency/internal/config"
 )
 
@@ -79,9 +78,15 @@ func TestCreateTaskSuccess(t *testing.T) {
 	t.Setenv("CLAUDE_BIN", "echo")
 
 	tmpDir := t.TempDir()
+	// Create agency prompt file
+	promptsDir := filepath.Join(tmpDir, "prompts")
+	require.NoError(t, os.MkdirAll(promptsDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(promptsDir, "claude-prod.md"), []byte("# Test Instructions"), 0644))
+
 	cfg := config.Default()
 	cfg.SessionDir = filepath.Join(tmpDir, "sessions")
 	cfg.HistoryDir = filepath.Join(tmpDir, "history")
+	cfg.AgencyPromptsDir = promptsDir
 	a := New(cfg, "test")
 
 	body := `{"prompt": "test prompt"}`
@@ -105,9 +110,15 @@ func TestCreateTaskCreatesSessionDir(t *testing.T) {
 	t.Setenv("CLAUDE_BIN", "echo")
 
 	tmpDir := t.TempDir()
+	// Create agency prompt file
+	promptsDir := filepath.Join(tmpDir, "prompts")
+	require.NoError(t, os.MkdirAll(promptsDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(promptsDir, "claude-prod.md"), []byte("# Test Instructions"), 0644))
+
 	cfg := config.Default()
 	cfg.SessionDir = filepath.Join(tmpDir, "sessions")
 	cfg.HistoryDir = filepath.Join(tmpDir, "history")
+	cfg.AgencyPromptsDir = promptsDir
 	a := New(cfg, "test")
 
 	body := `{"prompt": "test prompt"}`
@@ -144,8 +155,15 @@ func TestAgentBusy(t *testing.T) {
 	// Cannot use t.Parallel() with t.Setenv()
 	t.Setenv("CLAUDE_BIN", "sleep")
 
+	tmpDir := t.TempDir()
+	// Create agency prompt file
+	promptsDir := filepath.Join(tmpDir, "prompts")
+	require.NoError(t, os.MkdirAll(promptsDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(promptsDir, "claude-prod.md"), []byte("# Test Instructions"), 0644))
+
 	cfg := config.Default()
-	cfg.SessionDir = t.TempDir()
+	cfg.SessionDir = filepath.Join(tmpDir, "sessions")
+	cfg.AgencyPromptsDir = promptsDir
 	a := New(cfg, "test")
 	defer a.Shutdown(context.Background())
 
@@ -183,6 +201,12 @@ func TestShutdownWithoutTask(t *testing.T) {
 
 func TestBuildClaudeArgs(t *testing.T) {
 	t.Parallel()
+
+	// Create a shared temp dir with agency prompt for all subtests
+	tmpDir := t.TempDir()
+	promptsDir := filepath.Join(tmpDir, "prompts")
+	require.NoError(t, os.MkdirAll(promptsDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(promptsDir, "claude-prod.md"), []byte("# Agent Instructions\n\nTest instructions here."), 0644))
 
 	tests := []struct {
 		name   string
@@ -293,40 +317,16 @@ func TestBuildClaudeArgs(t *testing.T) {
 				require.Equal(t, "50", args[idx+1]) // Default value
 			},
 		},
-		{
-			name: "prompt with project context",
-			task: &Task{
-				Model:  "sonnet",
-				Prompt: "do the task",
-				Project: &api.ProjectContext{
-					Name:   "test-project",
-					Prompt: "Project instructions here",
-				},
-			},
-			verify: func(t *testing.T, args []string) {
-				dashIdx := indexOf(args, "--")
-				require.Greater(t, dashIdx, 0, "-- should be present")
-				prompt := args[dashIdx+1]
-				// Should contain all three parts in correct order
-				require.Contains(t, prompt, "# Agent Instructions")
-				require.Contains(t, prompt, "Project instructions here")
-				require.Contains(t, prompt, "do the task")
-				// Project prompt should appear between agent instructions and task prompt
-				agentIdx := strings.Index(prompt, "# Agent Instructions")
-				projectIdx := strings.Index(prompt, "Project instructions here")
-				taskIdx := strings.Index(prompt, "do the task")
-				require.Less(t, agentIdx, projectIdx, "agent instructions should come before project prompt")
-				require.Less(t, projectIdx, taskIdx, "project prompt should come before task prompt")
-			},
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			cfg := config.Default()
+			cfg.AgencyPromptsDir = promptsDir
 			a := New(cfg, "test")
-			prompt := a.buildPrompt(tt.task)
+			prompt, err := a.buildPrompt(tt.task)
+			require.NoError(t, err)
 			cmdSpec := claudeRunner{}.BuildCommand(tt.task, prompt, cfg)
 			args := cmdSpec.Args
 			tt.verify(t, args)
@@ -343,27 +343,25 @@ func indexOf(slice []string, item string) int {
 	return -1
 }
 
-func TestPrepromptFileLoading(t *testing.T) {
+func TestAgencyPromptFileLoading(t *testing.T) {
 	t.Parallel()
 
-	// Create a custom preprompt file
+	// Create a custom agency prompt file
 	tmpDir := t.TempDir()
-	prepromptPath := filepath.Join(tmpDir, "custom-preprompt.md")
+	promptsDir := filepath.Join(tmpDir, "prompts")
+	require.NoError(t, os.MkdirAll(promptsDir, 0755))
 	customContent := "# Custom Instructions\n\nDo custom things."
-	err := os.WriteFile(prepromptPath, []byte(customContent), 0644)
-	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(promptsDir, "claude-prod.md"), []byte(customContent), 0644))
 
 	cfg := config.Default()
-	cfg.PrepromptFile = prepromptPath
+	cfg.AgencyPromptsDir = promptsDir
 
 	a := New(cfg, "test")
 
-	// Verify custom preprompt is used
-	require.Equal(t, customContent, a.preprompt)
-
 	// Verify it appears in built args
 	task := &Task{Model: "sonnet", Prompt: "test prompt"}
-	prompt := a.buildPrompt(task)
+	prompt, err := a.buildPrompt(task)
+	require.NoError(t, err)
 	cmdSpec := claudeRunner{}.BuildCommand(task, prompt, cfg)
 	args := cmdSpec.Args
 	promptArg := args[len(args)-1] // Last arg is the prompt
@@ -371,129 +369,54 @@ func TestPrepromptFileLoading(t *testing.T) {
 	require.Contains(t, promptArg, "test prompt")
 }
 
-func TestPrepromptFileFallbackToDefault(t *testing.T) {
+func TestAgencyPromptExplicitFile(t *testing.T) {
 	t.Parallel()
-
-	cfg := config.Default()
-	cfg.PrepromptFile = "/nonexistent/path/preprompt.md"
-
-	a := New(cfg, "test")
-
-	// Should fall back to embedded default
-	require.Contains(t, a.preprompt, "# Agent Instructions")
-}
-
-func TestPrepromptDefaultEmbedded(t *testing.T) {
-	t.Parallel()
-
-	cfg := config.Default()
-	// No PrepromptFile set
-
-	a := New(cfg, "test")
-
-	// Should use embedded default
-	require.Contains(t, a.preprompt, "# Agent Instructions")
-	require.Contains(t, a.preprompt, "Git Commits")
-}
-
-func TestCreateTaskThinkingDefault(t *testing.T) {
-	// Cannot use t.Parallel() with t.Setenv()
-	t.Setenv("CLAUDE_BIN", "echo")
 
 	tmpDir := t.TempDir()
+	promptFile := filepath.Join(tmpDir, "custom-prompt.md")
+	customContent := "# Explicit Instructions\n\nDo specific things."
+	require.NoError(t, os.WriteFile(promptFile, []byte(customContent), 0644))
+
 	cfg := config.Default()
-	cfg.SessionDir = filepath.Join(tmpDir, "sessions")
-	cfg.HistoryDir = "" // Disable history so tasks remain in memory for verification
+	cfg.AgencyPromptFile = promptFile
+
 	a := New(cfg, "test")
 
-	// Submit task without thinking field - should default to true
-	body := `{"prompt": "test prompt"}`
-	req := httptest.NewRequest("POST", "/task", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	a.Router().ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusCreated, w.Code)
-
-	// Parse response to get task ID
-	var resp struct {
-		TaskID string `json:"task_id"`
-	}
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-
-	// Wait for task to complete
-	time.Sleep(100 * time.Millisecond)
-
-	// Look up task from tasks map (persists after completion)
-	a.mu.RLock()
-	task, ok := a.tasks[resp.TaskID]
-	a.mu.RUnlock()
-	require.True(t, ok, "task should exist in tasks map")
-	require.True(t, task.Thinking, "thinking should default to true")
+	// Verify explicit file is used
+	task := &Task{Model: "sonnet", Prompt: "test prompt"}
+	prompt, err := a.buildPrompt(task)
+	require.NoError(t, err)
+	require.Contains(t, prompt, "# Explicit Instructions")
+	require.Contains(t, prompt, "test prompt")
 }
 
-func TestCreateTaskThinkingExplicit(t *testing.T) {
-	// Cannot use t.Parallel() with t.Setenv()
-	t.Setenv("CLAUDE_BIN", "echo")
+func TestAgencyPromptFileMissing(t *testing.T) {
+	t.Parallel()
 
-	tests := []struct {
-		name     string
-		body     string
-		expected bool
-	}{
-		{
-			name:     "thinking explicitly true",
-			body:     `{"prompt": "test", "thinking": true}`,
-			expected: true,
-		},
-		{
-			name:     "thinking explicitly false",
-			body:     `{"prompt": "test", "thinking": false}`,
-			expected: false,
-		},
-	}
+	cfg := config.Default()
+	cfg.AgencyPromptsDir = "/nonexistent/path"
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tmpDir := t.TempDir()
-			cfg := config.Default()
-			cfg.SessionDir = filepath.Join(tmpDir, "sessions")
-			cfg.HistoryDir = "" // Disable history so tasks remain in memory for verification
-			a := New(cfg, "test")
+	a := New(cfg, "test")
 
-			req := httptest.NewRequest("POST", "/task", strings.NewReader(tt.body))
-			req.Header.Set("Content-Type", "application/json")
-			w := httptest.NewRecorder()
-
-			a.Router().ServeHTTP(w, req)
-
-			require.Equal(t, http.StatusCreated, w.Code)
-
-			// Parse response to get task ID
-			var resp struct {
-				TaskID string `json:"task_id"`
-			}
-			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-
-			// Wait for task to complete
-			time.Sleep(100 * time.Millisecond)
-
-			// Look up task from tasks map (persists after completion)
-			a.mu.RLock()
-			task, ok := a.tasks[resp.TaskID]
-			a.mu.RUnlock()
-			require.True(t, ok, "task should exist in tasks map")
-			require.Equal(t, tt.expected, task.Thinking)
-		})
-	}
+	// Should return error when prompt file is missing
+	task := &Task{Model: "sonnet", Prompt: "test prompt"}
+	_, err := a.buildPrompt(task)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "agency prompt file not found")
 }
+
 
 func TestBuildClaudeArgsCustomMaxTurns(t *testing.T) {
 	t.Parallel()
 
+	tmpDir := t.TempDir()
+	promptsDir := filepath.Join(tmpDir, "prompts")
+	require.NoError(t, os.MkdirAll(promptsDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(promptsDir, "claude-prod.md"), []byte("# Test Instructions"), 0644))
+
 	cfg := config.Default()
 	cfg.Claude.MaxTurns = 100 // Custom value
+	cfg.AgencyPromptsDir = promptsDir
 	a := New(cfg, "test")
 
 	task := &Task{
@@ -501,7 +424,8 @@ func TestBuildClaudeArgsCustomMaxTurns(t *testing.T) {
 		Prompt: "test prompt",
 	}
 
-	prompt := a.buildPrompt(task)
+	prompt, err := a.buildPrompt(task)
+	require.NoError(t, err)
 	cmdSpec := claudeRunner{}.BuildCommand(task, prompt, cfg)
 	args := cmdSpec.Args
 	require.Contains(t, args, "--max-turns")
@@ -516,15 +440,21 @@ func TestMaxTurnsAutoResume(t *testing.T) {
 	t.Setenv("CLAUDE_BIN", mockPath)
 
 	// Use temp file for counter to avoid interference between tests
-	counterFile := filepath.Join(t.TempDir(), "counter")
+	tmpDir := t.TempDir()
+	counterFile := filepath.Join(tmpDir, "counter")
 	t.Setenv("MOCK_MAX_TURNS_COUNTER", counterFile)
 	// Fail twice, succeed on 3rd attempt
 	t.Setenv("MOCK_MAX_TURNS_FAIL_COUNT", "2")
 
-	tmpDir := t.TempDir()
+	// Create agency prompt file
+	promptsDir := filepath.Join(tmpDir, "prompts")
+	require.NoError(t, os.MkdirAll(promptsDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(promptsDir, "claude-prod.md"), []byte("# Test Instructions"), 0644))
+
 	cfg := config.Default()
 	cfg.SessionDir = filepath.Join(tmpDir, "sessions")
 	cfg.HistoryDir = "" // Disable history so tasks remain in memory for verification
+	cfg.AgencyPromptsDir = promptsDir
 	a := New(cfg, "test")
 
 	// Submit task
@@ -560,15 +490,21 @@ func TestMaxTurnsExhausted(t *testing.T) {
 	t.Setenv("CLAUDE_BIN", mockPath)
 
 	// Use temp file for counter
-	counterFile := filepath.Join(t.TempDir(), "counter")
+	tmpDir := t.TempDir()
+	counterFile := filepath.Join(tmpDir, "counter")
 	t.Setenv("MOCK_MAX_TURNS_COUNTER", counterFile)
 	// Fail 5 times - more than the 2 auto-resumes allowed
 	t.Setenv("MOCK_MAX_TURNS_FAIL_COUNT", "5")
 
-	tmpDir := t.TempDir()
+	// Create agency prompt file
+	promptsDir := filepath.Join(tmpDir, "prompts")
+	require.NoError(t, os.MkdirAll(promptsDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(promptsDir, "claude-prod.md"), []byte("# Test Instructions"), 0644))
+
 	cfg := config.Default()
 	cfg.SessionDir = filepath.Join(tmpDir, "sessions")
 	cfg.HistoryDir = "" // Disable history so tasks remain in memory for verification
+	cfg.AgencyPromptsDir = promptsDir
 	a := New(cfg, "test")
 
 	// Submit task

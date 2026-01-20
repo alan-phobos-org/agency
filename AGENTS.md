@@ -119,7 +119,7 @@ agency/
 │   ├── ag-github-monitor/  # GitHub repo event monitor
 │   ├── ag-scheduler/       # Scheduler binary (cron-style task triggering)
 │   └── ag-view-web/        # Web view binary (HTTPS dashboard)
-├── configs/                # Configuration files (contexts.yaml, scheduler.yaml)
+├── configs/                # Configuration files (scheduler.yaml)
 ├── deployment/             # Local and remote deployment scripts
 ├── internal/
 │   ├── agent/          # Agent logic + REST API handlers
@@ -161,7 +161,7 @@ Quick reference: `./build.sh prepare-release` then `./build.sh release X.Y.Z`.
 
 - **Agent**: Single-task executor with REST API, session support, auto-resume
 - **CLI**: `ag-cli task|status|discover` commands
-- **Web View**: HTTPS dashboard with auth, discovery, task submission, contexts
+- **Web View**: HTTPS dashboard with auth, discovery, task submission
 - **Scheduler**: Cron-style task triggering (`ag-scheduler -config configs/scheduler.yaml`)
   - Standard 5-field cron expressions
   - Configurable agent URL, model, and timeout per job

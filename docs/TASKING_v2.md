@@ -385,6 +385,54 @@ task prompt                         →  User's actual task
 
 ---
 
+## Implementation Status
+
+### Stage 1: Core Code Changes ✅ COMPLETE
+
+Files modified:
+- `internal/agent/agent.go` - Added `loadAgencyPrompt()`, updated `buildPrompt()`, removed preprompt field
+- `internal/agent/runner.go` - Removed `DefaultPreprompt()` from Runner interface
+- `internal/agent/claude.md` - DELETED
+- `internal/agent/codex.md` - DELETED
+- `internal/config/config.go` - Added `AgencyPromptsDir`, removed `PrepromptFile`, `ProjectConfig`
+- `internal/view/web/contexts.go` - DELETED
+- `internal/view/web/contexts_test.go` - DELETED
+- `internal/view/web/director.go` - Removed contexts loading, `/api/contexts` route, `ContextsPath` from Config
+- `internal/view/web/handlers.go` - Removed `HandleContexts` handler
+- `internal/view/web/handlers_test.go` - Removed contexts tests, updated `newTestHandlers` signature
+- `internal/view/web/queue.go` - Removed `Model`, `Thinking`, `Project` from `QueuedTask` and `QueueSubmitRequest`
+- `internal/view/web/queue_handlers.go` - Simplified validation (tier only)
+- `internal/view/web/agent_request.go` - Removed `model` and `thinking` params from `buildAgentRequest()`
+- `internal/view/web/dispatcher.go` - Updated to not pass model/thinking
+- `internal/view/web/templates/dashboard.html` - Removed context dropdown, model selector, thinking toggle
+- `internal/view/web/system_test.go` - Removed contexts tests, updated scheduler config to use tier
+- `internal/scheduler/config.go` - Removed `Model` from `Job`, added `GetTier()`
+- `internal/scheduler/scheduler.go` - Use tier instead of model in requests
+- `internal/scheduler/scheduler_test.go` - Updated tests to use tier
+- `cmd/ag-view-web/main.go` - Removed `-contexts` flag and `ContextsPath` config
+- `configs/contexts.yaml` - DELETED
+- `configs/scheduler.yaml` - Updated jobs to use `tier` instead of `model`
+
+### Stage 2: Documentation Updates ✅ COMPLETE
+
+Files updated:
+- `docs/DESIGN.md` - Removed `-contexts` flag, updated "Embedded Instructions" to "Agency Prompts"
+- `docs/WEB_UI_DESIGN.md` - Removed context picker from task submission, updated options to show tier/timeout
+- `docs/REFERENCE.md` - Removed `/api/contexts` endpoint, updated task request fields, removed contexts YAML section
+- `AGENTS.md` - Updated configs description, removed contexts reference from web view features
+- `CHANGELOG.md` - Added breaking changes section documenting all removals and new agency prompt system
+- `deployment/agency.sh` - Removed `-contexts` argument from web view startup
+- `deployment/deploy-agency.sh` - Removed contexts.yaml copying and `-contexts` argument
+- `build.sh` - Removed contexts.yaml from distribution package
+
+### Stage 3: Verification ✅ COMPLETE
+
+- `internal/view/web/sessions_test.go` - Fixed `NewHandlers` call signature (removed extra nil argument)
+- Full test suite passes: `go test ./...` returns all OK
+- UI validation: Context dropdown, model selector, and thinking toggle removed from dashboard
+
+---
+
 ## Related Documents
 
 - [DESIGN.md](DESIGN.md) - Overall architecture

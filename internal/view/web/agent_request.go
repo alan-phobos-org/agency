@@ -1,12 +1,9 @@
 package web
 
 // buildAgentRequest constructs the payload for agent task submission.
-func buildAgentRequest(prompt, model, tier string, timeoutSeconds int, sessionID string, env map[string]string, thinking *bool) map[string]interface{} {
+func buildAgentRequest(prompt, tier string, timeoutSeconds int, sessionID string, env map[string]string) map[string]interface{} {
 	req := map[string]interface{}{
 		"prompt": prompt,
-	}
-	if model != "" {
-		req["model"] = model
 	}
 	if tier != "" {
 		req["tier"] = tier
@@ -19,9 +16,6 @@ func buildAgentRequest(prompt, model, tier string, timeoutSeconds int, sessionID
 	}
 	if len(env) > 0 {
 		req["env"] = env
-	}
-	if thinking != nil {
-		req["thinking"] = *thinking
 	}
 	return req
 }

@@ -228,14 +228,10 @@ test.describe.serial('Agency Smoke Tests', () => {
     await expect(promptInput).toBeVisible({ timeout: 5000 });
     await promptInput.fill('List the files in /tmp using bash, then tell me how many there are.');
 
-    // Select Manual context to enable model selection
-    const contextSelect = page.locator('select').filter({ hasText: 'Manual' }).first();
-    await contextSelect.selectOption('manual');
-
-    // Expand Advanced Options to access model select
+    // Expand Advanced Options to access tier select (model and context selection have been removed in TASKING_V2)
     await page.click('button:has-text("Advanced Options")');
-    const modelSelect = page.getByLabel('Model');
-    await modelSelect.selectOption('haiku');
+    const tierSelect = page.getByLabel('Tier');
+    await tierSelect.selectOption('fast');
     await screenshot(page, '04-task-form-filled');
 
     // Get initial session count before submitting
