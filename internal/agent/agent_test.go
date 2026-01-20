@@ -403,7 +403,7 @@ func TestCreateTaskThinkingDefault(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfg := config.Default()
 	cfg.SessionDir = filepath.Join(tmpDir, "sessions")
-	cfg.HistoryDir = filepath.Join(tmpDir, "history")
+	cfg.HistoryDir = "" // Disable history so tasks remain in memory for verification
 	a := New(cfg, "test")
 
 	// Submit task without thinking field - should default to true
@@ -459,7 +459,7 @@ func TestCreateTaskThinkingExplicit(t *testing.T) {
 			tmpDir := t.TempDir()
 			cfg := config.Default()
 			cfg.SessionDir = filepath.Join(tmpDir, "sessions")
-			cfg.HistoryDir = filepath.Join(tmpDir, "history")
+			cfg.HistoryDir = "" // Disable history so tasks remain in memory for verification
 			a := New(cfg, "test")
 
 			req := httptest.NewRequest("POST", "/task", strings.NewReader(tt.body))
@@ -524,7 +524,7 @@ func TestMaxTurnsAutoResume(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfg := config.Default()
 	cfg.SessionDir = filepath.Join(tmpDir, "sessions")
-	cfg.HistoryDir = filepath.Join(tmpDir, "history")
+	cfg.HistoryDir = "" // Disable history so tasks remain in memory for verification
 	a := New(cfg, "test")
 
 	// Submit task
@@ -568,7 +568,7 @@ func TestMaxTurnsExhausted(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfg := config.Default()
 	cfg.SessionDir = filepath.Join(tmpDir, "sessions")
-	cfg.HistoryDir = filepath.Join(tmpDir, "history")
+	cfg.HistoryDir = "" // Disable history so tasks remain in memory for verification
 	a := New(cfg, "test")
 
 	// Submit task
