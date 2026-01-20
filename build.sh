@@ -364,6 +364,8 @@ case "${1:-help}" in
         export AG_DISCOVERY_END=19010
         export AG_SCHEDULER_CONFIG="$PWD/tests/smoke/fixtures/scheduler-smoke.yaml"
         export AG_WEB_PASSWORD="${AG_WEB_PASSWORD:-smoketest}"
+        export AGENCY_PROMPTS_DIR="$PWD/tests/smoke/fixtures/prompts"
+        export AGENCY_MODE="dev"
 
         # Check if agency is already running
         if mode=$(detect_running_agency 2>/dev/null); then
