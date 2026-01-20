@@ -27,6 +27,61 @@ async function screenshot(page: Page, name: string): Promise<void> {
 }
 
 /**
+ * Waits for a session to reach a terminal state and verifies completion.
+ * Captures diagnostic information if the job fails for better debugging.
+ *
+ * @param page - Playwright page object
+ * @param sessionCard - Locator for the session card
+ * @param screenshotPrefix - Prefix for diagnostic screenshots
+ * @param timeout - Timeout for waiting (default 90000ms)
+ * @returns The final status class name
+ */
+async function waitForJobCompletion(
+  page: Page,
+  sessionCard: Locator,
+  screenshotPrefix: string,
+  timeout: number = 90000
+): Promise<string> {
+  // Wait for any terminal state
+  const terminalStatus = sessionCard.locator(
+    '.session-status--completed, .session-status--failed, .session-status--cancelled'
+  );
+  await expect(terminalStatus).toBeVisible({ timeout });
+
+  // Determine the actual status
+  const statusElement = sessionCard.locator('[class*="session-status--"]').first();
+  const statusClasses = await statusElement.getAttribute('class') || '';
+
+  const isCompleted = statusClasses.includes('session-status--completed');
+  const isFailed = statusClasses.includes('session-status--failed');
+  const isCancelled = statusClasses.includes('session-status--cancelled');
+
+  // If not completed, capture diagnostic info before failing
+  if (!isCompleted) {
+    await screenshot(page, `${screenshotPrefix}-TERMINAL-STATE`);
+
+    // Expand session to capture output/error details
+    const sessionBody = sessionCard.locator('.session-body');
+    if (!await sessionBody.isVisible()) {
+      await sessionCard.click();
+      await page.waitForTimeout(500);
+    }
+    await screenshot(page, `${screenshotPrefix}-DETAILS`);
+
+    // Try to get error/output text for logging
+    const outputText = await sessionCard.locator('.io-block--output, .error-message').first().textContent().catch(() => null);
+    if (outputText) {
+      console.log(`Job output: ${outputText.substring(0, 500)}...`);
+    }
+
+    const statusDesc = isFailed ? 'failed' : isCancelled ? 'cancelled' : 'unknown';
+    throw new Error(`Job ${statusDesc} instead of completing successfully. Status classes: ${statusClasses}`);
+  }
+
+  return statusClasses;
+}
+
+/**
  * Validates that a session title is properly formatted and meaningful.
  * Session titles should:
  * - Not start with markdown characters (#, *, -)
@@ -203,12 +258,8 @@ test.describe.serial('Agency Smoke Tests', () => {
     await expect(sessionCard).toBeVisible({ timeout: 10000 });
     await screenshot(page, '05-task-submitted');
 
-    // Wait for task to reach a terminal state (completed, failed, or cancelled)
-    const terminalStatus = sessionCard.locator('.session-status--completed, .session-status--failed, .session-status--cancelled');
-    await expect(terminalStatus).toBeVisible({ timeout: 90000 });
-
-    // Verify it completed successfully (not failed/cancelled)
-    await expect(sessionCard.locator('.session-status--completed')).toBeVisible();
+    // Wait for task to complete with diagnostic capture on failure
+    await waitForJobCompletion(page, sessionCard, '05b-create-task');
 
     // Validate session title is properly formatted (should reflect the files task)
     await validateSessionTitle(sessionCard, 'files');
@@ -279,12 +330,8 @@ test.describe.serial('Agency Smoke Tests', () => {
     // Wait for modal to close
     await expect(page.locator('.modal-backdrop--open')).toBeHidden({ timeout: 5000 });
 
-    // Wait for task to reach a terminal state
-    const terminalStatus = sessionCard.locator('.session-status--completed, .session-status--failed, .session-status--cancelled');
-    await expect(terminalStatus).toBeVisible({ timeout: 90000 });
-
-    // Verify it completed successfully
-    await expect(sessionCard.locator('.session-status--completed')).toBeVisible();
+    // Wait for task to complete with diagnostic capture on failure
+    await waitForJobCompletion(page, sessionCard, '08b-add-task');
 
     // Validate session title still reflects the first task (files)
     await validateSessionTitle(sessionCard, 'files');
@@ -378,13 +425,9 @@ test.describe.serial('Agency Smoke Tests', () => {
 
     await screenshot(page, '14-nightly-maintenance-triggered');
 
-    // Wait for job completion
+    // Wait for job completion with diagnostic capture on failure
     const newSession = page.locator('.session-card').first();
-    const terminalStatus = newSession.locator('.session-status--completed, .session-status--failed, .session-status--cancelled');
-    await expect(terminalStatus).toBeVisible({ timeout: 120000 });
-
-    // Verify it completed successfully
-    await expect(newSession.locator('.session-status--completed')).toBeVisible();
+    await waitForJobCompletion(page, newSession, '14b-nightly-maintenance', 120000);
 
     // Validate session title using comprehensive validation
     // Should contain "Smoke Test Nightly Maintenance" (with markdown # stripped)
@@ -399,7 +442,9 @@ test.describe.serial('Agency Smoke Tests', () => {
     await screenshot(page, '16-nightly-maintenance-completed');
   });
 
-  test('5. Trigger Codex Scheduled Job', async ({ page }) => {
+  test('6. Trigger Codex Scheduled Job', async ({ page }) => {
+    test.setTimeout(120000); // 2 minutes for Codex job
+
     // Login first
     await page.goto('/login');
     await page.fill('#password', PASSWORD);
@@ -411,13 +456,19 @@ test.describe.serial('Agency Smoke Tests', () => {
     await expect(page.locator('.fleet-content')).toBeVisible();
     await screenshot(page, '14a-fleet-section-for-codex');
 
-    // Wait for agent to show as idle
+    // Wait for Codex agent specifically to be idle (not just any agent)
+    // This ensures the Codex agent is ready to accept work
     await expect(async () => {
-      const idleChip = page.locator('.fleet-chip:has-text("idle")').first();
+      // Look for an agent card that mentions codex and shows idle status
+      const codexAgentIdle = page.locator('.agent-card:has-text("codex") .fleet-chip:has-text("idle")');
+      const anyAgentIdle = page.locator('.fleet-chip:has-text("idle")').first();
+
+      // Try codex-specific first, fall back to any agent idle
+      const idleChip = await codexAgentIdle.count() > 0 ? codexAgentIdle : anyAgentIdle;
       await expect(idleChip).toBeVisible();
       await page.waitForTimeout(500);
       await expect(idleChip).toBeVisible();
-    }).toPass({ timeout: 10000, intervals: [1000] });
+    }).toPass({ timeout: 15000, intervals: [1000] });
 
     // Wait for job list to render
     await page.waitForTimeout(1000);
@@ -431,11 +482,15 @@ test.describe.serial('Agency Smoke Tests', () => {
     await expect(codexJob).toBeVisible({ timeout: 10000 });
     await screenshot(page, '14c-codex-job-visible');
 
+    // Verify the Run Now button is enabled before clicking
+    const runButton = codexJob.locator('button:has-text("Run Now")');
+    await expect(runButton).toBeEnabled({ timeout: 5000 });
+
     // Get initial session count
     const initialSessionCount = await page.locator('.session-card').count();
 
     // Click trigger button
-    await codexJob.locator('button:has-text("Run Now")').click();
+    await runButton.click();
 
     // Verify new session created
     await expect(async () => {
@@ -445,26 +500,22 @@ test.describe.serial('Agency Smoke Tests', () => {
 
     await screenshot(page, '14d-codex-job-triggered');
 
-    // Wait for job completion
+    // Wait for job completion with diagnostic capture on failure
     const newSession = page.locator('.session-card').first();
-    const terminalStatus = newSession.locator('.session-status--completed, .session-status--failed, .session-status--cancelled');
-    await expect(terminalStatus).toBeVisible({ timeout: 90000 });
-
-    // Verify it completed successfully
-    await expect(newSession.locator('.session-status--completed')).toBeVisible();
+    await waitForJobCompletion(page, newSession, '14e-codex', 90000);
 
     // Expand session to see I/O
     await newSession.click();
 
-    // BUG FIX #1: Explicitly verify output block is visible (not just text somewhere)
+    // Verify output block is visible
     const outputBlock = newSession.locator('.io-block--output').first();
     await expect(outputBlock).toBeVisible({ timeout: 5000 });
 
     // Verify output block contains expected text
     await expect(outputBlock).toContainText('Codex smoke test OK', { timeout: 5000 });
-    await screenshot(page, '14e-codex-job-completed');
+    await screenshot(page, '14f-codex-job-completed');
 
-    // BUG FIX #2: Check for log flickering - logs should remain visible if expanded
+    // Check for log flickering - logs should remain visible if expanded
     const logsButton = newSession.locator('.io-logs-btn').first();
     if (await logsButton.isVisible()) {
       await logsButton.click();
@@ -474,11 +525,11 @@ test.describe.serial('Agency Smoke Tests', () => {
       // Wait and verify logs don't collapse (flicker)
       await page.waitForTimeout(2000);
       await expect(inlineLogs).toBeVisible();
-      await screenshot(page, '14f-codex-logs-stable');
+      await screenshot(page, '14g-codex-logs-stable');
     }
   });
 
-  test('6. UI Navigation and Interactions', async ({ page }) => {
+  test('7. UI Navigation and Interactions', async ({ page }) => {
     // Login first
     await page.goto('/login');
     await page.fill('#password', PASSWORD);
