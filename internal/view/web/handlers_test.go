@@ -19,7 +19,7 @@ func newTestHandlers(t *testing.T, d *Discovery, version string, contexts *Conte
 	authStore, err := NewAuthStore(filepath.Join(dir, "auth.json"), "")
 	require.NoError(t, err)
 
-	h, err := NewHandlers(d, version, contexts, authStore, NewRateLimiter(), false)
+	h, err := NewHandlers(d, version, contexts, authStore, false)
 	require.NoError(t, err)
 	return h
 }

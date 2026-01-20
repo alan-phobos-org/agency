@@ -12,83 +12,6 @@ import (
 	"phobos.org.uk/agency/internal/api"
 )
 
-// RateLimiter tracks failed auth attempts per IP
-type RateLimiter struct {
-	mu       sync.RWMutex
-	attempts map[string]*ipAttempts
-}
-
-type ipAttempts struct {
-	count     int
-	blockedAt time.Time
-}
-
-const (
-	maxFailedAttempts = 10
-	blockDuration     = time.Hour
-)
-
-// NewRateLimiter creates a new rate limiter
-func NewRateLimiter() *RateLimiter {
-	return &RateLimiter{
-		attempts: make(map[string]*ipAttempts),
-	}
-}
-
-// IsBlocked checks if an IP is currently blocked
-func (rl *RateLimiter) IsBlocked(ip string) bool {
-	rl.mu.RLock()
-	defer rl.mu.RUnlock()
-
-	att, ok := rl.attempts[ip]
-	if !ok {
-		return false
-	}
-
-	// Check if block has expired
-	if !att.blockedAt.IsZero() && time.Since(att.blockedAt) < blockDuration {
-		return true
-	}
-
-	return false
-}
-
-// RecordFailure records a failed auth attempt and returns true if IP is now blocked
-func (rl *RateLimiter) RecordFailure(ip string) bool {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-
-	att, ok := rl.attempts[ip]
-	if !ok {
-		att = &ipAttempts{}
-		rl.attempts[ip] = att
-	}
-
-	// If previously blocked and block expired, reset
-	if !att.blockedAt.IsZero() && time.Since(att.blockedAt) >= blockDuration {
-		att.count = 0
-		att.blockedAt = time.Time{}
-	}
-
-	att.count++
-
-	// Block if exceeded max attempts
-	if att.count >= maxFailedAttempts {
-		att.blockedAt = time.Now()
-		att.count = 0 // Reset count for next period
-		return true
-	}
-
-	return false
-}
-
-// RecordSuccess clears failed attempts for an IP
-func (rl *RateLimiter) RecordSuccess(ip string) {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-	delete(rl.attempts, ip)
-}
-
 // AccessLogger logs access attempts to a file
 type AccessLogger struct {
 	mu   sync.Mutex
@@ -151,11 +74,6 @@ func GetSessionFromContext(ctx context.Context) *AuthSession {
 // - Token query parameter (for API)
 // API paths (/api/*) return 401 on auth failure; others redirect to /login.
 func SessionMiddleware(store *AuthStore, accessLogger *AccessLogger) func(http.Handler) http.Handler {
-	return SessionMiddlewareWithRateLimiter(store, accessLogger, nil)
-}
-
-// SessionMiddlewareWithRateLimiter validates authentication with rate limiting support.
-func SessionMiddlewareWithRateLimiter(store *AuthStore, accessLogger *AccessLogger, rateLimiter *RateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ip := r.RemoteAddr
@@ -165,20 +83,8 @@ func SessionMiddlewareWithRateLimiter(store *AuthStore, accessLogger *AccessLogg
 
 			isAPIPath := strings.HasPrefix(r.URL.Path, "/api/")
 
-			// Check if IP is rate limited
-			if rateLimiter != nil && rateLimiter.IsBlocked(ip) {
-				if accessLogger != nil {
-					accessLogger.Log(ip, r.Method, r.URL.Path, http.StatusTooManyRequests, false)
-				}
-				http.Error(w, `{"error":"`+api.ErrorRateLimited+`","message":"Too many failed attempts. Try again later."}`, http.StatusTooManyRequests)
-				return
-			}
-
 			// Helper to handle auth failure
 			authFailed := func() {
-				if rateLimiter != nil {
-					rateLimiter.RecordFailure(ip)
-				}
 				if isAPIPath {
 					if accessLogger != nil {
 						accessLogger.Log(ip, r.Method, r.URL.Path, http.StatusUnauthorized, false)
@@ -192,13 +98,6 @@ func SessionMiddlewareWithRateLimiter(store *AuthStore, accessLogger *AccessLogg
 				}
 			}
 
-			// Helper for successful auth
-			authSuccess := func() {
-				if rateLimiter != nil {
-					rateLimiter.RecordSuccess(ip)
-				}
-			}
-
 			// If no store configured, deny access
 			if store == nil {
 				authFailed()
@@ -209,7 +108,6 @@ func SessionMiddlewareWithRateLimiter(store *AuthStore, accessLogger *AccessLogg
 			if authHeader := r.Header.Get("Authorization"); strings.HasPrefix(authHeader, "Bearer ") {
 				token := strings.TrimPrefix(authHeader, "Bearer ")
 				if store.ValidatePassword(token) {
-					authSuccess()
 					if accessLogger != nil {
 						accessLogger.Log(ip, r.Method, r.URL.Path, http.StatusOK, true)
 					}
@@ -221,7 +119,6 @@ func SessionMiddlewareWithRateLimiter(store *AuthStore, accessLogger *AccessLogg
 			// Try query param token (for API access)
 			if token := r.URL.Query().Get("token"); token != "" {
 				if store.ValidatePassword(token) {
-					authSuccess()
 					if accessLogger != nil {
 						accessLogger.Log(ip, r.Method, r.URL.Path, http.StatusOK, true)
 					}
@@ -235,7 +132,6 @@ func SessionMiddlewareWithRateLimiter(store *AuthStore, accessLogger *AccessLogg
 			if err == nil && cookie.Value != "" {
 				session := store.GetSession(cookie.Value)
 				if session != nil {
-					authSuccess()
 					// Refresh session (updates last_seen and extends auth session expiry)
 					store.RefreshSession(session.ID)
 

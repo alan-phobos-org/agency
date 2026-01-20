@@ -1547,6 +1547,13 @@
             margin-top: var(--space-1);
         }
 
+        .form-hint {
+            color: var(--text-tertiary);
+            font-size: 0.7rem;
+            margin-top: var(--space-1);
+            font-style: italic;
+        }
+
         /* Collapsible options */
         .form-options {
             border: 1px solid var(--border-default);
@@ -2321,22 +2328,32 @@
                     </div>
                     <div class="form-group-inline">
                         <label class="form-label" for="agent-select">Agent</label>
-                        <select class="form-select" id="agent-select" x-model="taskForm.agentUrl" :disabled="taskForm.sessionId">
-                            <option value="">Select an agent...</option>
-                            <template x-for="agent in idleAgents" :key="agent.url">
-                                <option :value="agent.url" x-text="getComponentName(agent.url) + ' (idle)'"></option>
-                            </template>
-                            <template x-for="agent in agents.filter(a => a.state !== 'idle')" :key="agent.url">
-                                <option :value="agent.url" x-text="getComponentName(agent.url) + ' (' + agent.state + ')'" disabled></option>
-                            </template>
-                        </select>
+                        <div style="flex: 1;">
+                            <select class="form-select" id="agent-select" x-model="taskForm.agentUrl" style="width: 100%;">
+                                <option value="">Select an agent...</option>
+                                <template x-for="agent in idleAgents" :key="agent.url">
+                                    <option :value="agent.url" x-text="getComponentName(agent.url) + ' (idle)'"></option>
+                                </template>
+                                <template x-for="agent in agents.filter(a => a.state !== 'idle')" :key="agent.url">
+                                    <option :value="agent.url" x-text="getComponentName(agent.url) + ' (' + agent.state + ')'" disabled></option>
+                                </template>
+                            </select>
+                            <div class="form-hint" x-show="taskForm.sessionId" x-cloak>
+                                Using existing session's agent
+                            </div>
+                        </div>
                     </div>
                     <div class="form-group-inline">
                         <label class="form-label" for="agent-kind-select">Agent Kind</label>
-                        <select class="form-select" id="agent-kind-select" x-model="taskForm.agentKind" :disabled="taskForm.sessionId">
-                            <option value="claude">claude</option>
-                            <option value="codex">codex</option>
-                        </select>
+                        <div style="flex: 1;">
+                            <select class="form-select" id="agent-kind-select" x-model="taskForm.agentKind" style="width: 100%;">
+                                <option value="claude">claude</option>
+                                <option value="codex">codex</option>
+                            </select>
+                            <div class="form-hint" x-show="taskForm.sessionId" x-cloak>
+                                Using existing session's agent kind
+                            </div>
+                        </div>
                     </div>
                     <div class="form-group">
                         <div class="form-options" :class="{ 'form-options--open': taskOptionsOpen }">
@@ -2942,7 +2959,6 @@
                         }
 
                         const body = {
-                            agent_url: this.taskForm.agentUrl,
                             prompt: fullPrompt,
                             timeout_seconds: this.taskForm.timeout,
                             thinking: this.taskForm.thinking
@@ -2953,11 +2969,17 @@
                         if (this.taskForm.tier) {
                             body.tier = this.taskForm.tier;
                         }
-                        if (!this.taskForm.agentUrl && this.taskForm.agentKind) {
-                            body.agent_kind = this.taskForm.agentKind;
-                        }
                         if (this.taskForm.sessionId) {
+                            // Using existing session - agent is already assigned
                             body.session_id = this.taskForm.sessionId;
+                        } else {
+                            // New session - specify agent and agent kind
+                            if (this.taskForm.agentUrl) {
+                                body.agent_url = this.taskForm.agentUrl;
+                            }
+                            if (this.taskForm.agentKind) {
+                                body.agent_kind = this.taskForm.agentKind;
+                            }
                         }
 
                         const resp = await this.api('/api/task', {

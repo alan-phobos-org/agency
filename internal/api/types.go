@@ -46,7 +46,6 @@ const (
 
 	// Auth errors
 	ErrorUnauthorized = "unauthorized"
-	ErrorRateLimited  = "rate_limited"
 
 	// Generic errors
 	ErrorReadError = "read_error"

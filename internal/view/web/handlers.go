@@ -33,14 +33,13 @@ type Handlers struct {
 	sessionStore *SessionStore
 	contexts     *ContextsConfig
 	authStore    *AuthStore
-	rateLimiter  *RateLimiter
 	secureCookie bool       // Whether to set Secure flag on cookies (HTTPS)
 	shutdownFunc func()     // Callback to trigger graceful shutdown
 	queue        *WorkQueue // Work queue for status reporting
 }
 
 // NewHandlers creates handlers with dependencies
-func NewHandlers(discovery *Discovery, version string, contexts *ContextsConfig, authStore *AuthStore, rateLimiter *RateLimiter, secureCookie bool) (*Handlers, error) {
+func NewHandlers(discovery *Discovery, version string, contexts *ContextsConfig, authStore *AuthStore, secureCookie bool) (*Handlers, error) {
 	tmpl, err := template.ParseFS(assetsFS, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parsing templates: %w", err)
@@ -54,7 +53,6 @@ func NewHandlers(discovery *Discovery, version string, contexts *ContextsConfig,
 		sessionStore: NewSessionStore(),
 		contexts:     contexts,
 		authStore:    authStore,
-		rateLimiter:  rateLimiter,
 		secureCookie: secureCookie,
 	}, nil
 }
@@ -654,12 +652,6 @@ func (h *Handlers) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		ip = realIP
 	}
 
-	// Check rate limiting
-	if h.rateLimiter != nil && h.rateLimiter.IsBlocked(ip) {
-		writeError(w, http.StatusTooManyRequests, api.ErrorRateLimited, "Too many failed attempts. Try again later.")
-		return
-	}
-
 	if err := r.ParseForm(); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid form data")
 		return
@@ -673,9 +665,6 @@ func (h *Handlers) HandleLogin(w http.ResponseWriter, r *http.Request) {
 
 	// Validate password
 	if !h.authStore.ValidatePassword(password) {
-		if h.rateLimiter != nil {
-			h.rateLimiter.RecordFailure(ip)
-		}
 		writeError(w, http.StatusUnauthorized, api.ErrorUnauthorized, "Invalid password")
 		return
 	}
@@ -685,10 +674,6 @@ func (h *Handlers) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "session_error", "Failed to create session")
 		return
-	}
-
-	if h.rateLimiter != nil {
-		h.rateLimiter.RecordSuccess(ip)
 	}
 
 	// Set cookie and redirect
@@ -728,12 +713,6 @@ func (h *Handlers) HandlePair(w http.ResponseWriter, r *http.Request) {
 		ip = realIP
 	}
 
-	// Check rate limiting
-	if h.rateLimiter != nil && h.rateLimiter.IsBlocked(ip) {
-		writeError(w, http.StatusTooManyRequests, api.ErrorRateLimited, "Too many failed attempts. Try again later.")
-		return
-	}
-
 	if err := r.ParseForm(); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid form data")
 		return
@@ -753,15 +732,8 @@ func (h *Handlers) HandlePair(w http.ResponseWriter, r *http.Request) {
 	// Create device session
 	session, err := h.authStore.CreateDeviceSession(code, label, ip, r.UserAgent())
 	if err != nil {
-		if h.rateLimiter != nil {
-			h.rateLimiter.RecordFailure(ip)
-		}
 		writeError(w, http.StatusUnauthorized, "invalid_code", "Invalid or expired pairing code")
 		return
-	}
-
-	if h.rateLimiter != nil {
-		h.rateLimiter.RecordSuccess(ip)
 	}
 
 	// Set long-lived cookie for device session

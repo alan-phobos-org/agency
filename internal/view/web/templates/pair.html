@@ -165,9 +165,6 @@
 
                 if (response.ok) {
                     window.location.href = '/';
-                } else if (response.status === 429) {
-                    errorDiv.textContent = 'Too many failed attempts. Please try again later.';
-                    errorDiv.classList.add('show');
                 } else {
                     const data = await response.json().catch(() => ({}));
                     errorDiv.textContent = data.message || 'Invalid or expired pairing code';

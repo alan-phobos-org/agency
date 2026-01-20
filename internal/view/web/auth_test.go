@@ -12,65 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRateLimiterBasic(t *testing.T) {
-	t.Parallel()
-
-	rl := NewRateLimiter()
-	ip := "192.168.1.1"
-
-	// Initially not blocked
-	require.False(t, rl.IsBlocked(ip))
-
-	// Record failures up to threshold
-	for i := 0; i < maxFailedAttempts-1; i++ {
-		blocked := rl.RecordFailure(ip)
-		require.False(t, blocked, "Should not be blocked after %d failures", i+1)
-		require.False(t, rl.IsBlocked(ip))
-	}
-
-	// 10th failure should trigger block
-	blocked := rl.RecordFailure(ip)
-	require.True(t, blocked, "Should be blocked after %d failures", maxFailedAttempts)
-	require.True(t, rl.IsBlocked(ip))
-}
-
-func TestRateLimiterSuccessResetsCount(t *testing.T) {
-	t.Parallel()
-
-	rl := NewRateLimiter()
-	ip := "192.168.1.2"
-
-	// Record some failures
-	for i := 0; i < 5; i++ {
-		rl.RecordFailure(ip)
-	}
-
-	// Success should clear the count
-	rl.RecordSuccess(ip)
-
-	// Should be able to fail again without being blocked
-	for i := 0; i < maxFailedAttempts-1; i++ {
-		blocked := rl.RecordFailure(ip)
-		require.False(t, blocked)
-	}
-}
-
-func TestRateLimiterMultipleIPs(t *testing.T) {
-	t.Parallel()
-
-	rl := NewRateLimiter()
-	ip1 := "10.0.0.1"
-	ip2 := "10.0.0.2"
-
-	// Block ip1
-	for i := 0; i < maxFailedAttempts; i++ {
-		rl.RecordFailure(ip1)
-	}
-
-	require.True(t, rl.IsBlocked(ip1))
-	require.False(t, rl.IsBlocked(ip2), "Different IP should not be blocked")
-}
-
 func TestAccessLoggerWritesEntries(t *testing.T) {
 	t.Parallel()
 

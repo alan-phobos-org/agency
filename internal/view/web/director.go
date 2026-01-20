@@ -40,7 +40,6 @@ type Director struct {
 	dispatcher     *Dispatcher
 	server         *http.Server
 	internalServer *http.Server // Internal HTTP server (no auth)
-	rateLimiter    *RateLimiter
 	accessLogger   *AccessLogger
 	authStore      *AuthStore
 	dispatchCancel context.CancelFunc
@@ -81,9 +80,6 @@ func New(cfg *Config, version string) (*Director, error) {
 		fmt.Fprintf(os.Stderr, "Loaded %d contexts from %s\n", len(contexts.Contexts), cfg.ContextsPath)
 	}
 
-	// Create rate limiter for auth protection
-	rateLimiter := NewRateLimiter()
-
 	// Create access logger if path configured
 	var accessLogger *AccessLogger
 	if cfg.AccessLogPath != "" {
@@ -98,7 +94,7 @@ func New(cfg *Config, version string) (*Director, error) {
 	// Determine if we should use secure cookies (HTTPS)
 	secureCookie := true // Always use secure cookies since we use HTTPS
 
-	handlers, err := NewHandlers(discovery, version, contexts, cfg.AuthStore, rateLimiter, secureCookie)
+	handlers, err := NewHandlers(discovery, version, contexts, cfg.AuthStore, secureCookie)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +131,6 @@ func New(cfg *Config, version string) (*Director, error) {
 		queueHandlers: queueHandlers,
 		queue:         queue,
 		dispatcher:    dispatcher,
-		rateLimiter:   rateLimiter,
 		accessLogger:  accessLogger,
 		authStore:     cfg.AuthStore,
 	}, nil
@@ -168,9 +163,9 @@ func (d *Director) Router() chi.Router {
 	r.Get("/pair", d.handlers.HandlePairPage)
 	r.Post("/pair", d.handlers.HandlePair)
 
-	// Protected routes with session middleware and rate limiting
+	// Protected routes with session middleware
 	protected := r.Group(nil)
-	protected.Use(SessionMiddlewareWithRateLimiter(d.authStore, d.accessLogger, d.rateLimiter))
+	protected.Use(SessionMiddleware(d.authStore, d.accessLogger))
 
 	// Dashboard
 	protected.Get("/", d.handlers.HandleDashboard)

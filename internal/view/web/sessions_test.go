@@ -146,7 +146,7 @@ func TestHandleSessions(t *testing.T) {
 	t.Parallel()
 
 	discovery := NewDiscovery(DiscoveryConfig{PortStart: 9900, PortEnd: 9900})
-	handlers, err := NewHandlers(discovery, "test", nil, nil, nil, false)
+	handlers, err := NewHandlers(discovery, "test", nil, nil, false)
 	require.NoError(t, err)
 
 	// Add some sessions
@@ -170,7 +170,7 @@ func TestHandleSessionsEmpty(t *testing.T) {
 	t.Parallel()
 
 	discovery := NewDiscovery(DiscoveryConfig{PortStart: 9900, PortEnd: 9900})
-	handlers, err := NewHandlers(discovery, "test", nil, nil, nil, false)
+	handlers, err := NewHandlers(discovery, "test", nil, nil, false)
 	require.NoError(t, err)
 
 	req := httptest.NewRequest("GET", "/api/sessions", nil)
@@ -190,7 +190,7 @@ func TestHandleAddSessionTask(t *testing.T) {
 	t.Parallel()
 
 	discovery := NewDiscovery(DiscoveryConfig{PortStart: 9900, PortEnd: 9900})
-	handlers, err := NewHandlers(discovery, "test", nil, nil, nil, false)
+	handlers, err := NewHandlers(discovery, "test", nil, nil, false)
 	require.NoError(t, err)
 
 	body := `{
@@ -221,7 +221,7 @@ func TestHandleAddSessionTaskValidation(t *testing.T) {
 	t.Parallel()
 
 	discovery := NewDiscovery(DiscoveryConfig{PortStart: 9900, PortEnd: 9900})
-	handlers, err := NewHandlers(discovery, "test", nil, nil, nil, false)
+	handlers, err := NewHandlers(discovery, "test", nil, nil, false)
 	require.NoError(t, err)
 
 	// Missing session_id
@@ -255,7 +255,7 @@ func TestHandleUpdateSessionTask(t *testing.T) {
 	t.Parallel()
 
 	discovery := NewDiscovery(DiscoveryConfig{PortStart: 9900, PortEnd: 9900})
-	handlers, err := NewHandlers(discovery, "test", nil, nil, nil, false)
+	handlers, err := NewHandlers(discovery, "test", nil, nil, false)
 	require.NoError(t, err)
 
 	// Create a session with a task
@@ -279,7 +279,7 @@ func TestHandleUpdateSessionTaskNotFound(t *testing.T) {
 	t.Parallel()
 
 	discovery := NewDiscovery(DiscoveryConfig{PortStart: 9900, PortEnd: 9900})
-	handlers, err := NewHandlers(discovery, "test", nil, nil, nil, false)
+	handlers, err := NewHandlers(discovery, "test", nil, nil, false)
 	require.NoError(t, err)
 
 	body := `{"state": "completed"}`
@@ -407,7 +407,7 @@ func TestHandleArchiveSession(t *testing.T) {
 	t.Parallel()
 
 	discovery := NewDiscovery(DiscoveryConfig{PortStart: 9900, PortEnd: 9900})
-	handlers, err := NewHandlers(discovery, "test", nil, nil, nil, false)
+	handlers, err := NewHandlers(discovery, "test", nil, nil, false)
 	require.NoError(t, err)
 
 	// Create a session
@@ -434,7 +434,7 @@ func TestHandleArchiveSessionNotFound(t *testing.T) {
 	t.Parallel()
 
 	discovery := NewDiscovery(DiscoveryConfig{PortStart: 9900, PortEnd: 9900})
-	handlers, err := NewHandlers(discovery, "test", nil, nil, nil, false)
+	handlers, err := NewHandlers(discovery, "test", nil, nil, false)
 	require.NoError(t, err)
 
 	req := httptest.NewRequest("POST", "/api/sessions/nonexistent/archive", nil)
@@ -566,7 +566,7 @@ func TestHandleSessionsExcludesArchived(t *testing.T) {
 	t.Parallel()
 
 	discovery := NewDiscovery(DiscoveryConfig{PortStart: 9900, PortEnd: 9900})
-	handlers, err := NewHandlers(discovery, "test", nil, nil, nil, false)
+	handlers, err := NewHandlers(discovery, "test", nil, nil, false)
 	require.NoError(t, err)
 
 	// Add sessions, archive one
@@ -592,7 +592,7 @@ func TestHandleAddSessionTaskToArchivedSession(t *testing.T) {
 	t.Parallel()
 
 	discovery := NewDiscovery(DiscoveryConfig{PortStart: 9900, PortEnd: 9900})
-	handlers, err := NewHandlers(discovery, "test", nil, nil, nil, false)
+	handlers, err := NewHandlers(discovery, "test", nil, nil, false)
 	require.NoError(t, err)
 
 	// Create and archive a session
@@ -628,7 +628,7 @@ func TestHandleUpdateSessionTaskOnArchivedSession(t *testing.T) {
 	t.Parallel()
 
 	discovery := NewDiscovery(DiscoveryConfig{PortStart: 9900, PortEnd: 9900})
-	handlers, err := NewHandlers(discovery, "test", nil, nil, nil, false)
+	handlers, err := NewHandlers(discovery, "test", nil, nil, false)
 	require.NoError(t, err)
 
 	// Create session with working task, then archive
@@ -680,7 +680,7 @@ func TestArchiveAlreadyArchivedSession(t *testing.T) {
 	t.Parallel()
 
 	discovery := NewDiscovery(DiscoveryConfig{PortStart: 9900, PortEnd: 9900})
-	handlers, err := NewHandlers(discovery, "test", nil, nil, nil, false)
+	handlers, err := NewHandlers(discovery, "test", nil, nil, false)
 	require.NoError(t, err)
 
 	// Create and archive a session
