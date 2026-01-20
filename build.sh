@@ -31,15 +31,15 @@ check_service() {
 
 detect_running_agency() {
     # Check common port sets to detect which mode is running
-    if curl -sf -k "https://localhost:8080/status" >/dev/null 2>&1; then
+    if curl -sf "http://localhost:8080/api/status" >/dev/null 2>&1; then
         echo "dev"
         return 0
     fi
-    if curl -sf -k "https://localhost:9080/status" >/dev/null 2>&1; then
+    if curl -sf "http://localhost:9080/api/status" >/dev/null 2>&1; then
         echo "prod"
         return 0
     fi
-    if curl -sf -k "https://localhost:18080/status" >/dev/null 2>&1; then
+    if curl -sf "http://localhost:18080/api/status" >/dev/null 2>&1; then
         echo "smoke"
         return 0
     fi
@@ -388,7 +388,7 @@ case "${1:-help}" in
             echo "Cleaning up smoke test..."
 
             # Try graceful shutdown first
-            if curl -sf -k -X POST "https://localhost:18080/shutdown" >/dev/null 2>&1; then
+            if curl -sf -X POST "http://localhost:18080/shutdown" >/dev/null 2>&1; then
                 echo "  Graceful shutdown initiated"
                 sleep 2
             fi
@@ -457,7 +457,7 @@ case "${1:-help}" in
 
         AGENT_PORT="${AG_AGENT_PORT:-9000}"
         WEB_PORT="${AG_WEB_PORT:-8443}"
-        check_service "http://localhost:$AGENT_PORT/status" "Agent"
+        check_service "https://localhost:$AGENT_PORT/status" "Agent"
         check_service "https://localhost:$WEB_PORT/status" "Web view"
 
         ./deployment/stop-agency.sh

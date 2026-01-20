@@ -147,7 +147,7 @@ Response:
 ```yaml
 port: 9000
 log_level: info
-session_dir: /tmp/agency/sessions
+session_dir: ~/.agency/sessions
 history_dir: ~/.agency/history
 preprompt_file: /path/to/custom.md  # optional, falls back to embedded
 
@@ -240,7 +240,7 @@ contexts:
 
 ### Session Directories
 
-Agent uses shared session directories (`/tmp/agency/sessions/<session_id>/`):
+Agent uses shared session directories (`~/.agency/sessions/<session_id>/`):
 - New sessions: directory is created fresh (cleaned if exists)
 - Resumed sessions: directory is reused with existing state
 

@@ -103,6 +103,19 @@ func (d *Director) runViaDirector(prompt string, timeout time.Duration) (*TaskRe
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusAccepted {
+		var queueResp struct {
+			QueueID string `json:"queue_id"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&queueResp); err != nil {
+			return nil, fmt.Errorf("decoding queue response: %w", err)
+		}
+		if queueResp.QueueID == "" {
+			return nil, fmt.Errorf("queue response missing queue_id")
+		}
+		return d.pollQueue(queueResp.QueueID, timeout)
+	}
+
 	if resp.StatusCode != http.StatusCreated {
 		return nil, fmt.Errorf("director returned status %d", resp.StatusCode)
 	}
@@ -116,7 +129,7 @@ func (d *Director) runViaDirector(prompt string, timeout time.Duration) (*TaskRe
 	}
 
 	// Poll agent directly for status (director doesn't add value for polling)
-	return d.pollTask(taskResp.TaskID, taskResp.SessionID, timeout)
+	return d.pollTask(d.agentURL, taskResp.TaskID, taskResp.SessionID, timeout)
 }
 
 // runViaAgent submits a task directly to the agent
@@ -145,14 +158,14 @@ func (d *Director) runViaAgent(prompt string, timeout time.Duration) (*TaskResul
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
-	return d.pollTask(taskResp.TaskID, taskResp.SessionID, timeout)
+	return d.pollTask(d.agentURL, taskResp.TaskID, taskResp.SessionID, timeout)
 }
 
 // pollTask polls the agent for task completion
-func (d *Director) pollTask(taskID, sessionID string, timeout time.Duration) (*TaskResult, error) {
+func (d *Director) pollTask(agentURL, taskID, sessionID string, timeout time.Duration) (*TaskResult, error) {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		statusResp, err := d.client.Get(d.agentURL + "/task/" + taskID)
+		statusResp, err := d.client.Get(agentURL + "/task/" + taskID)
 		if err != nil {
 			return nil, fmt.Errorf("polling task: %w", err)
 		}
@@ -177,4 +190,44 @@ func (d *Director) pollTask(taskID, sessionID string, timeout time.Duration) (*T
 	}
 
 	return nil, fmt.Errorf("task did not complete within timeout")
+}
+
+func (d *Director) pollQueue(queueID string, timeout time.Duration) (*TaskResult, error) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		resp, err := d.client.Get(d.directorURL + "/api/queue/" + queueID)
+		if err != nil {
+			return nil, fmt.Errorf("polling queue: %w", err)
+		}
+		if resp.StatusCode == http.StatusNotFound {
+			resp.Body.Close()
+			return nil, fmt.Errorf("queued task not found (may have completed): %s", queueID)
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return nil, fmt.Errorf("queue status returned %d", resp.StatusCode)
+		}
+
+		var detail struct {
+			State    string `json:"state"`
+			TaskID   string `json:"task_id"`
+			AgentURL string `json:"agent_url"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&detail); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("decoding queue status: %w", err)
+		}
+		resp.Body.Close()
+
+		if detail.TaskID != "" && detail.AgentURL != "" {
+			remaining := time.Until(deadline)
+			if remaining <= 0 {
+				return nil, fmt.Errorf("queued task did not complete within timeout")
+			}
+			return d.pollTask(detail.AgentURL, detail.TaskID, "", remaining)
+		}
+
+		time.Sleep(200 * time.Millisecond)
+	}
+	return nil, fmt.Errorf("queued task did not dispatch within timeout")
 }

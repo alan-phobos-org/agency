@@ -308,6 +308,13 @@ func TestHandleTaskStatusForwarding(t *testing.T) {
 	defer agent.Close()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
+	d.mu.Lock()
+	d.components[agent.URL] = &ComponentStatus{
+		URL:   agent.URL,
+		Type:  "agent",
+		State: "idle",
+	}
+	d.mu.Unlock()
 	h := newTestHandlers(t, d, "test", nil)
 
 	req := httptest.NewRequest("GET", "/api/task/task-123?agent_url="+agent.URL, nil)
@@ -674,6 +681,13 @@ func TestHandleTaskStatusFallbackToHistory(t *testing.T) {
 	defer agent.Close()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
+	d.mu.Lock()
+	d.components[agent.URL] = &ComponentStatus{
+		URL:   agent.URL,
+		Type:  "agent",
+		State: "idle",
+	}
+	d.mu.Unlock()
 	h := newTestHandlers(t, d, "test", nil)
 
 	req := httptest.NewRequest("GET", "/api/task/task-123?agent_url="+agent.URL, nil)
@@ -709,6 +723,13 @@ func TestHandleTaskStatusFallbackUpdatesSessionStore(t *testing.T) {
 	defer agent.Close()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
+	d.mu.Lock()
+	d.components[agent.URL] = &ComponentStatus{
+		URL:   agent.URL,
+		Type:  "agent",
+		State: "idle",
+	}
+	d.mu.Unlock()
 	h := newTestHandlers(t, d, "test", nil)
 
 	// Pre-populate session store with task in "working" state
@@ -743,6 +764,13 @@ func TestHandleTaskStatusNotFoundInHistoryEither(t *testing.T) {
 	defer agent.Close()
 
 	d := NewDiscovery(DiscoveryConfig{PortStart: 50000, PortEnd: 50000})
+	d.mu.Lock()
+	d.components[agent.URL] = &ComponentStatus{
+		URL:   agent.URL,
+		Type:  "agent",
+		State: "idle",
+	}
+	d.mu.Unlock()
 	h := newTestHandlers(t, d, "test", nil)
 
 	req := httptest.NewRequest("GET", "/api/task/task-missing?agent_url="+agent.URL, nil)

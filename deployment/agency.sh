@@ -58,7 +58,7 @@ if ! "$PROJECT_ROOT/bin/ag-agent-claude" -version >/dev/null 2>&1 || \
 fi
 
 # Check if agency is already running (via API, more reliable than PID file)
-if curl -sf "https://localhost:${WEB_INTERNAL_PORT}/status" > /dev/null 2>&1; then
+if curl -sf "http://127.0.0.1:${WEB_INTERNAL_PORT}/api/status" > /dev/null 2>&1; then
     echo "Agency is already running on port $WEB_INTERNAL_PORT."
     # Check if running interactively
     if [ -t 0 ]; then
@@ -66,7 +66,7 @@ if curl -sf "https://localhost:${WEB_INTERNAL_PORT}/status" > /dev/null 2>&1; th
         echo
         if [[ ! $REPLY =~ ^[Nn]$ ]]; then
             echo "Shutting down existing agency..."
-            if curl -sf -X POST "https://localhost:${WEB_INTERNAL_PORT}/shutdown" > /dev/null 2>&1; then
+            if curl -sf -X POST "http://127.0.0.1:${WEB_INTERNAL_PORT}/shutdown" > /dev/null 2>&1; then
                 echo "  Shutdown initiated, waiting for services to stop..."
                 sleep 2
                 rm -f "$PID_FILE"
@@ -81,7 +81,7 @@ if curl -sf "https://localhost:${WEB_INTERNAL_PORT}/status" > /dev/null 2>&1; th
     else
         # Non-interactive: just shut it down
         echo "Shutting down existing agency..."
-        if curl -sf -X POST "https://localhost:${WEB_INTERNAL_PORT}/shutdown" > /dev/null 2>&1; then
+        if curl -sf -X POST "http://127.0.0.1:${WEB_INTERNAL_PORT}/shutdown" > /dev/null 2>&1; then
             sleep 2
             rm -f "$PID_FILE"
         else
@@ -227,7 +227,7 @@ echo "  Discovery range: $DISCOVERY_START-$DISCOVERY_END"
 echo ""
 
 echo "Dashboard: https://localhost:$WEB_PORT/"
-echo "Internal API: https://localhost:$WEB_INTERNAL_PORT/ (scheduler/CLI routing)"
+echo "Internal API: http://localhost:$WEB_INTERNAL_PORT/api/ (scheduler/CLI routing)"
 echo ""
 echo "Logs:"
 echo "  View:          $PID_DIR/view-${MODE}.log"

@@ -57,7 +57,7 @@ The scheduler is a **Helper** component (Statusable + Observable) that triggers 
 # ag-scheduler configuration
 port: 9010                    # Port for /status endpoint (dev default)
 log_level: info               # debug, info, warn, error
-agent_url: http://localhost:9000  # Default agent to submit tasks to
+agent_url: https://localhost:9000  # Default agent to submit tasks to
 
 jobs:
   - name: nightly-maintenance
@@ -66,7 +66,7 @@ jobs:
       Perform nightly maintenance tasks...
     model: opus               # Optional: override default model
     timeout: 2h               # Optional: task timeout
-    agent_url: http://localhost:9000  # Optional: override default agent
+    agent_url: https://localhost:9000  # Optional: override default agent
 
   - name: weekly-cleanup
     schedule: "0 2 * * 0"     # Sundays at 2am
@@ -80,7 +80,7 @@ jobs:
 | `port` | int | No | 9100 | Status endpoint port (deployments use 9010/9110) |
 | `log_level` | string | No | info | Log verbosity |
 | `director_url` | string | No | - | Web director internal API URL for session tracking |
-| `agent_url` | string | No | http://localhost:9000 | Default agent URL (fallback if director unavailable) |
+| `agent_url` | string | No | https://localhost:9000 | Default agent URL (fallback if director unavailable) |
 | `jobs` | []Job | Yes | - | List of scheduled jobs |
 
 ### Web UI Integration
@@ -146,7 +146,7 @@ Returns scheduler status and job information.
   "state": "running",
   "uptime_seconds": 3600,
   "config": {
-    "agent_url": "http://localhost:9000",
+    "agent_url": "https://localhost:9000",
     "director_url": "http://localhost:8080"
   },
   "jobs": [
@@ -247,7 +247,7 @@ cmd/ag-scheduler/
 ```yaml
 # configs/scheduler.yaml
 port: 9010
-agent_url: http://localhost:9000
+agent_url: https://localhost:9000
 
 jobs:
   - name: nightly-maintenance

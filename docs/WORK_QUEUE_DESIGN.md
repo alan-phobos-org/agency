@@ -556,7 +556,7 @@ Scheduler submits via `director_url` (internal web port) to `POST /api/queue/tas
 
 ```
 2025-01-17T10:00:00Z INFO queue=task_added queue_id=queue-abc12345 depth=5 source=scheduler
-2025-01-17T10:00:01Z INFO queue=dispatch queue_id=queue-abc12345 agent=http://localhost:9000
+2025-01-17T10:00:01Z INFO queue=dispatch queue_id=queue-abc12345 agent=https://localhost:9000
 2025-01-17T10:00:01Z INFO queue=dispatch_success queue_id=queue-abc12345 task_id=task-xyz789
 2025-01-17T10:00:00Z WARN queue=dispatch_failed queue_id=queue-def67890 error="agent busy" attempt=1/3
 2025-01-17T10:00:00Z WARN queue=dispatch_failed queue_id=queue-def67890 error="timeout" attempt=3/3 final=true

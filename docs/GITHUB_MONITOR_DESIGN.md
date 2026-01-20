@@ -27,7 +27,7 @@ The GitHub monitor is a **Helper** component (Statusable + Observable) that watc
 port: 9020
 log_level: info
 director_url: http://localhost:8080
-agent_url: http://localhost:9000
+agent_url: https://localhost:9000
 poll_interval: 60s
 quiet_period: 5m
 

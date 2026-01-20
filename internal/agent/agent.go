@@ -705,7 +705,7 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 	if !task.ResumeSession {
 		os.RemoveAll(workDir) // Clean for new sessions
 	}
-	if err := os.MkdirAll(workDir, 0755); err != nil {
+	if err := os.MkdirAll(workDir, 0700); err != nil {
 		completedAt := time.Now()
 		a.mu.Lock()
 		setTaskCompletion(task, completedAt)
@@ -971,7 +971,7 @@ func (a *Agent) executeTask(task *Task, env map[string]string) {
 				Message: stderr.String(),
 			}
 			taskLog.Error("task failed", map[string]any{
-				"error_type":       "claude_error",
+				"error_type":       a.runner.ErrorType(),
 				"exit_code":        exitCode,
 				"duration_seconds": task.DurationSeconds,
 			})
@@ -1091,11 +1091,14 @@ func (a *Agent) cleanupTask(task *Task) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	// Note: we intentionally keep completed tasks in the map so they can be queried
+	// Keep completed tasks only when history storage is disabled.
 	if a.currentTask != nil && a.currentTask.ID == task.ID {
 		a.currentTask = nil
 	}
 	a.state = StateIdle
+	if a.history != nil {
+		delete(a.tasks, task.ID)
+	}
 }
 
 // handleListHistory returns paginated task history.

@@ -96,7 +96,7 @@ const (
 	DefaultTimeout      = 30 * time.Minute
 	DefaultMaxTurns     = 50
 	DefaultLogLevel     = "info"
-	DefaultSessionDir   = "/tmp/agency/sessions"
+	DefaultSessionDir   = "" // Derived from AGENCY_ROOT or ~/.agency/sessions
 	DefaultHistoryDir   = "" // Derived from AGENCY_ROOT or ~/.agency/history/<name>
 	DefaultAgentKind    = api.AgentKindClaude
 	DefaultCodexModel   = ""
@@ -124,6 +124,11 @@ func Parse(data []byte) (*Config, error) {
 
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
+	}
+
+	// Derive SessionDir if not set
+	if cfg.SessionDir == "" {
+		cfg.SessionDir = DefaultSessionPath()
 	}
 
 	// Derive HistoryDir if not set
@@ -189,7 +194,7 @@ func Default() *Config {
 		Port:       DefaultPort,
 		Name:       DefaultName,
 		LogLevel:   DefaultLogLevel,
-		SessionDir: DefaultSessionDir,
+		SessionDir: DefaultSessionPath(),
 		HistoryDir: DefaultHistoryPath(DefaultName),
 		AgentKind:  DefaultAgentKind,
 		Claude: ClaudeConfig{
@@ -216,4 +221,18 @@ func DefaultHistoryPath(name string) string {
 		root = filepath.Join(home, ".agency")
 	}
 	return filepath.Join(root, "history", name)
+}
+
+// DefaultSessionPath returns the default session directory path.
+// Uses AGENCY_ROOT env var if set, otherwise ~/.agency/sessions
+func DefaultSessionPath() string {
+	root := os.Getenv("AGENCY_ROOT")
+	if root == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			home = "/tmp"
+		}
+		root = filepath.Join(home, ".agency")
+	}
+	return filepath.Join(root, "sessions")
 }

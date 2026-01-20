@@ -29,7 +29,7 @@ Expected: `ag-view-web`, `ag-agent-claude`, `ag-scheduler` all running.
 ### 3. Test Agent Status Directly
 
 ```bash
-curl -s http://localhost:9000/status
+curl -s -k https://localhost:9000/status
 ```
 
 Expected: JSON with `"type":"agent"`, `"state":"idle"` or `"state":"working"`.
@@ -62,7 +62,7 @@ Expected: All three ports listening (may show as `:::` for IPv6).
 
 ### Agent Not Showing in UI
 
-1. **Check agent is running**: `curl http://localhost:9000/status`
+1. **Check agent is running**: `curl -k https://localhost:9000/status`
 2. **Check discovery range**: Web view scans ports 9000-9010 by default (dev) or 9100-9110 (prod)
 3. **Verify API returns agent**: Query `/api/agents` with valid session
 
@@ -73,7 +73,7 @@ The web UI can show tasks as "working" when they've actually completed. This is 
 **Diagnosis:**
 ```bash
 # Check agent's actual state
-curl -s http://localhost:9000/status | python3 -m json.tool
+curl -s -k https://localhost:9000/status | python3 -m json.tool
 
 # If state is "idle" but UI shows "working", it's a UI sync issue
 ```

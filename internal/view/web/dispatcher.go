@@ -117,27 +117,7 @@ func (d *Dispatcher) findFirstIdleAgent(agentKind string) *ComponentStatus {
 
 func (d *Dispatcher) submitToAgent(agent *ComponentStatus, task *QueuedTask) (taskID, sessionID string, err error) {
 	// Build agent request
-	agentReq := map[string]interface{}{
-		"prompt": task.Prompt,
-	}
-	if task.Model != "" {
-		agentReq["model"] = task.Model
-	}
-	if task.Tier != "" {
-		agentReq["tier"] = task.Tier
-	}
-	if task.TimeoutSeconds > 0 {
-		agentReq["timeout_seconds"] = task.TimeoutSeconds
-	}
-	if task.SessionID != "" {
-		agentReq["session_id"] = task.SessionID
-	}
-	if len(task.Env) > 0 {
-		agentReq["env"] = task.Env
-	}
-	if task.Thinking != nil {
-		agentReq["thinking"] = *task.Thinking
-	}
+	agentReq := buildAgentRequest(task.Prompt, task.Model, task.Tier, task.TimeoutSeconds, task.SessionID, task.Env, task.Thinking)
 
 	body, _ := json.Marshal(agentReq)
 	resp, err := d.client.Post(agent.URL+"/task", "application/json", bytes.NewReader(body))

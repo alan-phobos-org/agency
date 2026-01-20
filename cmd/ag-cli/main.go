@@ -83,7 +83,7 @@ Run 'ag-cli <command> -h' for command-specific help.`)
 // taskCmd handles the 'task' subcommand
 func taskCmd(args []string) {
 	fs := flag.NewFlagSet("task", flag.ExitOnError)
-	agentURL := fs.String("agent", "http://localhost:9000", "Agent URL")
+	agentURL := fs.String("agent", "https://localhost:9000", "Agent URL")
 	tier := fs.String("tier", "standard", "Model tier (fast, standard, heavy)")
 	agentKind := fs.String("agent-kind", "claude", "Agent kind (claude, codex)")
 	timeout := fs.Duration("timeout", 30*time.Minute, "Task timeout")
@@ -215,7 +215,7 @@ func pollForCompletion(client *http.Client, agentURL, taskID string, timeout tim
 // statusCmd handles the 'status' subcommand
 func statusCmd(args []string) {
 	fs := flag.NewFlagSet("status", flag.ExitOnError)
-	url := fs.String("url", "http://localhost:9000", "Component URL")
+	url := fs.String("url", "https://localhost:9000", "Component URL")
 	fs.Parse(args)
 
 	// Allow URL as positional arg

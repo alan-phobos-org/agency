@@ -12,6 +12,7 @@ func TestParse(t *testing.T) {
 
 	// HistoryDir is derived dynamically, so compute expected value
 	expectedHistoryDir := DefaultHistoryPath(DefaultName)
+	expectedSessionDir := DefaultSessionPath()
 
 	tests := []struct {
 		name    string
@@ -26,7 +27,7 @@ func TestParse(t *testing.T) {
 				Port:       9000,
 				Name:       DefaultName,
 				LogLevel:   DefaultLogLevel,
-				SessionDir: DefaultSessionDir,
+				SessionDir: expectedSessionDir,
 				HistoryDir: expectedHistoryDir,
 				AgentKind:  DefaultAgentKind,
 				Claude: ClaudeConfig{
@@ -53,7 +54,7 @@ claude:
 				Port:       9001,
 				Name:       DefaultName,
 				LogLevel:   "debug",
-				SessionDir: DefaultSessionDir,
+				SessionDir: expectedSessionDir,
 				HistoryDir: expectedHistoryDir,
 				AgentKind:  DefaultAgentKind,
 				Claude: ClaudeConfig{
@@ -131,7 +132,7 @@ func TestDefault(t *testing.T) {
 	require.Equal(t, DefaultPort, cfg.Port)
 	require.Equal(t, DefaultName, cfg.Name)
 	require.Equal(t, DefaultLogLevel, cfg.LogLevel)
-	require.Equal(t, DefaultSessionDir, cfg.SessionDir)
+	require.Equal(t, DefaultSessionPath(), cfg.SessionDir)
 	require.Equal(t, DefaultHistoryPath(DefaultName), cfg.HistoryDir)
 	require.Equal(t, DefaultAgentKind, cfg.AgentKind)
 	require.Equal(t, DefaultModel, cfg.Claude.Model)

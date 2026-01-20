@@ -11,6 +11,7 @@ import (
 	"html/template"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"phobos.org.uk/agency/internal/api"
@@ -77,6 +78,15 @@ func createHTTPClient(timeout time.Duration) *http.Client {
 			},
 		},
 	}
+}
+
+func (h *Handlers) requireDiscoveredAgent(w http.ResponseWriter, agentURL string) (*ComponentStatus, bool) {
+	agent, ok := h.discovery.GetComponent(agentURL)
+	if !ok || agent.Type != api.TypeAgent {
+		writeError(w, http.StatusBadRequest, "agent_not_found", "Agent not found: "+agentURL)
+		return nil, false
+	}
+	return agent, true
 }
 
 // HandleDashboard serves the main dashboard HTML page
@@ -180,9 +190,8 @@ func (h *Handlers) HandleTaskSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify agent exists and is idle
-	agent, ok := h.discovery.GetComponent(req.AgentURL)
+	agent, ok := h.requireDiscoveredAgent(w, req.AgentURL)
 	if !ok {
-		writeError(w, http.StatusBadRequest, "agent_not_found", "Agent not found: "+req.AgentURL)
 		return
 	}
 	if req.AgentKind != "" && agent.AgentKind != "" && agent.AgentKind != req.AgentKind {
@@ -196,27 +205,7 @@ func (h *Handlers) HandleTaskSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build agent task request
-	agentReq := map[string]interface{}{
-		"prompt": req.Prompt,
-	}
-	if req.Model != "" {
-		agentReq["model"] = req.Model
-	}
-	if req.Tier != "" {
-		agentReq["tier"] = req.Tier
-	}
-	if req.TimeoutSeconds > 0 {
-		agentReq["timeout_seconds"] = req.TimeoutSeconds
-	}
-	if req.SessionID != "" {
-		agentReq["session_id"] = req.SessionID
-	}
-	if len(req.Env) > 0 {
-		agentReq["env"] = req.Env
-	}
-	if req.Thinking != nil {
-		agentReq["thinking"] = *req.Thinking
-	}
+	agentReq := buildAgentRequest(req.Prompt, req.Model, req.Tier, req.TimeoutSeconds, req.SessionID, req.Env, req.Thinking)
 
 	// Forward to agent
 	body, _ := json.Marshal(agentReq)
@@ -276,6 +265,9 @@ func (h *Handlers) HandleTaskStatus(w http.ResponseWriter, r *http.Request, task
 	agentURL := r.URL.Query().Get("agent_url")
 	if agentURL == "" {
 		writeError(w, http.StatusBadRequest, "validation_error", "agent_url query parameter is required")
+		return
+	}
+	if _, ok := h.requireDiscoveredAgent(w, agentURL); !ok {
 		return
 	}
 	sessionID := r.URL.Query().Get("session_id") // Optional: for auto-updating session state
@@ -372,6 +364,9 @@ func (h *Handlers) HandleTaskHistory(w http.ResponseWriter, r *http.Request, tas
 		writeError(w, http.StatusBadRequest, "validation_error", "agent_url query parameter is required")
 		return
 	}
+	if _, ok := h.requireDiscoveredAgent(w, agentURL); !ok {
+		return
+	}
 
 	// Forward to agent
 	client := createHTTPClient(5 * time.Second)
@@ -396,37 +391,36 @@ func (h *Handlers) HandleAgentLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build the proxy URL with query parameters
-	proxyURL := agentURL + "/logs"
-	queryParams := []string{}
+	if _, ok := h.requireDiscoveredAgent(w, agentURL); !ok {
+		return
+	}
+
+	proxyURL, err := url.Parse(agentURL + "/logs")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "validation_error", "invalid agent_url")
+		return
+	}
+	queryParams := url.Values{}
 	if taskID := r.URL.Query().Get("task_id"); taskID != "" {
-		queryParams = append(queryParams, "task_id="+taskID)
+		queryParams.Set("task_id", taskID)
 	}
 	if level := r.URL.Query().Get("level"); level != "" {
-		queryParams = append(queryParams, "level="+level)
+		queryParams.Set("level", level)
 	}
 	if limit := r.URL.Query().Get("limit"); limit != "" {
-		queryParams = append(queryParams, "limit="+limit)
+		queryParams.Set("limit", limit)
 	}
 	if since := r.URL.Query().Get("since"); since != "" {
-		queryParams = append(queryParams, "since="+since)
+		queryParams.Set("since", since)
 	}
 	if until := r.URL.Query().Get("until"); until != "" {
-		queryParams = append(queryParams, "until="+until)
+		queryParams.Set("until", until)
 	}
-	if len(queryParams) > 0 {
-		proxyURL += "?"
-		for i, param := range queryParams {
-			if i > 0 {
-				proxyURL += "&"
-			}
-			proxyURL += param
-		}
-	}
+	proxyURL.RawQuery = queryParams.Encode()
 
 	// Forward to agent
 	client := createHTTPClient(5 * time.Second)
-	resp, err := client.Get(proxyURL)
+	resp, err := client.Get(proxyURL.String())
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "agent_error", "Failed to contact agent: "+err.Error())
 		return
@@ -444,6 +438,9 @@ func (h *Handlers) HandleAgentLogStats(w http.ResponseWriter, r *http.Request) {
 	agentURL := r.URL.Query().Get("agent_url")
 	if agentURL == "" {
 		writeError(w, http.StatusBadRequest, "validation_error", "agent_url query parameter is required")
+		return
+	}
+	if _, ok := h.requireDiscoveredAgent(w, agentURL); !ok {
 		return
 	}
 

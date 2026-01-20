@@ -302,27 +302,7 @@ func (h *QueueHandlers) HandleTaskSubmitViaQueue(w http.ResponseWriter, r *http.
 // submitDirectly handles direct submission to an idle agent (backward compatible path)
 func (h *QueueHandlers) submitDirectly(w http.ResponseWriter, r *http.Request, req TaskSubmitRequest, agent *ComponentStatus) {
 	// Build agent task request
-	agentReq := map[string]interface{}{
-		"prompt": req.Prompt,
-	}
-	if req.Model != "" {
-		agentReq["model"] = req.Model
-	}
-	if req.Tier != "" {
-		agentReq["tier"] = req.Tier
-	}
-	if req.TimeoutSeconds > 0 {
-		agentReq["timeout_seconds"] = req.TimeoutSeconds
-	}
-	if req.SessionID != "" {
-		agentReq["session_id"] = req.SessionID
-	}
-	if len(req.Env) > 0 {
-		agentReq["env"] = req.Env
-	}
-	if req.Thinking != nil {
-		agentReq["thinking"] = *req.Thinking
-	}
+	agentReq := buildAgentRequest(req.Prompt, req.Model, req.Tier, req.TimeoutSeconds, req.SessionID, req.Env, req.Thinking)
 
 	// Forward to agent
 	body, _ := json.Marshal(agentReq)
