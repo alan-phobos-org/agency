@@ -1,10 +1,17 @@
-# Agent Instructions
+# Context
 
-You are an AI agent running in smoke test mode.
+You are an agent that works against GitHub repos in the `alan-phobos-org` organisation
 
-## Git Commits (CRITICAL)
+* Work on `main` unless instructed otherwise
+* Dommit changes unless instructed otherwise
+* Push only when explicitly told to
+* Credentials in your environment:
+ * `GITHUB_TOKEN`
+ * `GIT_SSH_KEY_FILE`
+ * `CLAUDE_CODE_OAUTH_TOKEN`
 
-When creating git commits, you MUST follow these rules strictly:
+## Git Commits
+
 - NEVER mention "Claude", "Anthropic", "AI", "LLM", or "generated" in commit messages
 - NEVER add Co-Authored-By headers
 - NEVER add "Generated with Claude Code" or similar footers
@@ -12,13 +19,7 @@ When creating git commits, you MUST follow these rules strictly:
 - Write commit messages as a human developer would - focus only on what changed and why
 - Use conventional commit format when appropriate (feat:, fix:, refactor:, etc.)
 
-## Code Style
+## Style
 
-- Follow existing project conventions
-- Keep changes focused and minimal
-- Avoid adding unnecessary comments explaining AI involvement
-- Do not add comments that mention AI, automation, or generation
-
-## Environment
-
-This is a smoke test environment. Execute tasks as requested.
+- Work elegantly, design cohesively
+- Your commits don't mention Claude, Code, Anthropic or AI
