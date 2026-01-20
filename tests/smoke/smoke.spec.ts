@@ -413,11 +413,18 @@ test.describe.serial('Agency Smoke Tests', () => {
     // Click trigger button
     await nightlyMaintenanceJob.locator('button:has-text("Run Now")').click();
 
+    // Give the backend a moment to process the request
+    await page.waitForTimeout(1000);
+
+    // Close fleet section to ensure UI updates properly
+    await page.click('.fleet-trigger');
+    await expect(page.locator('.fleet-content')).toBeHidden();
+
     // Verify new session created
     await expect(async () => {
       const newCount = await page.locator('.session-card').count();
       expect(newCount).toBeGreaterThan(initialSessionCount);
-    }).toPass({ timeout: 10000, intervals: [1000] });
+    }).toPass({ timeout: 15000, intervals: [1000] });
 
     await screenshot(page, '14-nightly-maintenance-triggered');
 

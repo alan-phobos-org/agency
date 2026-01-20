@@ -1,20 +1,18 @@
-# Agency Scheduler Configuration
-# Runs scheduled maintenance tasks across repositories
+# Agency Scheduler Configuration - Smoke Tests
+# Uses smoke test ports (18080 for director, 19000 for agent)
 #
-# Port configuration (dev defaults below, deploy-agency.sh adjusts for prod):
-#   Dev:  director=8080, agent=9000
-#   Prod: director=9080, agent=9100
+# Port configuration:
+#   Smoke: director=18080, agent=19000, scheduler=19010
 
-port: 9010
+port: 19010
 
 # Director URL for session tracking (sessions will be viewable in web UI)
 # Scheduler tries director first, falls back to agent if unavailable.
 # Use the web director's internal HTTP port for unauthenticated localhost API.
-# Start the web director with: ag-view-web -internal-port=8080
-director_url: http://localhost:8080
+director_url: http://localhost:18080
 
 # Direct agent URL (fallback when director is unavailable)
-agent_url: https://localhost:9000
+agent_url: https://localhost:19000
 
 jobs:
   - name: smoke-test
@@ -29,7 +27,7 @@ jobs:
     schedule: "0 0 31 2 *"  # Never auto-runs (Feb 31)
     agent_kind: codex
     tier: fast
-    agent_url: https://localhost:9001
+    agent_url: https://localhost:19001
     timeout: 60s
     prompt: |
       This is a smoke test for codex. Reply with exactly: "Codex smoke test OK"
@@ -132,4 +130,3 @@ jobs:
       <summary>
       Newsletter status for {{.Date}}
       </summary>
-  

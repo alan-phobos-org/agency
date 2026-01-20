@@ -362,7 +362,7 @@ case "${1:-help}" in
         export AG_SCHEDULER_PORT=19010
         export AG_DISCOVERY_START=19000
         export AG_DISCOVERY_END=19010
-        export AG_SCHEDULER_CONFIG="$PWD/configs/scheduler.yaml"
+        export AG_SCHEDULER_CONFIG="$PWD/configs/scheduler-smoke.yaml"
         export AG_WEB_PASSWORD="${AG_WEB_PASSWORD:-smoketest}"
         export AGENCY_PROMPTS_DIR="$PWD/tests/smoke/fixtures/prompts"
         export AGENCY_MODE="dev"
