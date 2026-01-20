@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-01-20
+
+### Fixed
+- Fixed deployment script issues with agency prompt handling
+- Fixed build script to properly copy agency prompts to deployment directory
+
+### Added
+- Added default agency prompt files (claude-prod.md, codex-prod.md) to deployment
+
 ## [3.0.0] - 2026-01-20
 
 ### Breaking Changes
@@ -134,7 +143,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit, integration, component, and system tests
 - Race condition detection in tests
 
-[Unreleased]: https://github.com/alan-phobos-org/agency/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/alan-phobos-org/agency/compare/v3.0.1...HEAD
+[3.0.1]: https://github.com/alan-phobos-org/agency/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/alan-phobos-org/agency/compare/v2.2.0...v3.0.0
 [2.2.0]: https://github.com/alan-phobos-org/agency/compare/v2.1.0...v2.2.0
 [1.1.0]: https://github.com/alan-phobos-org/agency/compare/v1.0.1...v1.1.0
