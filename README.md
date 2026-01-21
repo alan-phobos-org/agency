@@ -11,6 +11,7 @@ Agency provides infrastructure for running AI agents that perform software engin
 | Component | Description |
 |-----------|-------------|
 | **ag-agent-claude** | Executes tasks via Claude CLI in a sandboxed environment |
+| **ag-agent-codex** | Executes tasks via OpenAI Codex CLI (experimental) |
 | **ag-cli** | Command-line tool for task submission, status, and discovery |
 | **ag-scheduler** | Runs tasks on cron schedules with configurable jobs |
 | **ag-view-web** | Web dashboard with auth, discovery, and task management |
