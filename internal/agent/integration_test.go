@@ -53,9 +53,11 @@ func TestIntegrationAgentDirectorFlow(t *testing.T) {
 
 	// Start agent
 	port := testutil.AllocateTestPort(t)
+	agencyPromptFile := filepath.Join(projectRoot, "testdata", "test-agency-prompt.md")
 	cfg := &config.Config{
-		Port:     port,
-		LogLevel: "debug",
+		Port:             port,
+		LogLevel:         "debug",
+		AgencyPromptFile: agencyPromptFile,
 		Claude: config.ClaudeConfig{
 			Model:   "sonnet",
 			Timeout: 30 * time.Second,
@@ -125,9 +127,11 @@ func TestIntegrationTaskCancellation(t *testing.T) {
 	t.Setenv("CLAUDE_BIN", mockClaude)
 
 	port := testutil.AllocateTestPort(t)
+	agencyPromptFile := filepath.Join(projectRoot, "testdata", "test-agency-prompt.md")
 	cfg := &config.Config{
-		Port:     port,
-		LogLevel: "debug",
+		Port:             port,
+		LogLevel:         "debug",
+		AgencyPromptFile: agencyPromptFile,
 		Claude: config.ClaudeConfig{
 			Model:   "sonnet",
 			Timeout: 60 * time.Second,
@@ -194,9 +198,11 @@ func TestIntegrationPromptWithDashes(t *testing.T) {
 	t.Setenv("CLAUDE_BIN", mockClaude)
 
 	port := testutil.AllocateTestPort(t)
+	agencyPromptFile := filepath.Join(projectRoot, "testdata", "test-agency-prompt.md")
 	cfg := &config.Config{
-		Port:     port,
-		LogLevel: "debug",
+		Port:             port,
+		LogLevel:         "debug",
+		AgencyPromptFile: agencyPromptFile,
 		Claude: config.ClaudeConfig{
 			Model:   "sonnet",
 			Timeout: 30 * time.Second,
