@@ -3,7 +3,6 @@ package web
 import (
 	"bytes"
 	"crypto/sha256"
-	"crypto/tls"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	"phobos.org.uk/agency/internal/api"
+	"phobos.org.uk/agency/internal/tlsutil"
 )
 
 var (
@@ -68,14 +68,7 @@ func (h *Handlers) SetQueue(q *WorkQueue) {
 
 // createHTTPClient creates an HTTP client that accepts self-signed certificates for localhost
 func createHTTPClient(timeout time.Duration) *http.Client {
-	return &http.Client{
-		Timeout: timeout,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true, // Accept self-signed certificates for localhost
-			},
-		},
-	}
+	return tlsutil.NewInsecureHTTPClient(timeout)
 }
 
 func (h *Handlers) requireDiscoveredAgent(w http.ResponseWriter, agentURL string) (*ComponentStatus, bool) {

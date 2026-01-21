@@ -2,12 +2,12 @@ package cli
 
 import (
 	"bytes"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
+
+	"phobos.org.uk/agency/internal/tlsutil"
 )
 
 // Director is a simple CLI director that submits tasks to an agent
@@ -36,7 +36,7 @@ func New(agentURL string, opts ...Option) *Director {
 		opt(d)
 	}
 	// Update client for TLS if needed
-	d.client = createHTTPClient(d.directorURL, d.agentURL)
+	d.client = tlsutil.NewHTTPClient(5*time.Minute, d.directorURL, d.agentURL)
 	return d
 }
 
@@ -48,27 +48,6 @@ func WithDirectorURL(url string) Option {
 	return func(d *Director) {
 		d.directorURL = url
 	}
-}
-
-// createHTTPClient creates an HTTP client with TLS skip for localhost HTTPS
-func createHTTPClient(directorURL, agentURL string) *http.Client {
-	client := &http.Client{Timeout: 5 * time.Minute}
-
-	// Skip TLS verification for localhost HTTPS (self-signed certs)
-	needsSkipVerify := strings.HasPrefix(directorURL, "https://localhost") ||
-		strings.HasPrefix(directorURL, "https://127.0.0.1") ||
-		strings.HasPrefix(agentURL, "https://localhost") ||
-		strings.HasPrefix(agentURL, "https://127.0.0.1")
-
-	if needsSkipVerify {
-		client.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-			},
-		}
-	}
-
-	return client
 }
 
 // Run submits a task and polls until completion

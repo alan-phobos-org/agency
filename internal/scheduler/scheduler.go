@@ -3,7 +3,6 @@ package scheduler
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"phobos.org.uk/agency/internal/api"
+	"phobos.org.uk/agency/internal/tlsutil"
 )
 
 // Scheduler manages scheduled jobs
@@ -310,19 +310,7 @@ func (s *Scheduler) submitViaAgent(js *jobState) (taskID string, status string, 
 
 // createHTTPClient creates an HTTP client, with TLS skip verification for localhost HTTPS
 func (s *Scheduler) createHTTPClient(targetURL string) *http.Client {
-	client := &http.Client{Timeout: 30 * time.Second}
-
-	// Skip TLS verification for localhost HTTPS (self-signed certs)
-	if strings.HasPrefix(targetURL, "https://localhost") ||
-		strings.HasPrefix(targetURL, "https://127.0.0.1") {
-		client.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-			},
-		}
-	}
-
-	return client
+	return tlsutil.NewHTTPClient(30*time.Second, targetURL)
 }
 
 // updateJobState updates job state after execution (for direct agent submission)

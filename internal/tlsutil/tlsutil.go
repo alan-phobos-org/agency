@@ -3,14 +3,17 @@ package tlsutil
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
 	"math/big"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -80,4 +83,42 @@ func GenerateSelfSignedCert(certPath, keyPath, organization string) error {
 	}
 
 	return nil
+}
+
+// isLocalhostURL returns true if the URL points to localhost or 127.0.0.1.
+func isLocalhostURL(url string) bool {
+	return strings.HasPrefix(url, "https://localhost") ||
+		strings.HasPrefix(url, "https://127.0.0.1")
+}
+
+// NewHTTPClient creates an HTTP client that skips TLS verification for localhost
+// HTTPS URLs (which typically use self-signed certificates).
+func NewHTTPClient(timeout time.Duration, urls ...string) *http.Client {
+	client := &http.Client{Timeout: timeout}
+
+	for _, url := range urls {
+		if isLocalhostURL(url) {
+			client.Transport = &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true,
+				},
+			}
+			break
+		}
+	}
+
+	return client
+}
+
+// NewInsecureHTTPClient creates an HTTP client that always skips TLS verification.
+// Use this only for internal service communication where self-signed certificates are expected.
+func NewInsecureHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		},
+	}
 }
