@@ -56,10 +56,37 @@ func (d *Dispatcher) dispatchNext() {
 		return // Queue empty
 	}
 
-	// Find first idle agent
-	agent := d.findFirstIdleAgent(task.AgentKind)
-	if agent == nil {
-		return // No idle agents
+	var agent *ComponentStatus
+
+	// Strict session affinity: if task has a session, it must use that session's agent
+	if task.SessionID != "" {
+		session, exists := d.sessionStore.Get(task.SessionID)
+		if exists && session.AgentURL != "" {
+			// Task must use the session's original agent
+			comp, found := d.discovery.GetComponent(session.AgentURL)
+			if !found {
+				// Session's agent no longer available - wait
+				return
+			}
+			if comp.State == "idle" && comp.FailCount == 0 {
+				agent = comp
+			} else {
+				// Session's agent is busy - wait in queue
+				return
+			}
+		} else {
+			// Session not found or has no agent - treat as new session
+			agent = d.findFirstIdleAgent(task.AgentKind)
+			if agent == nil {
+				return // No idle agents
+			}
+		}
+	} else {
+		// New session - find any idle agent of the requested kind
+		agent = d.findFirstIdleAgent(task.AgentKind)
+		if agent == nil {
+			return // No idle agents
+		}
 	}
 
 	// Mark as dispatching

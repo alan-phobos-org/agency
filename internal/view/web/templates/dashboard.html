@@ -1940,7 +1940,7 @@
             <!-- Sessions - full width -->
             <div class="session-list" role="list" aria-label="Sessions">
                 <template x-for="session in sessions" :key="session.id">
-                    <div class="session-card" :class="{ 'session-card--expanded': expandedSession === session.id }" role="listitem">
+                    <div class="session-card" :class="{ 'session-card--expanded': expandedSession === session.id }" :data-session-id="session.id" role="listitem">
                         <div class="session-header"
                              @click="toggleSession(session.id)"
                              @keydown.enter="toggleSession(session.id)"
@@ -2301,33 +2301,13 @@
                             </template>
                         </select>
                     </div>
-                    <div class="form-group-inline">
-                        <label class="form-label" for="agent-select">Agent</label>
-                        <div style="flex: 1;">
-                            <select class="form-select" id="agent-select" x-model="taskForm.agentUrl" style="width: 100%;">
-                                <option value="">Select an agent...</option>
-                                <template x-for="agent in idleAgents" :key="agent.url">
-                                    <option :value="agent.url" x-text="getComponentName(agent.url) + ' (idle)'"></option>
-                                </template>
-                                <template x-for="agent in agents.filter(a => a.state !== 'idle')" :key="agent.url">
-                                    <option :value="agent.url" x-text="getComponentName(agent.url) + ' (' + agent.state + ')'" disabled></option>
-                                </template>
-                            </select>
-                            <div class="form-hint" x-show="taskForm.sessionId" x-cloak>
-                                Using existing session's agent
-                            </div>
-                        </div>
-                    </div>
-                    <div class="form-group-inline">
+                    <div class="form-group-inline" x-show="!taskForm.sessionId" x-cloak>
                         <label class="form-label" for="agent-kind-select">Agent Kind</label>
                         <div style="flex: 1;">
                             <select class="form-select" id="agent-kind-select" x-model="taskForm.agentKind" style="width: 100%;">
                                 <option value="claude">claude</option>
                                 <option value="codex">codex</option>
                             </select>
-                            <div class="form-hint" x-show="taskForm.sessionId" x-cloak>
-                                Using existing session's agent kind
-                            </div>
                         </div>
                     </div>
                     <div class="form-group">
@@ -2487,7 +2467,6 @@
                 taskModalOpen: false,
                 taskOptionsOpen: false,
                 taskForm: {
-                    agentUrl: '',
                     agentKind: 'claude',
                     sessionId: '',
                     prompt: '',
@@ -2568,15 +2547,6 @@
                     this.$watch('settingsOpen', (open) => {
                         if (open) {
                             this.loadDevices();
-                        }
-                    });
-
-                    // Keep agent selection aligned to session selection
-                    this.$watch('taskForm.sessionId', (sessionId) => {
-                        if (!sessionId) return;
-                        const session = this.sessions.find(s => s.id === sessionId);
-                        if (session && session.agent_url) {
-                            this.taskForm.agentUrl = session.agent_url;
                         }
                     });
                 },
@@ -2678,8 +2648,6 @@
                             const selected = this.sessions.find(s => s.id === this.taskForm.sessionId);
                             if (!selected) {
                                 this.taskForm.sessionId = '';
-                            } else if (selected.agent_url && selected.agent_url !== this.taskForm.agentUrl) {
-                                this.taskForm.agentUrl = selected.agent_url;
                             }
                         }
                         if (this.expandedSession) {
@@ -2845,19 +2813,7 @@
                     this.taskModalOpen = true;
                     this.taskError = '';
                     this.taskOptionsOpen = false;
-                    // Reset agentUrl before setting sessionId (which triggers watcher)
-                    this.taskForm.agentUrl = '';
                     this.taskForm.sessionId = sessionId;
-                    if (sessionId) {
-                        // Set agent from session (watcher also does this, but be explicit)
-                        const session = this.sessions.find(s => s.id === sessionId);
-                        if (session && session.agent_url) {
-                            this.taskForm.agentUrl = session.agent_url;
-                        }
-                    } else if (this.idleAgents.length > 0) {
-                        // Auto-select first idle agent for new sessions
-                        this.taskForm.agentUrl = this.idleAgents[0].url;
-                    }
                     // Focus prompt input after modal opens
                     this.$nextTick(() => {
                         this.$refs.promptInput?.focus();
@@ -2886,10 +2842,7 @@
                             // Using existing session - agent is already assigned
                             body.session_id = this.taskForm.sessionId;
                         } else {
-                            // New session - specify agent and agent kind
-                            if (this.taskForm.agentUrl) {
-                                body.agent_url = this.taskForm.agentUrl;
-                            }
+                            // New session - specify agent kind only, queue will route to available agent
                             if (this.taskForm.agentKind) {
                                 body.agent_kind = this.taskForm.agentKind;
                             }

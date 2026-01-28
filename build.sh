@@ -388,6 +388,14 @@ case "${1:-help}" in
         # Check for port conflicts before starting
         check_smoke_ports
 
+        # Clear queue directory to avoid interference from previous runs
+        QUEUE_DIR="$HOME/.agency/queue"
+        if [ -d "$QUEUE_DIR" ]; then
+            echo "Clearing queue directory..."
+            rm -rf "$QUEUE_DIR/pending" "$QUEUE_DIR/dispatched"
+            mkdir -p "$QUEUE_DIR/pending" "$QUEUE_DIR/dispatched"
+        fi
+
         # Cleanup on any exit
         cleanup_smoke_test() {
             echo "Cleaning up smoke test..."

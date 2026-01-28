@@ -97,12 +97,30 @@ func TestCreateTaskSuccess(t *testing.T) {
 	a.Router().ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusCreated, w.Code)
-	require.Contains(t, w.Body.String(), "task_id")
-	require.Contains(t, w.Body.String(), "session_id")
-	require.Contains(t, w.Body.String(), "working")
+	var response struct {
+		TaskID    string `json:"task_id"`
+		SessionID string `json:"session_id"`
+		State     string `json:"state"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+	require.NotEmpty(t, response.TaskID)
+	require.NotEmpty(t, response.SessionID)
+	require.Equal(t, "working", response.State)
 
-	// Wait for background task to complete to avoid TempDir cleanup race
-	time.Sleep(100 * time.Millisecond)
+	// Wait for background task to reach terminal state with polling
+	taskID := response.TaskID
+	require.Eventually(t, func() bool {
+		a.mu.RLock()
+		task, exists := a.tasks[taskID]
+		a.mu.RUnlock()
+
+		if !exists {
+			return false
+		}
+
+		// Task should reach completed or failed state
+		return task.State == TaskStateCompleted || task.State == TaskStateFailed
+	}, 2*time.Second, 50*time.Millisecond, "task should complete within 2 seconds")
 }
 
 func TestCreateTaskCreatesSessionDir(t *testing.T) {
@@ -404,7 +422,6 @@ func TestAgencyPromptFileMissing(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "agency prompt file not found")
 }
-
 
 func TestBuildClaudeArgsCustomMaxTurns(t *testing.T) {
 	t.Parallel()

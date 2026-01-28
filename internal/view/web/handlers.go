@@ -657,9 +657,11 @@ func (h *Handlers) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set cookie and redirect
+	// Set cookie and return success (client will handle redirect)
 	SetSessionCookie(w, session.ID, h.secureCookie)
-	http.Redirect(w, r, "/", http.StatusFound)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
 // HandleLogout destroys the session
