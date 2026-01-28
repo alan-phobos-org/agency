@@ -23,7 +23,7 @@ type ComponentStatus struct {
 	State         string           `json:"state"`
 	UptimeSeconds float64          `json:"uptime_seconds"`
 	CurrentTask   *api.CurrentTask `json:"current_task,omitempty"`
-	Config        interface{}      `json:"config,omitempty"`
+	Config        any              `json:"config,omitempty"`
 	Jobs          []JobStatus      `json:"jobs,omitempty"` // For scheduler helpers
 	LastSeen      time.Time        `json:"last_seen"`
 	FailCount     int              `json:"-"` // Internal: consecutive failures

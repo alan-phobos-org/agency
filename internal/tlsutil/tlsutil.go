@@ -85,6 +85,27 @@ func GenerateSelfSignedCert(certPath, keyPath, organization string) error {
 	return nil
 }
 
+// FileExists returns true if a file exists at the given path.
+func FileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// EnsureTLSCert checks if certificates exist and generates them if needed.
+func EnsureTLSCert(certPath, keyPath, organization string) error {
+	if FileExists(certPath) && FileExists(keyPath) {
+		return nil
+	}
+	return GenerateSelfSignedCert(certPath, keyPath, organization)
+}
+
+// DefaultTLSConfig returns a TLS config with reasonable defaults.
+func DefaultTLSConfig() *tls.Config {
+	return &tls.Config{
+		MinVersion: tls.VersionTLS12,
+	}
+}
+
 // isLocalhostURL returns true if the URL points to localhost or 127.0.0.1.
 func isLocalhostURL(url string) bool {
 	return strings.HasPrefix(url, "https://localhost") ||

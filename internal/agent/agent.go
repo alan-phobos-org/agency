@@ -447,22 +447,22 @@ func setTaskCompletion(task *Task, completedAt time.Time) {
 func (a *Agent) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	var req TaskRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		api.WriteError(w, http.StatusBadRequest, "validation_error", "Invalid JSON: "+err.Error())
+		api.WriteError(w, http.StatusBadRequest, api.ErrorValidation, "Invalid JSON: "+err.Error())
 		return
 	}
 
 	if req.Prompt == "" {
-		api.WriteError(w, http.StatusBadRequest, "validation_error", "prompt is required")
+		api.WriteError(w, http.StatusBadRequest, api.ErrorValidation, "prompt is required")
 		return
 	}
 
 	if req.Tier != "" && !api.IsValidTier(req.Tier) {
-		api.WriteError(w, http.StatusBadRequest, "validation_error", "tier must be fast, standard, or heavy")
+		api.WriteError(w, http.StatusBadRequest, api.ErrorValidation, "tier must be fast, standard, or heavy")
 		return
 	}
 
 	if req.SessionID != "" && !isSafeSessionID(req.SessionID) {
-		api.WriteError(w, http.StatusBadRequest, "validation_error", "session_id contains invalid characters")
+		api.WriteError(w, http.StatusBadRequest, api.ErrorValidation, "session_id contains invalid characters")
 		return
 	}
 
@@ -473,7 +473,7 @@ func (a *Agent) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 			currentTaskID = a.currentTask.ID
 		}
 		a.mu.Unlock()
-		api.WriteJSON(w, http.StatusConflict, map[string]interface{}{
+		api.WriteJSON(w, http.StatusConflict, map[string]any{
 			"error":        api.ErrorAgentBusy,
 			"message":      fmt.Sprintf("Agent is currently processing %s", currentTaskID),
 			"current_task": currentTaskID,
@@ -533,7 +533,7 @@ func (a *Agent) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	// Start task execution in background
 	go a.executeTask(task, req.Env)
 
-	api.WriteJSON(w, http.StatusCreated, map[string]interface{}{
+	api.WriteJSON(w, http.StatusCreated, map[string]any{
 		"task_id":    taskID,
 		"session_id": respSessionID,
 		"status":     "working",
@@ -547,7 +547,7 @@ func (a *Agent) handleGetTask(w http.ResponseWriter, r *http.Request) {
 
 	a.mu.RLock()
 	task, ok := a.tasks[taskID]
-	var resp map[string]interface{}
+	var resp map[string]any
 	if ok {
 		var exitCode *int
 		if task.ExitCode != nil {
@@ -565,7 +565,7 @@ func (a *Agent) handleGetTask(w http.ResponseWriter, r *http.Request) {
 			taskError = &errCopy
 		}
 
-		resp = map[string]interface{}{
+		resp = map[string]any{
 			"task_id":          task.ID,
 			"state":            task.State,
 			"exit_code":        exitCode,
@@ -599,7 +599,7 @@ func (a *Agent) handleGetTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	api.WriteError(w, http.StatusNotFound, "not_found", fmt.Sprintf("Task %s not found", taskID))
+	api.WriteError(w, http.StatusNotFound, api.ErrorNotFound, fmt.Sprintf("Task %s not found", taskID))
 }
 
 // handleCancelTask cancels a running task by ID.
@@ -612,13 +612,13 @@ func (a *Agent) handleCancelTask(w http.ResponseWriter, r *http.Request) {
 	task, ok := a.tasks[taskID]
 	if !ok {
 		a.mu.Unlock()
-		api.WriteError(w, http.StatusNotFound, "not_found", fmt.Sprintf("Task %s not found", taskID))
+		api.WriteError(w, http.StatusNotFound, api.ErrorNotFound, fmt.Sprintf("Task %s not found", taskID))
 		return
 	}
 
 	if task.State.IsTerminal() {
 		a.mu.Unlock()
-		api.WriteJSON(w, http.StatusConflict, map[string]interface{}{
+		api.WriteJSON(w, http.StatusConflict, map[string]any{
 			"error":       api.ErrorAlreadyCompleted,
 			"message":     fmt.Sprintf("Task %s has already completed", taskID),
 			"final_state": task.State,
@@ -636,7 +636,7 @@ func (a *Agent) handleCancelTask(w http.ResponseWriter, r *http.Request) {
 	}
 	a.mu.Unlock()
 
-	api.WriteJSON(w, http.StatusOK, map[string]interface{}{
+	api.WriteJSON(w, http.StatusOK, map[string]any{
 		"task_id": taskID,
 		"state":   TaskStateCancelled,
 		"message": "Task cancellation initiated",
@@ -665,7 +665,7 @@ func (a *Agent) handleShutdown(w http.ResponseWriter, r *http.Request) {
 	a.mu.RUnlock()
 
 	if hasTask && !req.Force {
-		api.WriteJSON(w, http.StatusConflict, map[string]interface{}{
+		api.WriteJSON(w, http.StatusConflict, map[string]any{
 			"error":   api.ErrorTaskInProgress,
 			"message": fmt.Sprintf("Task %s is running. Use force=true to terminate.", taskID),
 			"task_id": taskID,
@@ -673,7 +673,7 @@ func (a *Agent) handleShutdown(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	api.WriteJSON(w, http.StatusAccepted, map[string]interface{}{
+	api.WriteJSON(w, http.StatusAccepted, map[string]any{
 		"message":       "Shutdown initiated",
 		"drain_timeout": req.TimeoutSeconds,
 	})
@@ -1172,7 +1172,7 @@ func (a *Agent) handleGetHistory(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "id")
 	entry, err := a.history.Get(taskID)
 	if err != nil {
-		api.WriteError(w, http.StatusNotFound, "not_found", err.Error())
+		api.WriteError(w, http.StatusNotFound, api.ErrorNotFound, err.Error())
 		return
 	}
 
@@ -1189,7 +1189,7 @@ func (a *Agent) handleGetHistoryDebug(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "id")
 	debugLog, err := a.history.GetDebugLog(taskID)
 	if err != nil {
-		api.WriteError(w, http.StatusNotFound, "not_found", err.Error())
+		api.WriteError(w, http.StatusNotFound, api.ErrorNotFound, err.Error())
 		return
 	}
 

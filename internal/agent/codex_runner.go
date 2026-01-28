@@ -62,7 +62,7 @@ func (codexRunner) ParseOutput(stdout []byte) (RunnerOutput, bool) {
 		if line == "" {
 			continue
 		}
-		var raw map[string]interface{}
+		var raw map[string]any
 		if err := json.Unmarshal([]byte(line), &raw); err != nil {
 			continue
 		}
@@ -72,7 +72,7 @@ func (codexRunner) ParseOutput(stdout []byte) (RunnerOutput, bool) {
 			out.SessionID = sid
 		}
 
-		if usageRaw, ok := raw["usage"].(map[string]interface{}); ok {
+		if usageRaw, ok := raw["usage"].(map[string]any); ok {
 			inputTokens := intFromAny(usageRaw["input_tokens"])
 			outputTokens := intFromAny(usageRaw["output_tokens"])
 			if inputTokens == 0 {
@@ -116,7 +116,7 @@ func (codexRunner) MaxTurnsLimit(cfg *config.Config) int {
 	return 0
 }
 
-func extractOutputText(raw map[string]interface{}) (string, bool) {
+func extractOutputText(raw map[string]any) (string, bool) {
 	if v, ok := raw["result"].(string); ok {
 		return v, true
 	}
@@ -130,7 +130,7 @@ func extractOutputText(raw map[string]interface{}) (string, bool) {
 		return v, true
 	}
 	// Handle codex CLI format: {"type":"item.completed","item":{"type":"agent_message","text":"..."}}
-	if item, ok := raw["item"].(map[string]interface{}); ok {
+	if item, ok := raw["item"].(map[string]any); ok {
 		if itemType, ok := item["type"].(string); ok && itemType == "agent_message" {
 			if text, ok := item["text"].(string); ok {
 				return text, true
@@ -143,11 +143,11 @@ func extractOutputText(raw map[string]interface{}) (string, bool) {
 	return "", false
 }
 
-func extractMessageContent(message interface{}) (string, bool) {
+func extractMessageContent(message any) (string, bool) {
 	switch v := message.(type) {
 	case string:
 		return v, true
-	case map[string]interface{}:
+	case map[string]any:
 		if content, ok := v["content"]; ok {
 			return extractContentText(content)
 		}
@@ -155,15 +155,15 @@ func extractMessageContent(message interface{}) (string, bool) {
 	return "", false
 }
 
-func extractContentText(content interface{}) (string, bool) {
+func extractContentText(content any) (string, bool) {
 	switch v := content.(type) {
 	case string:
 		return v, true
-	case []interface{}:
+	case []any:
 		var parts []string
 		for _, item := range v {
 			switch piece := item.(type) {
-			case map[string]interface{}:
+			case map[string]any:
 				if text, ok := piece["text"].(string); ok {
 					parts = append(parts, text)
 				} else if text, ok := piece["content"].(string); ok {
@@ -180,7 +180,7 @@ func extractContentText(content interface{}) (string, bool) {
 	return "", false
 }
 
-func intFromAny(value interface{}) int {
+func intFromAny(value any) int {
 	switch v := value.(type) {
 	case int:
 		return v

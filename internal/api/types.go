@@ -47,6 +47,18 @@ const (
 	// Auth errors
 	ErrorUnauthorized = "unauthorized"
 
+	// Validation errors
+	ErrorValidation        = "validation_error"
+	ErrorParseError        = "parse_error"
+	ErrorAgentKindMismatch = "agent_kind_mismatch"
+
+	// Agent communication errors
+	ErrorAgentError = "agent_error"
+
+	// Queue errors
+	ErrorQueueFull  = "queue_full"
+	ErrorQueueError = "queue_error"
+
 	// Generic errors
 	ErrorReadError = "read_error"
 )
@@ -61,6 +73,16 @@ type ProjectContext struct {
 func IsValidTier(tier string) bool {
 	switch tier {
 	case TierFast, TierStandard, TierHeavy:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsValidAgentKind returns true if the agent kind is known.
+func IsValidAgentKind(kind string) bool {
+	switch kind {
+	case AgentKindClaude, AgentKindCodex:
 		return true
 	default:
 		return false

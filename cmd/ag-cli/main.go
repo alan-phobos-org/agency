@@ -85,7 +85,7 @@ func taskCmd(args []string) {
 	client := tlsutil.NewHTTPClient(5*time.Minute, *agentURL)
 
 	// Submit task
-	taskReq := map[string]interface{}{
+	taskReq := map[string]any{
 		"prompt":          prompt,
 		"timeout_seconds": int(timeout.Seconds()),
 	}
@@ -148,12 +148,12 @@ func taskCmd(args []string) {
 }
 
 type taskStatus struct {
-	TaskID          string                 `json:"task_id"`
-	State           string                 `json:"state"`
-	ExitCode        *int                   `json:"exit_code"`
-	Output          string                 `json:"output"`
-	Error           map[string]interface{} `json:"error"`
-	DurationSeconds float64                `json:"duration_seconds"`
+	TaskID          string         `json:"task_id"`
+	State           string         `json:"state"`
+	ExitCode        *int           `json:"exit_code"`
+	Output          string         `json:"output"`
+	Error           map[string]any `json:"error"`
+	DurationSeconds float64        `json:"duration_seconds"`
 }
 
 func pollForCompletion(client *http.Client, agentURL, taskID string, timeout time.Duration) *taskStatus {
@@ -215,7 +215,7 @@ func statusCmd(args []string) {
 	}
 	defer resp.Body.Close()
 
-	var status map[string]interface{}
+	var status map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing status: %v\n", err)
 		os.Exit(1)
@@ -244,7 +244,7 @@ func discoverCmd(args []string) {
 			continue
 		}
 
-		var status map[string]interface{}
+		var status map[string]any
 		if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
 			resp.Body.Close()
 			continue
@@ -294,7 +294,7 @@ func queueCmd(args []string) {
 	client := tlsutil.NewHTTPClient(30*time.Second, *directorURL)
 
 	// Submit to queue
-	queueReq := map[string]interface{}{
+	queueReq := map[string]any{
 		"prompt":          prompt,
 		"timeout_seconds": int(timeout.Seconds()),
 		"source":          *source,
@@ -367,7 +367,7 @@ func queueStatusCmd(args []string) {
 			os.Exit(1)
 		}
 
-		var task map[string]interface{}
+		var task map[string]any
 		if err := json.NewDecoder(resp.Body).Decode(&task); err != nil {
 			fmt.Fprintf(os.Stderr, "Error parsing response: %v\n", err)
 			os.Exit(1)

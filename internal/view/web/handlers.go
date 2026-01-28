@@ -83,7 +83,7 @@ func (h *Handlers) requireDiscoveredAgent(w http.ResponseWriter, agentURL string
 // HandleDashboard serves the main dashboard HTML page
 func (h *Handlers) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	data := map[string]interface{}{
+	data := map[string]any{
 		"Version": h.version,
 	}
 	if err := h.tmpl.ExecuteTemplate(w, "dashboard.html", data); err != nil {
@@ -93,19 +93,19 @@ func (h *Handlers) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 
 // HandleStatus returns the web view's own status (universal /status endpoint)
 func (h *Handlers) HandleStatus(w http.ResponseWriter, r *http.Request) {
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"type":           api.TypeView,
 		"interfaces":     []string{api.InterfaceStatusable, api.InterfaceObservable, api.InterfaceTaskable},
 		"version":        h.version,
 		"state":          "running",
 		"uptime_seconds": time.Since(h.startTime).Seconds(),
-		"config": map[string]interface{}{
+		"config": map[string]any{
 			"type": "web",
 		},
 	}
 	// Add queue status if available
 	if h.queue != nil {
-		resp["queue"] = map[string]interface{}{
+		resp["queue"] = map[string]any{
 			"depth":              h.queue.Depth(),
 			"max_size":           h.queue.Config().MaxSize,
 			"oldest_age_seconds": h.queue.OldestAge(),
@@ -157,24 +157,24 @@ type TaskSubmitResponse struct {
 func (h *Handlers) HandleTaskSubmit(w http.ResponseWriter, r *http.Request) {
 	var req TaskSubmitRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "validation_error", "Invalid JSON: "+err.Error())
+		writeError(w, http.StatusBadRequest, api.ErrorValidation, "Invalid JSON: "+err.Error())
 		return
 	}
 
 	if req.AgentURL == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "agent_url is required")
+		writeError(w, http.StatusBadRequest, api.ErrorValidation, "agent_url is required")
 		return
 	}
 	if req.Prompt == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "prompt is required")
+		writeError(w, http.StatusBadRequest, api.ErrorValidation, "prompt is required")
 		return
 	}
 	if req.Tier != "" && !api.IsValidTier(req.Tier) {
-		writeError(w, http.StatusBadRequest, "validation_error", "tier must be fast, standard, or heavy")
+		writeError(w, http.StatusBadRequest, api.ErrorValidation, "tier must be fast, standard, or heavy")
 		return
 	}
-	if req.AgentKind != "" && req.AgentKind != api.AgentKindClaude && req.AgentKind != api.AgentKindCodex {
-		writeError(w, http.StatusBadRequest, "validation_error", "agent_kind must be claude or codex")
+	if req.AgentKind != "" && !api.IsValidAgentKind(req.AgentKind) {
+		writeError(w, http.StatusBadRequest, api.ErrorValidation, "agent_kind must be claude or codex")
 		return
 	}
 
@@ -184,7 +184,7 @@ func (h *Handlers) HandleTaskSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.AgentKind != "" && agent.AgentKind != "" && agent.AgentKind != req.AgentKind {
-		writeError(w, http.StatusBadRequest, "agent_kind_mismatch",
+		writeError(w, http.StatusBadRequest, api.ErrorAgentKindMismatch,
 			fmt.Sprintf("Agent kind %q does not match requested %q", agent.AgentKind, req.AgentKind))
 		return
 	}
@@ -201,7 +201,7 @@ func (h *Handlers) HandleTaskSubmit(w http.ResponseWriter, r *http.Request) {
 	client := createHTTPClient(10 * time.Second)
 	resp, err := client.Post(req.AgentURL+"/task", "application/json", bytes.NewReader(body))
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "agent_error", "Failed to contact agent: "+err.Error())
+		writeError(w, http.StatusBadGateway, api.ErrorAgentError, "Failed to contact agent: "+err.Error())
 		return
 	}
 	defer resp.Body.Close()
@@ -222,7 +222,7 @@ func (h *Handlers) HandleTaskSubmit(w http.ResponseWriter, r *http.Request) {
 		SessionID string `json:"session_id"`
 	}
 	if err := json.Unmarshal(respBody, &agentResp); err != nil {
-		writeError(w, http.StatusBadGateway, "parse_error", "Invalid agent response")
+		writeError(w, http.StatusBadGateway, api.ErrorParseError, "Invalid agent response")
 		return
 	}
 
@@ -253,7 +253,7 @@ func (h *Handlers) HandleTaskSubmit(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) HandleTaskStatus(w http.ResponseWriter, r *http.Request, taskID string) {
 	agentURL := r.URL.Query().Get("agent_url")
 	if agentURL == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "agent_url query parameter is required")
+		writeError(w, http.StatusBadRequest, api.ErrorValidation, "agent_url query parameter is required")
 		return
 	}
 	if _, ok := h.requireDiscoveredAgent(w, agentURL); !ok {
@@ -266,7 +266,7 @@ func (h *Handlers) HandleTaskStatus(w http.ResponseWriter, r *http.Request, task
 	// Try the active task endpoint first
 	resp, err := client.Get(agentURL + "/task/" + taskID)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "agent_error", "Failed to contact agent: "+err.Error())
+		writeError(w, http.StatusBadGateway, api.ErrorAgentError, "Failed to contact agent: "+err.Error())
 		return
 	}
 	defer resp.Body.Close()
@@ -350,7 +350,7 @@ func (h *Handlers) HandleTaskStatus(w http.ResponseWriter, r *http.Request, task
 func (h *Handlers) HandleTaskHistory(w http.ResponseWriter, r *http.Request, taskID string) {
 	agentURL := r.URL.Query().Get("agent_url")
 	if agentURL == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "agent_url query parameter is required")
+		writeError(w, http.StatusBadRequest, api.ErrorValidation, "agent_url query parameter is required")
 		return
 	}
 	if _, ok := h.requireDiscoveredAgent(w, agentURL); !ok {
@@ -361,7 +361,7 @@ func (h *Handlers) HandleTaskHistory(w http.ResponseWriter, r *http.Request, tas
 	client := createHTTPClient(5 * time.Second)
 	resp, err := client.Get(agentURL + "/history/" + taskID)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "agent_error", "Failed to contact agent: "+err.Error())
+		writeError(w, http.StatusBadGateway, api.ErrorAgentError, "Failed to contact agent: "+err.Error())
 		return
 	}
 	defer resp.Body.Close()
@@ -376,7 +376,7 @@ func (h *Handlers) HandleTaskHistory(w http.ResponseWriter, r *http.Request, tas
 func (h *Handlers) HandleAgentLogs(w http.ResponseWriter, r *http.Request) {
 	agentURL := r.URL.Query().Get("agent_url")
 	if agentURL == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "agent_url query parameter is required")
+		writeError(w, http.StatusBadRequest, api.ErrorValidation, "agent_url query parameter is required")
 		return
 	}
 
@@ -386,7 +386,7 @@ func (h *Handlers) HandleAgentLogs(w http.ResponseWriter, r *http.Request) {
 
 	proxyURL, err := url.Parse(agentURL + "/logs")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "validation_error", "invalid agent_url")
+		writeError(w, http.StatusBadRequest, api.ErrorValidation, "invalid agent_url")
 		return
 	}
 	queryParams := url.Values{}
@@ -411,7 +411,7 @@ func (h *Handlers) HandleAgentLogs(w http.ResponseWriter, r *http.Request) {
 	client := createHTTPClient(5 * time.Second)
 	resp, err := client.Get(proxyURL.String())
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "agent_error", "Failed to contact agent: "+err.Error())
+		writeError(w, http.StatusBadGateway, api.ErrorAgentError, "Failed to contact agent: "+err.Error())
 		return
 	}
 	defer resp.Body.Close()
@@ -426,7 +426,7 @@ func (h *Handlers) HandleAgentLogs(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) HandleAgentLogStats(w http.ResponseWriter, r *http.Request) {
 	agentURL := r.URL.Query().Get("agent_url")
 	if agentURL == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "agent_url query parameter is required")
+		writeError(w, http.StatusBadRequest, api.ErrorValidation, "agent_url query parameter is required")
 		return
 	}
 	if _, ok := h.requireDiscoveredAgent(w, agentURL); !ok {
@@ -437,7 +437,7 @@ func (h *Handlers) HandleAgentLogStats(w http.ResponseWriter, r *http.Request) {
 	client := createHTTPClient(5 * time.Second)
 	resp, err := client.Get(agentURL + "/logs/stats")
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "agent_error", "Failed to contact agent: "+err.Error())
+		writeError(w, http.StatusBadGateway, api.ErrorAgentError, "Failed to contact agent: "+err.Error())
 		return
 	}
 	defer resp.Body.Close()
@@ -470,12 +470,12 @@ type SessionTaskRequest struct {
 func (h *Handlers) HandleAddSessionTask(w http.ResponseWriter, r *http.Request) {
 	var req SessionTaskRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "validation_error", "Invalid JSON: "+err.Error())
+		writeError(w, http.StatusBadRequest, api.ErrorValidation, "Invalid JSON: "+err.Error())
 		return
 	}
 
 	if req.SessionID == "" || req.TaskID == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "session_id and task_id are required")
+		writeError(w, http.StatusBadRequest, api.ErrorValidation, "session_id and task_id are required")
 		return
 	}
 
@@ -492,7 +492,7 @@ type SessionTaskUpdateRequest struct {
 func (h *Handlers) HandleUpdateSessionTask(w http.ResponseWriter, r *http.Request, sessionID, taskID string) {
 	var req SessionTaskUpdateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "validation_error", "Invalid JSON: "+err.Error())
+		writeError(w, http.StatusBadRequest, api.ErrorValidation, "Invalid JSON: "+err.Error())
 		return
 	}
 
@@ -640,7 +640,7 @@ func (h *Handlers) HandleLogin(w http.ResponseWriter, r *http.Request) {
 
 	password := r.FormValue("password")
 	if password == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "Password is required")
+		writeError(w, http.StatusBadRequest, api.ErrorValidation, "Password is required")
 		return
 	}
 
@@ -708,7 +708,7 @@ func (h *Handlers) HandlePair(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if code == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "Pairing code is required")
+		writeError(w, http.StatusBadRequest, api.ErrorValidation, "Pairing code is required")
 		return
 	}
 
@@ -875,7 +875,7 @@ func (h *Handlers) HandleShutdown(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Respond before shutting down self
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"status":           "shutting_down",
 		"agents_notified":  len(agents),
 		"helpers_notified": len(helpers),

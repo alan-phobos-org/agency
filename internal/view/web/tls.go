@@ -2,7 +2,6 @@ package web
 
 import (
 	"fmt"
-	"os"
 
 	"phobos.org.uk/agency/internal/tlsutil"
 )
@@ -16,8 +15,8 @@ type TLSConfig struct {
 
 // EnsureTLSCert checks if certificates exist and generates them if AutoGenerate is true
 func EnsureTLSCert(cfg TLSConfig) error {
-	certExists := fileExists(cfg.CertFile)
-	keyExists := fileExists(cfg.KeyFile)
+	certExists := tlsutil.FileExists(cfg.CertFile)
+	keyExists := tlsutil.FileExists(cfg.KeyFile)
 
 	if certExists && keyExists {
 		return nil
@@ -33,9 +32,4 @@ func EnsureTLSCert(cfg TLSConfig) error {
 	}
 
 	return tlsutil.GenerateSelfSignedCert(cfg.CertFile, cfg.KeyFile, "Agency Web Director")
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }

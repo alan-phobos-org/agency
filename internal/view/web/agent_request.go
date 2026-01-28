@@ -1,8 +1,8 @@
 package web
 
 // buildAgentRequest constructs the payload for agent task submission.
-func buildAgentRequest(prompt, tier string, timeoutSeconds int, sessionID string, env map[string]string) map[string]interface{} {
-	req := map[string]interface{}{
+func buildAgentRequest(prompt, tier string, timeoutSeconds int, sessionID string, env map[string]string) map[string]any {
+	req := map[string]any{
 		"prompt": prompt,
 	}
 	if tier != "" {

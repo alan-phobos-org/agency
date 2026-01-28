@@ -38,31 +38,31 @@ type QueueSubmitResponse struct {
 func (h *QueueHandlers) HandleQueueSubmit(w http.ResponseWriter, r *http.Request) {
 	var req QueueSubmitRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "validation_error", "Invalid JSON: "+err.Error())
+		writeError(w, http.StatusBadRequest, api.ErrorValidation, "Invalid JSON: "+err.Error())
 		return
 	}
 
 	if req.Prompt == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "prompt is required")
+		writeError(w, http.StatusBadRequest, api.ErrorValidation, "prompt is required")
 		return
 	}
 	if req.Tier != "" && !api.IsValidTier(req.Tier) {
-		writeError(w, http.StatusBadRequest, "validation_error", "tier must be fast, standard, or heavy")
+		writeError(w, http.StatusBadRequest, api.ErrorValidation, "tier must be fast, standard, or heavy")
 		return
 	}
-	if req.AgentKind != "" && req.AgentKind != api.AgentKindClaude && req.AgentKind != api.AgentKindCodex {
-		writeError(w, http.StatusBadRequest, "validation_error", "agent_kind must be claude or codex")
+	if req.AgentKind != "" && !api.IsValidAgentKind(req.AgentKind) {
+		writeError(w, http.StatusBadRequest, api.ErrorValidation, "agent_kind must be claude or codex")
 		return
 	}
 
 	task, position, err := h.queue.Add(req)
 	if err == ErrQueueFull {
-		writeError(w, http.StatusServiceUnavailable, "queue_full",
+		writeError(w, http.StatusServiceUnavailable, api.ErrorQueueFull,
 			fmt.Sprintf("Queue is at capacity (%d tasks)", h.queue.Config().MaxSize))
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "queue_error", err.Error())
+		writeError(w, http.StatusInternalServerError, api.ErrorQueueError, err.Error())
 		return
 	}
 
@@ -155,7 +155,7 @@ type QueuedTaskDetail struct {
 func (h *QueueHandlers) HandleQueueTaskStatus(w http.ResponseWriter, r *http.Request, queueID string) {
 	task := h.queue.Get(queueID)
 	if task == nil {
-		writeError(w, http.StatusNotFound, "not_found", "Queued task not found")
+		writeError(w, http.StatusNotFound, api.ErrorNotFound, "Queued task not found")
 		return
 	}
 
@@ -192,7 +192,7 @@ type QueueCancelResponse struct {
 func (h *QueueHandlers) HandleQueueCancel(w http.ResponseWriter, r *http.Request, queueID string) {
 	task := h.queue.Get(queueID)
 	if task == nil {
-		writeError(w, http.StatusNotFound, "not_found", "Queued task not found")
+		writeError(w, http.StatusNotFound, api.ErrorNotFound, "Queued task not found")
 		return
 	}
 
@@ -227,20 +227,20 @@ func (h *QueueHandlers) HandleQueueCancel(w http.ResponseWriter, r *http.Request
 func (h *QueueHandlers) HandleTaskSubmitViaQueue(w http.ResponseWriter, r *http.Request) {
 	var req TaskSubmitRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "validation_error", "Invalid JSON: "+err.Error())
+		writeError(w, http.StatusBadRequest, api.ErrorValidation, "Invalid JSON: "+err.Error())
 		return
 	}
 
 	if req.Prompt == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "prompt is required")
+		writeError(w, http.StatusBadRequest, api.ErrorValidation, "prompt is required")
 		return
 	}
 	if req.Tier != "" && !api.IsValidTier(req.Tier) {
-		writeError(w, http.StatusBadRequest, "validation_error", "tier must be fast, standard, or heavy")
+		writeError(w, http.StatusBadRequest, api.ErrorValidation, "tier must be fast, standard, or heavy")
 		return
 	}
-	if req.AgentKind != "" && req.AgentKind != api.AgentKindClaude && req.AgentKind != api.AgentKindCodex {
-		writeError(w, http.StatusBadRequest, "validation_error", "agent_kind must be claude or codex")
+	if req.AgentKind != "" && !api.IsValidAgentKind(req.AgentKind) {
+		writeError(w, http.StatusBadRequest, api.ErrorValidation, "agent_kind must be claude or codex")
 		return
 	}
 
@@ -250,7 +250,7 @@ func (h *QueueHandlers) HandleTaskSubmitViaQueue(w http.ResponseWriter, r *http.
 		agent, ok := h.discovery.GetComponent(req.AgentURL)
 		if ok && agent.State == "idle" {
 			if req.AgentKind != "" && agent.AgentKind != "" && agent.AgentKind != req.AgentKind {
-				writeError(w, http.StatusBadRequest, "agent_kind_mismatch",
+				writeError(w, http.StatusBadRequest, api.ErrorAgentKindMismatch,
 					fmt.Sprintf("Agent kind %q does not match requested %q", agent.AgentKind, req.AgentKind))
 				return
 			}
@@ -279,17 +279,17 @@ func (h *QueueHandlers) HandleTaskSubmitViaQueue(w http.ResponseWriter, r *http.
 
 	task, position, err := h.queue.Add(queueReq)
 	if err == ErrQueueFull {
-		writeError(w, http.StatusServiceUnavailable, "queue_full",
+		writeError(w, http.StatusServiceUnavailable, api.ErrorQueueFull,
 			"Queue is at capacity. Please try again later.")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "queue_error", err.Error())
+		writeError(w, http.StatusInternalServerError, api.ErrorQueueError, err.Error())
 		return
 	}
 
 	// Return queue info (202 Accepted for queued tasks)
-	writeJSON(w, http.StatusAccepted, map[string]interface{}{
+	writeJSON(w, http.StatusAccepted, map[string]any{
 		"queue_id": task.QueueID,
 		"position": position,
 		"state":    "pending",
@@ -307,7 +307,7 @@ func (h *QueueHandlers) submitDirectly(w http.ResponseWriter, r *http.Request, r
 	client := createHTTPClient(10 * time.Second)
 	resp, err := client.Post(req.AgentURL+"/task", "application/json", bytes.NewReader(body))
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "agent_error", "Failed to contact agent: "+err.Error())
+		writeError(w, http.StatusBadGateway, api.ErrorAgentError, "Failed to contact agent: "+err.Error())
 		return
 	}
 	defer resp.Body.Close()
@@ -328,7 +328,7 @@ func (h *QueueHandlers) submitDirectly(w http.ResponseWriter, r *http.Request, r
 		SessionID string `json:"session_id"`
 	}
 	if err := json.Unmarshal(respBody, &agentResp); err != nil {
-		writeError(w, http.StatusBadGateway, "parse_error", "Invalid agent response")
+		writeError(w, http.StatusBadGateway, api.ErrorParseError, "Invalid agent response")
 		return
 	}
 

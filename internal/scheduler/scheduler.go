@@ -228,7 +228,7 @@ func (s *Scheduler) submitViaQueue(js *jobState) (string, error) {
 	agentKind := s.config.GetAgentKind(js.Job)
 
 	// Build queue request
-	queueReq := map[string]interface{}{
+	queueReq := map[string]any{
 		"prompt":          js.Job.Prompt,
 		"timeout_seconds": int(timeout.Seconds()),
 		"source":          "scheduler",
@@ -272,7 +272,7 @@ func (s *Scheduler) submitViaAgent(js *jobState) (taskID string, status string, 
 	tier := s.config.GetTier(js.Job)
 	timeout := s.config.GetTimeout(js.Job)
 
-	taskReq := map[string]interface{}{
+	taskReq := map[string]any{
 		"prompt":          js.Job.Prompt,
 		"timeout_seconds": int(timeout.Seconds()),
 		"tier":            tier,
@@ -376,14 +376,14 @@ func (s *Scheduler) handleStatus(w http.ResponseWriter, r *http.Request) {
 		js.mu.RUnlock()
 	}
 
-	configInfo := map[string]interface{}{
+	configInfo := map[string]any{
 		"agent_url": s.config.AgentURL,
 	}
 	if s.config.DirectorURL != "" {
 		configInfo["director_url"] = s.config.DirectorURL
 	}
 
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"type":           api.TypeHelper,
 		"interfaces":     []string{api.InterfaceStatusable, api.InterfaceObservable},
 		"version":        s.version,
@@ -457,7 +457,7 @@ func (s *Scheduler) handleTrigger(w http.ResponseWriter, r *http.Request) {
 
 	// Return current state
 	target.mu.RLock()
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"name":        target.Job.Name,
 		"last_status": target.LastStatus,
 	}

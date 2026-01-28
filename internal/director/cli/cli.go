@@ -68,7 +68,7 @@ func (d *Director) Run(prompt string, timeout time.Duration) (*TaskResult, error
 
 // runViaDirector submits a task through the web director for session tracking
 func (d *Director) runViaDirector(prompt string, timeout time.Duration) (*TaskResult, error) {
-	taskReq := map[string]interface{}{
+	taskReq := map[string]any{
 		"agent_url":       d.agentURL,
 		"prompt":          prompt,
 		"timeout_seconds": int(timeout.Seconds()),
@@ -113,7 +113,7 @@ func (d *Director) runViaDirector(prompt string, timeout time.Duration) (*TaskRe
 
 // runViaAgent submits a task directly to the agent
 func (d *Director) runViaAgent(prompt string, timeout time.Duration) (*TaskResult, error) {
-	taskReq := map[string]interface{}{
+	taskReq := map[string]any{
 		"prompt":          prompt,
 		"timeout_seconds": int(timeout.Seconds()),
 	}
