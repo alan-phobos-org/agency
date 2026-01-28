@@ -1951,3 +1951,259 @@ func TestIntegrationTaskStatusWithoutSessionID(t *testing.T) {
 	require.Equal(t, "working", sessions[0].Tasks[0].State,
 		"Session should remain 'working' when session_id not provided")
 }
+
+// TestIntegrationDefaultTierNewSession tests that new sessions default to 'heavy' tier
+func TestIntegrationDefaultTierNewSession(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	// Track the tier received by the mock agent
+	var receivedTier string
+	var mu sync.Mutex
+
+	// Create mock agent server that captures the tier
+	mockAgent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/status":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"type":           "agent",
+				"interfaces":     []string{"statusable", "taskable"},
+				"version":        "mock-agent-v1",
+				"state":          "idle",
+				"uptime_seconds": 100,
+			})
+		case "/task":
+			if r.Method == "POST" {
+				// Capture the tier from the request
+				var taskReq map[string]interface{}
+				json.NewDecoder(r.Body).Decode(&taskReq)
+
+				mu.Lock()
+				if tier, ok := taskReq["tier"].(string); ok {
+					receivedTier = tier
+				}
+				mu.Unlock()
+
+				w.WriteHeader(http.StatusCreated)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"task_id":    "task-tier-test-123",
+					"session_id": "session-tier-test-123",
+					"status":     "queued",
+				})
+			}
+		}
+	}))
+	defer mockAgent.Close()
+
+	// Create test director
+	tmpDir := t.TempDir()
+	authStore, err := NewAuthStore(filepath.Join(tmpDir, "auth.json"), "test-token")
+	require.NoError(t, err)
+
+	cfg := &Config{
+		Port:            0,
+		Bind:            "127.0.0.1",
+		AuthStore:       authStore,
+		RefreshInterval: 100 * time.Millisecond,
+		QueueDir:        filepath.Join(tmpDir, "queue"),
+		TLS: TLSConfig{
+			CertFile:     filepath.Join(tmpDir, "cert.pem"),
+			KeyFile:      filepath.Join(tmpDir, "key.pem"),
+			AutoGenerate: true,
+		},
+	}
+
+	d, err := New(cfg, "test-tier")
+	require.NoError(t, err)
+
+	ts := httptest.NewServer(d.Router())
+	defer ts.Close()
+
+	// Manually add mock agent to discovery
+	d.discovery.mu.Lock()
+	d.discovery.components[mockAgent.URL] = &ComponentStatus{
+		URL:   mockAgent.URL,
+		Type:  "agent",
+		State: "idle",
+	}
+	d.discovery.mu.Unlock()
+
+	client := ts.Client()
+
+	// Test: Submit task with tier='heavy' (simulating frontend default)
+	t.Run("new session with heavy tier", func(t *testing.T) {
+		body := fmt.Sprintf(`{
+			"agent_url": %q,
+			"prompt": "Test task for heavy tier",
+			"tier": "heavy"
+		}`, mockAgent.URL)
+
+		req, _ := http.NewRequest("POST", ts.URL+"/api/task", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer test-token")
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusCreated, resp.StatusCode)
+
+		var taskResp TaskSubmitResponse
+		err = json.NewDecoder(resp.Body).Decode(&taskResp)
+		require.NoError(t, err)
+		require.Equal(t, "task-tier-test-123", taskResp.TaskID)
+
+		// Verify the tier was passed to the agent
+		mu.Lock()
+		defer mu.Unlock()
+		require.Equal(t, "heavy", receivedTier, "Agent should receive 'heavy' tier for new session")
+	})
+}
+
+// TestIntegrationDefaultTierExistingSession tests that adding tasks to existing sessions
+// defaults to 'heavy' tier even if the original session started with a different tier
+func TestIntegrationDefaultTierExistingSession(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	// Track tiers received by the mock agent
+	var receivedTiers []string
+	var mu sync.Mutex
+
+	// Create mock agent server that captures tiers
+	mockAgent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/status":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"type":           "agent",
+				"interfaces":     []string{"statusable", "taskable"},
+				"version":        "mock-agent-v1",
+				"state":          "idle",
+				"uptime_seconds": 100,
+			})
+		case "/task":
+			if r.Method == "POST" {
+				// Capture the tier from the request
+				var taskReq map[string]interface{}
+				json.NewDecoder(r.Body).Decode(&taskReq)
+
+				mu.Lock()
+				if tier, ok := taskReq["tier"].(string); ok {
+					receivedTiers = append(receivedTiers, tier)
+				} else {
+					receivedTiers = append(receivedTiers, "") // No tier specified
+				}
+				mu.Unlock()
+
+				w.WriteHeader(http.StatusCreated)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"task_id":    fmt.Sprintf("task-%d", len(receivedTiers)),
+					"session_id": "session-multi-tier-123",
+					"status":     "queued",
+				})
+			}
+		default:
+			if strings.HasPrefix(r.URL.Path, "/task/") {
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"task_id":          strings.TrimPrefix(r.URL.Path, "/task/"),
+					"state":            "completed",
+					"exit_code":        0,
+					"output":           "Task completed",
+					"duration_seconds": 1.0,
+				})
+			}
+		}
+	}))
+	defer mockAgent.Close()
+
+	// Create test director
+	tmpDir := t.TempDir()
+	authStore, err := NewAuthStore(filepath.Join(tmpDir, "auth.json"), "test-token")
+	require.NoError(t, err)
+
+	cfg := &Config{
+		Port:            0,
+		Bind:            "127.0.0.1",
+		AuthStore:       authStore,
+		RefreshInterval: 100 * time.Millisecond,
+		QueueDir:        filepath.Join(tmpDir, "queue"),
+		TLS: TLSConfig{
+			CertFile:     filepath.Join(tmpDir, "cert.pem"),
+			KeyFile:      filepath.Join(tmpDir, "key.pem"),
+			AutoGenerate: true,
+		},
+	}
+
+	d, err := New(cfg, "test-tier-multi")
+	require.NoError(t, err)
+
+	ts := httptest.NewServer(d.Router())
+	defer ts.Close()
+
+	// Manually add mock agent to discovery
+	d.discovery.mu.Lock()
+	d.discovery.components[mockAgent.URL] = &ComponentStatus{
+		URL:   mockAgent.URL,
+		Type:  "agent",
+		State: "idle",
+	}
+	d.discovery.mu.Unlock()
+
+	client := ts.Client()
+
+	// Test: Create session with 'fast' tier, then add task with 'heavy' tier
+	t.Run("add heavy tier task to fast tier session", func(t *testing.T) {
+		// First task: Create session with 'fast' tier
+		body1 := fmt.Sprintf(`{
+			"agent_url": %q,
+			"prompt": "First task with fast tier",
+			"tier": "fast"
+		}`, mockAgent.URL)
+
+		req1, _ := http.NewRequest("POST", ts.URL+"/api/task", strings.NewReader(body1))
+		req1.Header.Set("Authorization", "Bearer test-token")
+		req1.Header.Set("Content-Type", "application/json")
+
+		resp1, err := client.Do(req1)
+		require.NoError(t, err)
+		defer resp1.Body.Close()
+		require.Equal(t, http.StatusCreated, resp1.StatusCode)
+
+		var taskResp1 TaskSubmitResponse
+		err = json.NewDecoder(resp1.Body).Decode(&taskResp1)
+		require.NoError(t, err)
+		sessionID := taskResp1.SessionID
+		require.NotEmpty(t, sessionID)
+
+		// Verify first tier was 'fast'
+		mu.Lock()
+		require.Len(t, receivedTiers, 1)
+		require.Equal(t, "fast", receivedTiers[0], "First task should use 'fast' tier")
+		mu.Unlock()
+
+		// Second task: Add to same session with 'heavy' tier (simulating frontend default)
+		body2 := fmt.Sprintf(`{
+			"agent_url": %q,
+			"prompt": "Second task with heavy tier",
+			"tier": "heavy",
+			"session_id": %q
+		}`, mockAgent.URL, sessionID)
+
+		req2, _ := http.NewRequest("POST", ts.URL+"/api/task", strings.NewReader(body2))
+		req2.Header.Set("Authorization", "Bearer test-token")
+		req2.Header.Set("Content-Type", "application/json")
+
+		resp2, err := client.Do(req2)
+		require.NoError(t, err)
+		defer resp2.Body.Close()
+		require.Equal(t, http.StatusCreated, resp2.StatusCode)
+
+		// Verify second tier was 'heavy' even though session started with 'fast'
+		mu.Lock()
+		defer mu.Unlock()
+		require.Len(t, receivedTiers, 2)
+		require.Equal(t, "heavy", receivedTiers[1],
+			"Second task should use 'heavy' tier even though session started with 'fast'")
+	})
+}
