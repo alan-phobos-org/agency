@@ -6,7 +6,7 @@ A modular framework for AI-powered software engineering agents.
 
 Agency provides infrastructure for running AI agents that perform software engineering tasks. The framework separates **agents** (task executors using Claude or Codex) from **directors** (work orchestrators) and **views** (dashboards), enabling flexible composition and independent development.
 
-**Current version: 3.0.2** - Major refactor introducing agency prompts, work queues, and simplified APIs.
+**Current version: 3.0.3** - Major refactor introducing agency prompts, work queues, and simplified APIs.
 
 ## Components
 

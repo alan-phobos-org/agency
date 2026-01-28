@@ -85,7 +85,7 @@ func TestCreateTaskSuccess(t *testing.T) {
 
 	cfg := config.Default()
 	cfg.SessionDir = filepath.Join(tmpDir, "sessions")
-	cfg.HistoryDir = filepath.Join(tmpDir, "history")
+	cfg.HistoryDir = "" // Disable history so tasks remain in memory for testing
 	cfg.AgencyPromptsDir = promptsDir
 	a := New(cfg, "test")
 
@@ -100,20 +100,20 @@ func TestCreateTaskSuccess(t *testing.T) {
 	var response struct {
 		TaskID    string `json:"task_id"`
 		SessionID string `json:"session_id"`
-		State     string `json:"state"`
+		Status    string `json:"status"`
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
 	require.NotEmpty(t, response.TaskID)
 	require.NotEmpty(t, response.SessionID)
-	require.Equal(t, "working", response.State)
+	require.Equal(t, "working", response.Status)
 
 	// Wait for background task to reach terminal state with polling
 	taskID := response.TaskID
 	require.Eventually(t, func() bool {
 		a.mu.RLock()
-		task, exists := a.tasks[taskID]
-		a.mu.RUnlock()
+		defer a.mu.RUnlock()
 
+		task, exists := a.tasks[taskID]
 		if !exists {
 			return false
 		}
@@ -183,7 +183,11 @@ func TestAgentBusy(t *testing.T) {
 	cfg.SessionDir = filepath.Join(tmpDir, "sessions")
 	cfg.AgencyPromptsDir = promptsDir
 	a := New(cfg, "test")
-	defer a.Shutdown(context.Background())
+	defer func() {
+		a.Shutdown(context.Background())
+		// Allow time for cleanup goroutines to finish
+		time.Sleep(100 * time.Millisecond)
+	}()
 
 	// Submit first task
 	body := `{"prompt": "test"}`
@@ -494,10 +498,12 @@ func TestMaxTurnsAutoResume(t *testing.T) {
 	// Verify task completed successfully after auto-resume
 	a.mu.RLock()
 	task, ok := a.tasks[resp.TaskID]
-	a.mu.RUnlock()
 	require.True(t, ok, "task should exist")
-	require.Equal(t, TaskStateCompleted, task.State, "task should complete after auto-resume")
-	require.Contains(t, task.Output, "completed after 3 attempts")
+	taskState := task.State
+	taskOutput := task.Output
+	a.mu.RUnlock()
+	require.Equal(t, TaskStateCompleted, taskState, "task should complete after auto-resume")
+	require.Contains(t, taskOutput, "completed after 3 attempts")
 }
 
 func TestMaxTurnsExhausted(t *testing.T) {
@@ -544,12 +550,14 @@ func TestMaxTurnsExhausted(t *testing.T) {
 	// Verify task failed with max_turns error
 	a.mu.RLock()
 	task, ok := a.tasks[resp.TaskID]
-	a.mu.RUnlock()
 	require.True(t, ok, "task should exist")
-	require.Equal(t, TaskStateFailed, task.State, "task should fail after exhausting retries")
-	require.NotNil(t, task.Error)
-	require.Equal(t, "max_turns", task.Error.Type)
-	require.Contains(t, task.Error.Message, "maximum turns limit")
+	taskState := task.State
+	taskError := task.Error
+	a.mu.RUnlock()
+	require.Equal(t, TaskStateFailed, taskState, "task should fail after exhausting retries")
+	require.NotNil(t, taskError)
+	require.Equal(t, "max_turns", taskError.Type)
+	require.Contains(t, taskError.Message, "maximum turns limit")
 }
 
 func TestLogsStatsEndpoint(t *testing.T) {

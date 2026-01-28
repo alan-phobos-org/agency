@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.3] - 2026-01-28
+
+### Fixed
+- Fixed default agent modes to use heavy tier
+- Fixed agent test suite race conditions and test response field mismatches
+
+### Changed
+- Refactored HTTP client TLS handling into tlsutil package for better code organization
+- Improved smoke test reliability and coverage
+
 ## [3.0.2] - 2026-01-21
 
 ### Fixed
@@ -148,7 +158,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit, integration, component, and system tests
 - Race condition detection in tests
 
-[Unreleased]: https://github.com/alan-phobos-org/agency/compare/v3.0.2...HEAD
+[Unreleased]: https://github.com/alan-phobos-org/agency/compare/v3.0.3...HEAD
+[3.0.3]: https://github.com/alan-phobos-org/agency/compare/v3.0.2...v3.0.3
 [3.0.2]: https://github.com/alan-phobos-org/agency/compare/v3.0.1...v3.0.2
 [3.0.1]: https://github.com/alan-phobos-org/agency/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/alan-phobos-org/agency/compare/v2.2.0...v3.0.0
