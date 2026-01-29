@@ -370,23 +370,17 @@ case "${1:-help}" in
         export AGENCY_PROMPTS_DIR="$PWD/tests/smoke/fixtures/prompts"
         export AGENCY_MODE="dev"
 
-        # Check if agency is already running
-        if mode=$(detect_running_agency 2>/dev/null); then
-            echo "WARNING: Agency is running in $mode mode"
-            echo "Smoke tests need ports 18080, 18443, 19000, 19001, 19010"
-            echo ""
-            if [ "$mode" = "smoke" ]; then
-                echo "Shutting down existing smoke instance..."
-                ./deployment/stop-agency.sh smoke
-                sleep 2
-            else
-                echo "Please stop the $mode deployment first: ./deployment/stop-agency.sh $mode"
-                exit 1
-            fi
+        # Check if existing smoke instance is running (auto-shutdown)
+        if curl -sf "http://localhost:18080/api/status" >/dev/null 2>&1; then
+            echo "Existing smoke instance detected, shutting down..."
+            ./deployment/stop-agency.sh smoke
+            sleep 2
         fi
 
         # Check for port conflicts before starting
-        check_smoke_ports
+        if ! check_smoke_ports; then
+            exit 1
+        fi
 
         # Clear queue directory to avoid interference from previous runs
         QUEUE_DIR="$HOME/.agency/queue"
