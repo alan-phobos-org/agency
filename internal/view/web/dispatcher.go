@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"phobos.org.uk/agency/internal/api"
+	"phobos.org.uk/agency/internal/taskstate"
 )
 
 // Dispatcher dispatches queued tasks to idle agents
@@ -270,11 +271,11 @@ func (d *Dispatcher) getTaskStatus(agentURL, taskID string) (string, error) {
 }
 
 func isTerminalState(state string) bool {
-	switch state {
-	case TaskStateCompleted, TaskStateFailed, TaskStateCancelled:
-		return true
+	s, ok := taskstate.Parse(state)
+	if !ok {
+		return false
 	}
-	return false
+	return s.IsTerminal()
 }
 
 // HTTPError represents an HTTP error with status code

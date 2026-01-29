@@ -25,6 +25,7 @@ import (
 	"phobos.org.uk/agency/internal/history"
 	"phobos.org.uk/agency/internal/logging"
 	"phobos.org.uk/agency/internal/stream"
+	"phobos.org.uk/agency/internal/taskstate"
 )
 
 // State represents the agent's current state
@@ -36,15 +37,16 @@ const (
 	StateCancelling State = "cancelling"
 )
 
-// TaskState represents a task's state
-type TaskState string
+// TaskState is an alias to taskstate.State for backward compatibility.
+type TaskState = taskstate.State
 
+// Task state constants - re-exported from taskstate package for backward compatibility.
 const (
-	TaskStateQueued    TaskState = "queued"
-	TaskStateWorking   TaskState = "working"
-	TaskStateCompleted TaskState = "completed"
-	TaskStateFailed    TaskState = "failed"
-	TaskStateCancelled TaskState = "cancelled"
+	TaskStateQueued    = taskstate.Queued
+	TaskStateWorking   = taskstate.Working
+	TaskStateCompleted = taskstate.Completed
+	TaskStateFailed    = taskstate.Failed
+	TaskStateCancelled = taskstate.Cancelled
 )
 
 // Task represents a task execution

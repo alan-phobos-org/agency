@@ -11,16 +11,17 @@ import (
 	"time"
 
 	"phobos.org.uk/agency/internal/api"
+	"phobos.org.uk/agency/internal/taskstate"
 )
 
-// Queue-specific task states
+// Task state constants - re-exported from taskstate package for backward compatibility.
 const (
-	TaskStatePending     = "pending"     // In queue, waiting for agent
-	TaskStateDispatching = "dispatching" // Being sent to agent
-	TaskStateWorking     = "working"     // Running on agent
-	TaskStateCompleted   = "completed"   // Finished successfully
-	TaskStateFailed      = "failed"      // Failed
-	TaskStateCancelled   = "cancelled"   // Cancelled
+	TaskStatePending     = taskstate.Pending
+	TaskStateDispatching = taskstate.Dispatching
+	TaskStateWorking     = taskstate.Working
+	TaskStateCompleted   = taskstate.Completed
+	TaskStateFailed      = taskstate.Failed
+	TaskStateCancelled   = taskstate.Cancelled
 )
 
 // Persistence directory names
@@ -34,9 +35,9 @@ var ErrQueueFull = errors.New("queue is at capacity")
 
 // QueuedTask represents a task waiting in the queue
 type QueuedTask struct {
-	QueueID   string    `json:"queue_id"`   // Unique queue entry ID
-	State     string    `json:"state"`      // pending, dispatching, working, etc.
-	CreatedAt time.Time `json:"created_at"` // Queue entry time
+	QueueID   string          `json:"queue_id"`   // Unique queue entry ID
+	State     taskstate.State `json:"state"`      // pending, dispatching, working, etc.
+	CreatedAt time.Time       `json:"created_at"` // Queue entry time
 
 	// Original request
 	Prompt         string            `json:"prompt"`
@@ -245,7 +246,7 @@ func (q *WorkQueue) TotalCount() int {
 }
 
 // SetState updates a task's state
-func (q *WorkQueue) SetState(task *QueuedTask, state string) {
+func (q *WorkQueue) SetState(task *QueuedTask, state taskstate.State) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
@@ -375,7 +376,7 @@ func (q *WorkQueue) DispatchedCount() int {
 
 	count := 0
 	for _, t := range q.tasks {
-		if t.State == TaskStateWorking || t.State == TaskStateDispatching {
+		if t.State.IsDispatched() {
 			count++
 		}
 	}
@@ -391,7 +392,7 @@ func (q *WorkQueue) Config() QueueConfig {
 
 func (q *WorkQueue) save(task *QueuedTask) error {
 	dir := dirPending
-	if task.State == TaskStateDispatching || task.State == TaskStateWorking {
+	if task.State.IsDispatched() {
 		dir = dirDispatched
 	}
 	path := filepath.Join(q.dir, dir, task.QueueID+".json")

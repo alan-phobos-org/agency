@@ -431,7 +431,7 @@ func TestQueueTaskBWhileTaskARunning(t *testing.T) {
 	// Verify task B is pending in queue
 	task := q.Get(queueID)
 	require.NotNil(t, task)
-	require.Equal(t, TaskStatePending, task.State)
+	require.True(t, task.State.IsPending(), "expected pending state, got %s", task.State)
 
 	// Step 2: Simulate task A completing - agent becomes idle
 	mu.Lock()
@@ -453,8 +453,8 @@ func TestQueueTaskBWhileTaskARunning(t *testing.T) {
 	task = q.Get(queueID)
 	require.NotNil(t, task)
 	// Should be either dispatching or working
-	require.Contains(t, []string{TaskStateDispatching, TaskStateWorking}, task.State,
-		"Task should move to dispatching or working state")
+	require.True(t, task.State.IsDispatched(),
+		"Task should move to dispatching or working state, got %s", task.State)
 
 	// Verify agent received the task
 	mu.Lock()

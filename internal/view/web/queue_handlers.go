@@ -69,7 +69,7 @@ func (h *QueueHandlers) HandleQueueSubmit(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusCreated, QueueSubmitResponse{
 		QueueID:  task.QueueID,
 		Position: position,
-		State:    task.State,
+		State:    string(task.State),
 	})
 }
 
@@ -102,7 +102,7 @@ func (h *QueueHandlers) HandleQueueStatus(w http.ResponseWriter, r *http.Request
 
 	pendingPos := 0
 	for _, task := range tasks {
-		if task.State == TaskStatePending {
+		if task.State.IsPending() {
 			pendingPos++
 		}
 
@@ -113,7 +113,7 @@ func (h *QueueHandlers) HandleQueueStatus(w http.ResponseWriter, r *http.Request
 
 		summary := QueuedTaskSummary{
 			QueueID:       task.QueueID,
-			State:         task.State,
+			State:         string(task.State),
 			CreatedAt:     task.CreatedAt,
 			PromptPreview: preview,
 			Source:        task.Source,
@@ -121,7 +121,7 @@ func (h *QueueHandlers) HandleQueueStatus(w http.ResponseWriter, r *http.Request
 			TaskID:        task.TaskID,
 			AgentURL:      task.AgentURL,
 		}
-		if task.State == TaskStatePending {
+		if task.State.IsPending() {
 			summary.Position = pendingPos
 		}
 		summaries = append(summaries, summary)
@@ -161,7 +161,7 @@ func (h *QueueHandlers) HandleQueueTaskStatus(w http.ResponseWriter, r *http.Req
 
 	detail := QueuedTaskDetail{
 		QueueID:      task.QueueID,
-		State:        task.State,
+		State:        string(task.State),
 		CreatedAt:    task.CreatedAt,
 		DispatchedAt: task.DispatchedAt,
 		TaskID:       task.TaskID,
@@ -172,7 +172,7 @@ func (h *QueueHandlers) HandleQueueTaskStatus(w http.ResponseWriter, r *http.Req
 		SourceJob:    task.SourceJob,
 	}
 
-	if task.State == TaskStatePending {
+	if task.State.IsPending() {
 		detail.Position = h.queue.Position(queueID)
 	}
 
@@ -196,7 +196,7 @@ func (h *QueueHandlers) HandleQueueCancel(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	wasDispatched := task.State == TaskStateWorking || task.State == TaskStateDispatching
+	wasDispatched := task.State.IsDispatched()
 	agentURL := task.AgentURL
 	taskID := task.TaskID
 
@@ -215,7 +215,7 @@ func (h *QueueHandlers) HandleQueueCancel(w http.ResponseWriter, r *http.Request
 
 	writeJSON(w, http.StatusOK, QueueCancelResponse{
 		QueueID:       queueID,
-		State:         TaskStateCancelled,
+		State:         string(TaskStateCancelled),
 		WasDispatched: wasDispatched,
 		AgentURL:      agentURL,
 		TaskID:        taskID,

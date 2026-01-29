@@ -557,7 +557,7 @@ func (h *Handlers) HandleDashboardData(w http.ResponseWriter, r *http.Request) {
 		summaries := make([]QueuedTaskSummary, 0, len(tasks))
 		pendingPos := 0
 		for _, task := range tasks {
-			if task.State == TaskStatePending {
+			if task.State.IsPending() {
 				pendingPos++
 			}
 			preview := task.Prompt
@@ -566,7 +566,7 @@ func (h *Handlers) HandleDashboardData(w http.ResponseWriter, r *http.Request) {
 			}
 			summary := QueuedTaskSummary{
 				QueueID:       task.QueueID,
-				State:         task.State,
+				State:         string(task.State),
 				CreatedAt:     task.CreatedAt,
 				PromptPreview: preview,
 				Source:        task.Source,
@@ -574,7 +574,7 @@ func (h *Handlers) HandleDashboardData(w http.ResponseWriter, r *http.Request) {
 				TaskID:        task.TaskID,
 				AgentURL:      task.AgentURL,
 			}
-			if task.State == TaskStatePending {
+			if task.State.IsPending() {
 				summary.Position = pendingPos
 			}
 			summaries = append(summaries, summary)
