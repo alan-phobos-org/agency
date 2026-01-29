@@ -553,19 +553,89 @@ WARN  agent: completion callback failed after retries callback_url=http://... at
 
 ## Testing Strategy
 
-### Unit Tests
+### Existing Test Compatibility
 
-1. **Agent notifyCompletion**: Mock HTTP server, verify retry behavior
-2. **Dispatcher registerWaiter**: Verify timer setup, waiter storage
-3. **Dispatcher HandleTaskCallback**: Test completion, unknown task, duplicate handling
-4. **Dispatcher fallbackPoll**: Test rescheduling, terminal detection
+**This change can be implemented with NO modifications to existing smoke tests.**
 
-### Integration Tests
+Analysis of existing tests shows that no tests directly exercise the `trackCompletion()` goroutine:
 
-1. **Happy path**: Submit task, receive callback, verify queue removal
-2. **Callback failure**: Block callback endpoint, verify fallback works
-3. **Director restart**: Submit task, restart director, verify completion tracked
-4. **Concurrent completions**: Multiple tasks completing simultaneously
+| Test Suite | What It Tests | Impact |
+|------------|---------------|--------|
+| **System tests** (`system_test.go`) | Dashboard endpoints, session ordering, discovery, job triggering | None - no dispatcher completion tracking tested |
+| **Integration tests** (`integration_test.go`) | Web view handlers, task status proxying, history fallback | None - tests web view layer, not dispatcher |
+| **Queue handler tests** (`queue_handlers_test.go`) | Task submission, dispatch triggering | None - calls `dispatchNext()` once, doesn't wait for completion |
+
+The key insight is that `trackCompletion()` runs in a background goroutine that existing tests don't wait for. Tests either:
+- Mock agent responses directly and verify immediate state changes
+- Call `dispatcher.dispatchNext()` manually without waiting for completion
+- Test session store updates via explicit API calls
+
+### New Unit Tests Required
+
+1. **Agent `notifyCompletion`**: Mock HTTP server, verify:
+   - Successful callback delivery
+   - Retry behavior with exponential backoff (100ms, 200ms, 400ms)
+   - Graceful failure after 3 attempts
+
+2. **Dispatcher `registerCompletionWaiter`**: Verify:
+   - Waiter stored in `pendingTasks` map
+   - Fallback timer set to 30 seconds
+   - Timer properly cancelled on callback
+
+3. **Dispatcher `HandleTaskCallback`**: Test:
+   - Successful completion (waiter exists)
+   - Unknown task (waiter doesn't exist)
+   - Duplicate callback (idempotent)
+   - Session store update triggered
+
+4. **Dispatcher `fallbackPoll`**: Test:
+   - Rescheduling on agent unreachable
+   - Terminal state detection
+   - Timer cleanup on completion
+
+### New Integration Tests Required
+
+1. **Callback happy path**: Submit task via queue, mock agent sends callback, verify:
+   - Queue task removed
+   - Session store updated
+   - Fallback timer cancelled
+
+2. **Callback failure with fallback**: Submit task, block callback endpoint, verify:
+   - Fallback poll triggers after 30s
+   - Completion still detected
+
+3. **Graceful shutdown**: Verify pendingTasks cleaned up on dispatcher shutdown
+
+### Regression Testing
+
+The existing tests serve as regression tests ensuring:
+- Task submission flow unchanged
+- Agent communication protocol unchanged
+- Session store behavior unchanged
+- Queue state transitions unchanged
+
+---
+
+## Risks and Mitigations
+
+### Implementation Risks
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| **Constructor signature change** | Breaking change to `NewDispatcher()` | Add `internalPort` as last parameter with default |
+| **Callback endpoint security** | Unauthorized callbacks could corrupt state | Validate queueID exists, localhost-only endpoint |
+| **Orphaned waiters on shutdown** | Memory leak, stale timers | Add cleanup in dispatcher shutdown |
+| **Timer goroutine leaks** | Resource exhaustion | Always call `timer.Stop()` before replacing |
+| **Race between callback and fallback** | Double completion handling | Use `pendingTasks` map as single source of truth |
+
+### Operational Risks
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| **Agent/Director version mismatch** | Old agents don't send callbacks | Fallback polling handles this |
+| **Network partition** | Callbacks fail, delayed detection | Exponential backoff + fallback polling |
+| **Director restart** | Pending waiters lost | Queue persistence ensures tasks tracked; fallback restarts on next dispatch check |
+| **High callback volume** | Director overwhelmed | Callbacks are small JSON, one per task completion |
 
 ---
 
