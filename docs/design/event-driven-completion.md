@@ -144,7 +144,7 @@ Director                            Agent
 
 #### Extended TaskRequest
 
-Add required callback URL field:
+Add optional callback URL field:
 
 ```go
 type TaskRequest struct {
@@ -153,9 +153,11 @@ type TaskRequest struct {
     TimeoutSeconds int               `json:"timeout_seconds,omitempty"`
     SessionID      string            `json:"session_id,omitempty"`
     Env            map[string]string `json:"env,omitempty"`
-    CallbackURL    string            `json:"callback_url"` // NEW: required
+    CallbackURL    string            `json:"callback_url,omitempty"` // NEW: optional
 }
 ```
+
+**Note:** `callback_url` is optional to support direct task submission for testing. When omitted, the agent completes the task normally but doesn't notify anyone - the caller must poll `/task/{id}` or `/history/{id}` to check status.
 
 #### TaskCallback Payload
 
@@ -427,7 +429,105 @@ dispatcher := NewDispatcher(queue, discovery, handlers.sessionStore, cfg.Interna
 
 ## Deployment
 
-All agents and directors must be restarted together with the new code. The callback URL is now a required part of the task submission flow.
+All agents and directors must be restarted together with the new code.
+
+---
+
+## Director Restart Recovery
+
+When the director restarts, the in-memory `pendingTasks` map is lost but tasks remain on disk in the queue (marked as "dispatched"). On startup, the dispatcher must recover these orphaned tasks.
+
+### Recovery Logic
+
+```go
+// In Dispatcher.Start(), before starting the dispatch loop
+func (d *Dispatcher) recoverOrphanedTasks() {
+    orphaned := d.queue.GetDispatched()
+    for _, task := range orphaned {
+        d.registerCompletionWaiter(task)
+        fmt.Fprintf(os.Stderr, "queue: recovered orphaned task %s (agent=%s)\n",
+            task.QueueID, task.AgentURL)
+    }
+}
+```
+
+### Queue Method Addition
+
+```go
+// GetDispatched returns all tasks in "dispatched" or "working" state
+func (q *WorkQueue) GetDispatched() []*QueuedTask {
+    q.mu.RLock()
+    defer q.mu.RUnlock()
+
+    var result []*QueuedTask
+    for _, task := range q.tasks {
+        if task.State == TaskStateDispatching || task.State == TaskStateWorking {
+            result = append(result, task)
+        }
+    }
+    return result
+}
+```
+
+This ensures that if a callback arrives after director restart, the waiter exists to handle it. If the agent already completed and the callback was lost, the task remains in the queue for manual inspection.
+
+---
+
+## Task Cancellation
+
+When a task is cancelled via `POST /api/queue/{queueId}/cancel`, the dispatcher must:
+
+1. Remove the waiter from `pendingTasks`
+2. Notify the agent to cancel the running task
+3. Remove from queue
+
+### Cancellation Flow
+
+```go
+func (d *Dispatcher) CancelTask(queueID string) error {
+    d.mu.Lock()
+    waiter, ok := d.pendingTasks[queueID]
+    if ok {
+        delete(d.pendingTasks, queueID)
+    }
+    d.mu.Unlock()
+
+    if !ok {
+        return fmt.Errorf("task not found: %s", queueID)
+    }
+
+    task := waiter.task
+
+    // Notify agent to cancel (best effort)
+    if task.AgentURL != "" && task.TaskID != "" {
+        go d.notifyAgentCancel(task.AgentURL, task.TaskID)
+    }
+
+    // Update session store
+    if task.SessionID != "" {
+        d.sessionStore.UpdateTaskState(task.SessionID, task.TaskID, TaskStateCancelled)
+    }
+
+    // Remove from queue
+    d.queue.Remove(task)
+
+    fmt.Fprintf(os.Stderr, "queue: cancelled %s\n", task.QueueID)
+    return nil
+}
+
+func (d *Dispatcher) notifyAgentCancel(agentURL, taskID string) {
+    resp, err := d.client.Post(agentURL+"/task/"+taskID+"/cancel", "application/json", nil)
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "queue: failed to notify agent of cancellation: %v\n", err)
+        return
+    }
+    resp.Body.Close()
+}
+```
+
+### Late Callback Handling
+
+If the agent sends a callback after cancellation, the waiter no longer exists. The callback handler returns OK but logs that the task was unknown (already cancelled).
 
 ---
 
@@ -447,8 +547,10 @@ All agents and directors must be restarted together with the new code. The callb
 | Scenario | Handling |
 |----------|----------|
 | Callback arrives before waiter registered | Return OK (task handled elsewhere) |
-| Task cancelled during execution | Waiter removed, late callback returns OK |
+| Task cancelled during execution | Waiter removed, agent notified, late callback ignored |
 | Duplicate callbacks | Idempotent via pendingTasks lookup |
+| Direct task submission (no callback_url) | Agent completes normally, caller polls for status |
+| Director restart with running tasks | Orphaned tasks recovered on startup, waiters re-registered |
 
 ---
 
@@ -542,7 +644,7 @@ The existing tests serve as regression tests ensuring:
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| **Director restart** | Pending waiters lost | Queue persistence ensures tasks tracked on disk; manual cleanup may be needed |
+| **Director restart** | Pending waiters lost | Recover orphaned tasks on startup; re-register waiters |
 | **High callback volume** | Director overwhelmed | Callbacks are small JSON, one per task completion |
 
 ---
@@ -567,5 +669,7 @@ For a typical 60-second task:
 | File | Changes |
 |------|---------|
 | `internal/agent/agent.go` | Add `CallbackURL` to TaskRequest, add `callbackURL` field to Task, add `notifyCompletion` function, call notification at end of `executeTask` |
-| `internal/view/web/dispatcher.go` | Add `completionWaiter` struct, add `pendingTasks` map, add `registerCompletionWaiter`, `HandleTaskCallback` functions, remove `trackCompletion` and `getTaskStatus`, modify `submitToAgent` to include callback URL |
+| `internal/view/web/dispatcher.go` | Add `completionWaiter` struct, add `pendingTasks` map, add `registerCompletionWaiter`, `HandleTaskCallback`, `CancelTask`, `recoverOrphanedTasks` functions, remove `trackCompletion` and `getTaskStatus`, modify `submitToAgent` to include callback URL |
+| `internal/view/web/queue.go` | Add `GetDispatched()` method |
 | `internal/view/web/director.go` | Add callback endpoint to `InternalRouter`, pass `InternalPort` to dispatcher constructor |
+| `internal/view/web/queue_handlers.go` | Update cancel handler to call `dispatcher.CancelTask()` |
