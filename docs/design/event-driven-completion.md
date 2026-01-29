@@ -93,8 +93,7 @@ Director                            Agent
 | **Notification protocol** | HTTP POST callback | Reuses existing HTTP infrastructure, simple to implement |
 | **Callback destination** | Internal API (localhost) | No auth required, fast, reliable within same network |
 | **Retry strategy** | 3 attempts with exponential backoff | Balance reliability with resource efficiency |
-| **Fallback mechanism** | Timer-based polling | Ensures completion detection when callbacks fail |
-| **Fallback interval** | 30 seconds initial, 15 seconds subsequent | Much longer than current 5s since callbacks are primary |
+| **Fallback mechanism** | None | All agents deployed with callback support; simplifies implementation |
 
 ---
 
@@ -116,8 +115,7 @@ Director                            Agent
 |  |  - submitToAgent (w/callback)|  |  POST /callback/ |  |
 |  |  - registerWaiter           |  |     {queue_id}   |  |
 |  |  - handleCallback           |  +------------------+  |
-|  |  - fallbackPoll (timer)     |          ^             |
-|  +-----------------------------+          |             |
+|  +-----------------------------+          ^             |
 |               |                           |             |
 +---------------|---------------------------|-------------+
                 |                           |
@@ -132,7 +130,7 @@ Director                            Agent
 | Component | Responsibility |
 |-----------|----------------|
 | **Agent** | Execute task, send completion callback to director |
-| **Dispatcher** | Register completion waiters, handle callbacks, fallback polling |
+| **Dispatcher** | Register completion waiters, handle callbacks |
 | **Callback API** | HTTP endpoint receiving agent completion notifications |
 | **WorkQueue** | Store task metadata including callback state |
 
@@ -146,7 +144,7 @@ Director                            Agent
 
 #### Extended TaskRequest
 
-Add optional callback URL field:
+Add required callback URL field:
 
 ```go
 type TaskRequest struct {
@@ -155,7 +153,7 @@ type TaskRequest struct {
     TimeoutSeconds int               `json:"timeout_seconds,omitempty"`
     SessionID      string            `json:"session_id,omitempty"`
     Env            map[string]string `json:"env,omitempty"`
-    CallbackURL    string            `json:"callback_url,omitempty"` // NEW
+    CallbackURL    string            `json:"callback_url"` // NEW: required
 }
 ```
 
@@ -280,7 +278,6 @@ type Dispatcher struct {
 // completionWaiter tracks a dispatched task awaiting completion
 type completionWaiter struct {
     task      *QueuedTask
-    fallback  *time.Timer
     startedAt time.Time
 }
 ```
@@ -334,17 +331,10 @@ func (d *Dispatcher) registerCompletionWaiter(task *QueuedTask) {
     d.mu.Lock()
     defer d.mu.Unlock()
 
-    waiter := &completionWaiter{
+    d.pendingTasks[task.QueueID] = &completionWaiter{
         task:      task,
         startedAt: time.Now(),
     }
-
-    // Fallback poll after 30 seconds if no callback received
-    waiter.fallback = time.AfterFunc(30*time.Second, func() {
-        d.fallbackPoll(task.QueueID)
-    })
-
-    d.pendingTasks[task.QueueID] = waiter
 }
 ```
 
@@ -360,8 +350,6 @@ func (d *Dispatcher) HandleTaskCallback(queueID string, callback TaskCallback) e
         return fmt.Errorf("unknown task: %s", queueID)
     }
 
-    // Stop fallback timer
-    waiter.fallback.Stop()
     delete(d.pendingTasks, queueID)
     d.mu.Unlock()
 
@@ -382,53 +370,11 @@ func (d *Dispatcher) HandleTaskCallback(queueID string, callback TaskCallback) e
 }
 ```
 
-#### Fallback Polling
+#### Remove trackCompletion and getTaskStatus
 
-```go
-func (d *Dispatcher) fallbackPoll(queueID string) {
-    d.mu.RLock()
-    waiter, ok := d.pendingTasks[queueID]
-    d.mu.RUnlock()
-
-    if !ok {
-        return // Already handled via callback
-    }
-
-    task := waiter.task
-    status, err := d.getTaskStatus(task.AgentURL, task.TaskID)
-
-    if err != nil {
-        // Agent unreachable, reschedule poll
-        fmt.Fprintf(os.Stderr, "queue: fallback poll failed for %s: %v\n", queueID, err)
-        d.mu.Lock()
-        if w, ok := d.pendingTasks[queueID]; ok {
-            w.fallback = time.AfterFunc(15*time.Second, func() {
-                d.fallbackPoll(queueID)
-            })
-        }
-        d.mu.Unlock()
-        return
-    }
-
-    if isTerminalState(status) {
-        // Trigger completion handling
-        d.HandleTaskCallback(queueID, TaskCallback{
-            TaskID:      task.TaskID,
-            State:       TaskState(status),
-            CompletedAt: time.Now(),
-        })
-    } else {
-        // Still running, reschedule with longer interval
-        d.mu.Lock()
-        if w, ok := d.pendingTasks[queueID]; ok {
-            w.fallback = time.AfterFunc(15*time.Second, func() {
-                d.fallbackPoll(queueID)
-            })
-        }
-        d.mu.Unlock()
-    }
-}
-```
+The following functions are no longer needed and should be removed:
+- `trackCompletion()`
+- `getTaskStatus()`
 
 ### 3. Director Router Changes
 
@@ -479,26 +425,9 @@ dispatcher := NewDispatcher(queue, discovery, handlers.sessionStore, cfg.Interna
 
 ---
 
-## Migration Strategy
+## Deployment
 
-### Phase 1: Add Callback Support (Backward Compatible)
-
-1. Add `callback_url` field to agent's `TaskRequest` (ignored if not present)
-2. Add `notifyCompletion` function to agent (only called if callback_url set)
-3. Deploy agents first - they continue to work with old directors
-
-### Phase 2: Enable Callbacks
-
-1. Add callback endpoint to director's internal router
-2. Modify dispatcher to send callback URLs and register waiters
-3. Keep existing polling as fallback (30s interval instead of 5s)
-4. Deploy directors - callbacks active, polling as backup
-
-### Phase 3: Monitor and Tune
-
-1. Monitor callback success rate
-2. Adjust fallback intervals based on callback reliability
-3. Consider removing fallback polling entirely once stable
+All agents and directors must be restarted together with the new code. The callback URL is now a required part of the task submission flow.
 
 ---
 
@@ -506,12 +435,12 @@ dispatcher := NewDispatcher(queue, discovery, handlers.sessionStore, cfg.Interna
 
 ### Callback Delivery Failures
 
-| Scenario | Agent Behavior | Director Behavior |
-|----------|---------------|-------------------|
-| Network error | Retry 3x with backoff | Fallback poll triggers |
-| 4xx response | Log and stop retrying | Task may be cancelled |
-| 5xx response | Retry with backoff | Fallback poll handles |
-| Timeout | Retry with backoff | Fallback poll handles |
+| Scenario | Agent Behavior |
+|----------|---------------|
+| Network error | Retry 3x with backoff, then log warning |
+| 4xx response | Log and stop retrying |
+| 5xx response | Retry with backoff |
+| Timeout | Retry with backoff |
 
 ### Edge Cases
 
@@ -519,9 +448,7 @@ dispatcher := NewDispatcher(queue, discovery, handlers.sessionStore, cfg.Interna
 |----------|----------|
 | Callback arrives before waiter registered | Return OK (task handled elsewhere) |
 | Task cancelled during execution | Waiter removed, late callback returns OK |
-| Director restart loses waiters | Queue persistence + fallback on next poll cycle |
 | Duplicate callbacks | Idempotent via pendingTasks lookup |
-| Agent crash after task completion | Fallback poll detects via history endpoint |
 
 ---
 
@@ -533,9 +460,6 @@ dispatcher := NewDispatcher(queue, discovery, handlers.sessionStore, cfg.Interna
 # Callback delivered successfully
 DEBUG queue: completed queue-123 via callback (status=completed, latency=1.2s)
 
-# Fallback poll triggered
-INFO  queue: fallback poll for queue-123 (no callback after 30s)
-
 # Callback delivery failure
 WARN  agent: completion callback failed after retries callback_url=http://... attempts=3
 ```
@@ -546,7 +470,6 @@ WARN  agent: completion callback failed after retries callback_url=http://... at
 |--------|------|-------------|
 | `dispatcher_callbacks_total` | Counter | Total callbacks received |
 | `dispatcher_callback_latency_seconds` | Histogram | Time from dispatch to callback |
-| `dispatcher_fallback_polls_total` | Counter | Fallback polls triggered |
 | `agent_callback_attempts_total` | Counter | Callback delivery attempts |
 
 ---
@@ -579,8 +502,6 @@ The key insight is that `trackCompletion()` runs in a background goroutine that 
 
 2. **Dispatcher `registerCompletionWaiter`**: Verify:
    - Waiter stored in `pendingTasks` map
-   - Fallback timer set to 30 seconds
-   - Timer properly cancelled on callback
 
 3. **Dispatcher `HandleTaskCallback`**: Test:
    - Successful completion (waiter exists)
@@ -588,23 +509,13 @@ The key insight is that `trackCompletion()` runs in a background goroutine that 
    - Duplicate callback (idempotent)
    - Session store update triggered
 
-4. **Dispatcher `fallbackPoll`**: Test:
-   - Rescheduling on agent unreachable
-   - Terminal state detection
-   - Timer cleanup on completion
-
 ### New Integration Tests Required
 
 1. **Callback happy path**: Submit task via queue, mock agent sends callback, verify:
    - Queue task removed
    - Session store updated
-   - Fallback timer cancelled
 
-2. **Callback failure with fallback**: Submit task, block callback endpoint, verify:
-   - Fallback poll triggers after 30s
-   - Completion still detected
-
-3. **Graceful shutdown**: Verify pendingTasks cleaned up on dispatcher shutdown
+2. **Graceful shutdown**: Verify pendingTasks cleaned up on dispatcher shutdown
 
 ### Regression Testing
 
@@ -622,19 +533,16 @@ The existing tests serve as regression tests ensuring:
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| **Constructor signature change** | Breaking change to `NewDispatcher()` | Add `internalPort` as last parameter with default |
+| **Constructor signature change** | Breaking change to `NewDispatcher()` | Add `internalPort` as last parameter |
 | **Callback endpoint security** | Unauthorized callbacks could corrupt state | Validate queueID exists, localhost-only endpoint |
-| **Orphaned waiters on shutdown** | Memory leak, stale timers | Add cleanup in dispatcher shutdown |
-| **Timer goroutine leaks** | Resource exhaustion | Always call `timer.Stop()` before replacing |
-| **Race between callback and fallback** | Double completion handling | Use `pendingTasks` map as single source of truth |
+| **Orphaned waiters on shutdown** | Memory leak | Add cleanup in dispatcher shutdown |
+| **Callback delivery failure** | Task stuck in queue | Agent retries 3x; logged for manual intervention if needed |
 
 ### Operational Risks
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| **Agent/Director version mismatch** | Old agents don't send callbacks | Fallback polling handles this |
-| **Network partition** | Callbacks fail, delayed detection | Exponential backoff + fallback polling |
-| **Director restart** | Pending waiters lost | Queue persistence ensures tasks tracked; fallback restarts on next dispatch check |
+| **Director restart** | Pending waiters lost | Queue persistence ensures tasks tracked on disk; manual cleanup may be needed |
 | **High callback volume** | Director overwhelmed | Callbacks are small JSON, one per task completion |
 
 ---
@@ -644,13 +552,13 @@ The existing tests serve as regression tests ensuring:
 | Metric | Before (Polling) | After (Callback) |
 |--------|-----------------|------------------|
 | Completion latency | 0-5 seconds | ~100-200ms |
-| HTTP requests/task | n (poll cycles) | 2-4 (with retries) |
-| Goroutines/task | 1 (polling loop) | 0 (timer-based) |
-| Network bandwidth | O(n * poll_freq) | O(n * 1) |
+| HTTP requests/task | n (poll cycles) | 1 (+ retries) |
+| Goroutines/task | 1 (polling loop) | 0 |
+| Network bandwidth | O(n * poll_freq) | O(n) |
 
 For a typical 60-second task:
 - **Before**: ~12 poll requests
-- **After**: 1 callback request (+ possible retries)
+- **After**: 1 callback request
 
 ---
 
@@ -659,5 +567,5 @@ For a typical 60-second task:
 | File | Changes |
 |------|---------|
 | `internal/agent/agent.go` | Add `CallbackURL` to TaskRequest, add `callbackURL` field to Task, add `notifyCompletion` function, call notification at end of `executeTask` |
-| `internal/view/web/dispatcher.go` | Add `completionWaiter` struct, add `pendingTasks` map, add `registerCompletionWaiter`, `HandleTaskCallback`, `fallbackPoll` functions, modify `submitToAgent` to include callback URL |
+| `internal/view/web/dispatcher.go` | Add `completionWaiter` struct, add `pendingTasks` map, add `registerCompletionWaiter`, `HandleTaskCallback` functions, remove `trackCompletion` and `getTaskStatus`, modify `submitToAgent` to include callback URL |
 | `internal/view/web/director.go` | Add callback endpoint to `InternalRouter`, pass `InternalPort` to dispatcher constructor |
