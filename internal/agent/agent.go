@@ -616,7 +616,7 @@ func (a *Agent) handleCancelTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if task.State == TaskStateCompleted || task.State == TaskStateFailed || task.State == TaskStateCancelled {
+	if task.State.IsTerminal() {
 		a.mu.Unlock()
 		api.WriteJSON(w, http.StatusConflict, map[string]interface{}{
 			"error":       api.ErrorAlreadyCompleted,

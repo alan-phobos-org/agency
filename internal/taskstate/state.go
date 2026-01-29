@@ -58,6 +58,8 @@ func (s State) IsActive() bool {
 }
 
 // IsPending returns true if the state is a waiting state (not yet executing).
+// This includes both Queued (agent-side: accepted but not started) and
+// Pending (queue-side: waiting for agent dispatch).
 func (s State) IsPending() bool {
 	switch s {
 	case Queued, Pending:

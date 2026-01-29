@@ -118,8 +118,8 @@ func TestCreateTaskSuccess(t *testing.T) {
 			return false
 		}
 
-		// Task should reach completed or failed state
-		return task.State == TaskStateCompleted || task.State == TaskStateFailed
+		// Task should reach a terminal state
+		return task.State.IsTerminal()
 	}, 2*time.Second, 50*time.Millisecond, "task should complete within 2 seconds")
 }
 
