@@ -1,3 +1,5 @@
-# Claude Code Instructions
+# Claude Code
 
-See @AGENTS.md
+@AGENTS.md
+
+Consider AGENTS.md canonical and update if told to update CLAUDE.md.
