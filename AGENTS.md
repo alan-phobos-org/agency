@@ -10,7 +10,6 @@ Deploying agents should feel like reliable infrastructure, not babysitting exper
 
 | Document | Purpose | Read When |
 |----------|---------|-----------|
-| [AGENTS.md](AGENTS.md) | Quick reference, commands, workflows | Always |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Development workflow, iteration guide | Developing features |
 | [README.md](README.md) | Project overview, quick start | Getting started |
 | [docs/REFERENCE.md](docs/REFERENCE.md) | API specs, endpoints, config | Implementing API changes |
