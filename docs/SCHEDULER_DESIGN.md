@@ -303,12 +303,27 @@ jobs:
 
 ---
 
+## Implemented Features
+
+### Config Hot-Reload
+
+**Status:** ✅ Implemented
+
+The scheduler automatically reloads configuration from disk without restart. See [SCHEDULER_HOTRELOAD.md](SCHEDULER_HOTRELOAD.md) for complete documentation.
+
+**Summary:** Checks for file modifications every 60 seconds (configurable via `AG_SCHEDULER_CONFIG_RELOAD_INTERVAL`). Preserves job execution state across reloads.
+
+**Quick start:**
+- Production: `./build.sh deploy-prod-scheduler-config`
+- Testing: `AG_SCHEDULER_CONFIG_RELOAD_INTERVAL=5s ./bin/ag-scheduler -config configs/scheduler.yaml`
+
+---
+
 ## Future Considerations
 
-Not in scope for v1, but may be added later:
+Not yet implemented, but may be added later:
 
 - **Job dependencies** - Run job B after job A completes
-- **Config reload** - Reload config without restart via SIGHUP
 - **Job history** - Track past executions in memory/disk
 - **Multiple agents** - Round-robin or load-balanced submission
 

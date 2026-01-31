@@ -551,9 +551,69 @@ test.describe.serial('Agency Smoke Tests', () => {
     await screenshot(page, '16-nightly-maintenance-completed');
   });
 
+  test('6. Scheduler Config Reload', async ({ page }) => {
+    await login(page);
+
+    // Get initial scheduler status
+    const statusBefore = await page.request.get('https://localhost:19010/status', {
+      ignoreHTTPSErrors: true,
+    });
+    expect(statusBefore.ok()).toBeTruthy();
+    const beforeData = await statusBefore.json();
+    const jobCountBefore = beforeData.jobs.length;
+
+    // Modify scheduler config (add a test job)
+    // Use __dirname to get path relative to this test file (tests/smoke/)
+    const configPath = path.join(__dirname, '../../configs/scheduler-smoke.yaml');
+    const configContent = fs.readFileSync(configPath, 'utf-8');
+
+    // Append a new job to the config
+    const newJob = `
+  - name: smoke-test-reload
+    schedule: "0 0 31 2 *"  # Never auto-runs
+    agent_kind: claude
+    tier: fast
+    timeout: 30s
+    prompt: "This job was added via config reload test"
+`;
+    const modifiedConfig = configContent + newJob;
+    fs.writeFileSync(configPath, modifiedConfig);
+
+    try {
+      // Wait for reload (with 1s polling interval, should happen within 2-3 seconds)
+      await expect(async () => {
+        const statusAfter = await page.request.get('https://localhost:19010/status', {
+          ignoreHTTPSErrors: true,
+        });
+        const afterData = await statusAfter.json();
+        expect(afterData.jobs.length).toBe(jobCountBefore + 1);
+
+        // Verify the new job is present
+        const reloadJob = afterData.jobs.find(j => j.name === 'smoke-test-reload');
+        expect(reloadJob).toBeDefined();
+        expect(reloadJob.schedule).toBe('0 0 31 2 *');
+      }).toPass({ timeout: 10000, intervals: [1000] });
+
+      await screenshot(page, '16a-scheduler-config-reloaded');
+
+    } finally {
+      // Restore original config
+      fs.writeFileSync(configPath, configContent);
+
+      // Wait for reload to restore original state
+      await expect(async () => {
+        const statusRestored = await page.request.get('https://localhost:19010/status', {
+          ignoreHTTPSErrors: true,
+        });
+        const restoredData = await statusRestored.json();
+        expect(restoredData.jobs.length).toBe(jobCountBefore);
+      }).toPass({ timeout: 10000, intervals: [1000] });
+    }
+  });
+
   // Codex test is skipped by default - requires OpenAI API credentials
   // Run with: CODEX_SMOKE_TEST=1 npx playwright test
-  test.skip('6. Trigger Codex Scheduled Job', async ({ page }) => {
+  test.skip('6a. Trigger Codex Scheduled Job', async ({ page }) => {
     test.setTimeout(120000); // 2 minutes for Codex job
 
     await login(page);

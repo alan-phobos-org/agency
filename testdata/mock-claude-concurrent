@@ -1,0 +1,12 @@
+#!/bin/bash
+# Mock Claude CLI that sleeps for 2 seconds (for concurrent task rejection testing)
+
+# Emit init event before sleeping
+echo '{"type":"system","subtype":"init","session_id":"test-session-concurrent","model":"sonnet"}'
+
+# Sleep to keep agent busy
+sleep 2
+
+# Emit result after sleep
+echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Task completed after delay."}]}}'
+echo '{"type":"result","subtype":"success","session_id":"test-session-concurrent","duration_ms":2000,"num_turns":1,"total_cost_usd":0.01}'

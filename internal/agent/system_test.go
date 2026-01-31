@@ -61,13 +61,33 @@ func verifyBinaries(t *testing.T, binDir string) {
 func startAgent(t *testing.T, binDir string, port int) *exec.Cmd {
 	t.Helper()
 
+	// Set up temp AGENCY_ROOT with prompts
+	agencyRoot := t.TempDir()
+	promptsDir := filepath.Join(agencyRoot, "prompts")
+	err := os.MkdirAll(promptsDir, 0755)
+	require.NoError(t, err, "Failed to create prompts directory")
+
+	// Copy test prompt file (supports both dev and prod modes)
+	projectRoot, err := filepath.Abs("../../")
+	require.NoError(t, err)
+	testPrompt := filepath.Join(projectRoot, "testdata", "test-agency-prompt.md")
+	promptData, err := os.ReadFile(testPrompt)
+	require.NoError(t, err, "Failed to read test prompt")
+
+	// Write prompt file for both dev and prod modes
+	for _, mode := range []string{"dev", "prod"} {
+		promptFile := filepath.Join(promptsDir, fmt.Sprintf("claude-%s.md", mode))
+		err = os.WriteFile(promptFile, promptData, 0644)
+		require.NoError(t, err, "Failed to write prompt file")
+	}
+
 	agentBin := filepath.Join(binDir, "ag-agent-claude")
 	cmd := exec.Command(agentBin, "-port", fmt.Sprintf("%d", port))
-	cmd.Env = append(os.Environ(), "AGENCY_ROOT="+t.TempDir())
+	cmd.Env = append(os.Environ(), "AGENCY_ROOT="+agencyRoot)
 	cmd.Stdout = os.Stderr // Forward to test output
 	cmd.Stderr = os.Stderr
 
-	err := cmd.Start()
+	err = cmd.Start()
 	require.NoError(t, err, "Failed to start agent")
 
 	return cmd
@@ -329,6 +349,12 @@ func TestSystemHTTPAPIDirectly(t *testing.T) {
 
 func TestSystemConcurrentTaskRejection(t *testing.T) {
 	binDir := buildBinaries(t)
+
+	// Use slow mock for this test so agent stays busy long enough
+	projectRoot, err := filepath.Abs("../../")
+	require.NoError(t, err)
+	mockClaude := filepath.Join(projectRoot, "testdata", "mock-claude-concurrent")
+	t.Setenv("CLAUDE_BIN", mockClaude)
 
 	port := testutil.AllocateTestPort(t)
 	agentURL := fmt.Sprintf("https://localhost:%d", port)
@@ -606,17 +632,17 @@ func TestSystemWebDirectorTaskSubmission(t *testing.T) {
 	// Poll for completion via web director
 	deadline := time.Now().Add(30 * time.Second)
 	var finalState string
+	var taskStatus map[string]interface{}
 	for time.Now().Before(deadline) {
 		statusURL := fmt.Sprintf("%s/api/task/%s?token=%s&agent_url=%s",
 			webURL, taskID, token, agentURL)
 		resp, err := client.Get(statusURL)
 		require.NoError(t, err)
 
-		var status map[string]interface{}
-		json.NewDecoder(resp.Body).Decode(&status)
+		json.NewDecoder(resp.Body).Decode(&taskStatus)
 		resp.Body.Close()
 
-		state := status["state"].(string)
+		state := taskStatus["state"].(string)
 		if state == "completed" || state == "failed" {
 			finalState = state
 			break
@@ -624,6 +650,9 @@ func TestSystemWebDirectorTaskSubmission(t *testing.T) {
 		time.Sleep(200 * time.Millisecond)
 	}
 
+	if finalState == "failed" {
+		t.Logf("Task failed. Status: %+v", taskStatus)
+	}
 	require.Equal(t, "completed", finalState, "Task should complete successfully")
 	t.Log("Task completed successfully via web director")
 }

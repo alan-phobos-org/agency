@@ -21,9 +21,12 @@ import (
 
 // Scheduler manages scheduled jobs
 type Scheduler struct {
-	config    *Config
-	version   string
-	startTime time.Time
+	config               *Config
+	configPath           string        // Path to config file for hot-reload
+	configModTime        time.Time     // Last known modification time of config file
+	configReloadInterval time.Duration // How often to check for config changes
+	version              string
+	startTime            time.Time
 
 	mu       sync.RWMutex
 	server   *http.Server
@@ -57,12 +60,14 @@ type JobStatus struct {
 }
 
 // New creates a new scheduler
-func New(config *Config, version string) *Scheduler {
+func New(config *Config, configPath string, configReloadInterval time.Duration, version string) *Scheduler {
 	return &Scheduler{
-		config:    config,
-		version:   version,
-		startTime: time.Now(),
-		stopChan:  make(chan struct{}),
+		config:               config,
+		configPath:           configPath,
+		configReloadInterval: configReloadInterval,
+		version:              version,
+		startTime:            time.Now(),
+		stopChan:             make(chan struct{}),
 	}
 }
 
@@ -72,6 +77,11 @@ func (s *Scheduler) Start() error {
 	if s.running {
 		s.mu.Unlock()
 		return fmt.Errorf("scheduler already running")
+	}
+
+	// Initialize config modification time for hot-reload
+	if fileInfo, err := os.Stat(s.configPath); err == nil {
+		s.configModTime = fileInfo.ModTime()
 	}
 
 	// Initialize job states
@@ -118,7 +128,10 @@ func (s *Scheduler) Start() error {
 	// Start job runner
 	go s.runJobs()
 
-	log.Printf("scheduler starting on port %d with %d jobs (TLS enabled)", s.config.Port, len(s.jobs))
+	// Start config watcher
+	go s.watchConfig()
+
+	log.Printf("scheduler action=starting port=%d jobs=%d config_reload_interval=%s", s.config.Port, len(s.jobs), s.configReloadInterval)
 	s.mu.RLock()
 	for _, js := range s.jobs {
 		log.Printf("  job=%s schedule=%q next_run=%s", js.Job.Name, js.Job.Schedule, js.NextRun.Format(time.RFC3339))
@@ -162,6 +175,125 @@ func (s *Scheduler) runJobs() {
 			s.checkAndRunJobs(now)
 		}
 	}
+}
+
+// watchConfig watches for config file changes and reloads
+func (s *Scheduler) watchConfig() {
+	ticker := time.NewTicker(s.configReloadInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.stopChan:
+			return
+		case <-ticker.C:
+			s.checkAndReloadConfig()
+		}
+	}
+}
+
+// checkAndReloadConfig checks if config file has changed and reloads it
+func (s *Scheduler) checkAndReloadConfig() {
+	// Check modification time (no lock needed, read-only operation)
+	fileInfo, err := os.Stat(s.configPath)
+	if err != nil {
+		log.Printf("config_reload action=check_failed error=%q", err)
+		return
+	}
+
+	modTime := fileInfo.ModTime()
+	s.mu.RLock()
+	lastModTime := s.configModTime
+	s.mu.RUnlock()
+
+	if !modTime.After(lastModTime) {
+		return // No change
+	}
+
+	log.Printf("config_reload action=detected_change old_mtime=%s new_mtime=%s", lastModTime.Format(time.RFC3339), modTime.Format(time.RFC3339))
+
+	// Load new config (no lock needed, filesystem I/O)
+	newConfig, err := Load(s.configPath)
+	if err != nil {
+		log.Printf("config_reload action=load_failed error=%q config=kept_current", err)
+		return
+	}
+
+	// Check if port changed (requires restart)
+	s.mu.RLock()
+	oldPort := s.config.Port
+	s.mu.RUnlock()
+	if newConfig.Port != oldPort {
+		log.Printf("config_reload warning=port_change old=%d new=%d requires_restart=true", oldPort, newConfig.Port)
+	}
+
+	// Apply the new config
+	s.applyConfig(newConfig, modTime)
+}
+
+// applyConfig safely applies a new config, preserving job state where possible
+func (s *Scheduler) applyConfig(newConfig *Config, modTime time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	oldJobs := s.jobs
+	s.config = newConfig
+	s.configModTime = modTime
+
+	// Build new jobs array, preserving state where possible
+	now := time.Now()
+	newJobs := make([]*jobState, len(newConfig.Jobs))
+
+	preserved := 0
+	added := 0
+
+	for i := range newConfig.Jobs {
+		job := &newConfig.Jobs[i]
+		cron, _ := ParseCron(job.Schedule) // Already validated in Load()
+
+		// Find matching old job by name (unique identifier)
+		var oldState *jobState
+		for _, oldJob := range oldJobs {
+			if oldJob.Job.Name == job.Name {
+				oldState = oldJob
+				break
+			}
+		}
+
+		if oldState != nil {
+			// Preserve execution state but update definition
+			oldState.mu.Lock()
+			wasRunning := oldState.isRunning
+			oldState.Job = job   // Use new definition (prompt, timeout, tier, etc.)
+			oldState.Cron = cron // Use new schedule
+			if !wasRunning {
+				oldState.NextRun = cron.Next(now) // Recalculate if not running
+			}
+			// Keep: LastRun, LastStatus, LastTaskID, LastQueueID, isRunning
+			oldState.mu.Unlock()
+			newJobs[i] = oldState
+			preserved++
+		} else {
+			// New job - initialize fresh
+			nextRun := cron.Next(now)
+			if nextRun.IsZero() {
+				nextRun = now.Add(24 * time.Hour)
+			}
+			newJobs[i] = &jobState{
+				Job:     job,
+				Cron:    cron,
+				NextRun: nextRun,
+			}
+			added++
+		}
+	}
+
+	removed := len(oldJobs) - preserved
+
+	s.jobs = newJobs
+
+	log.Printf("config_reload action=applied jobs_before=%d jobs_after=%d preserved=%d added=%d removed=%d",
+		len(oldJobs), len(newJobs), preserved, added, removed)
 }
 
 // checkAndRunJobs checks if any jobs should run

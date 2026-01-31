@@ -43,8 +43,23 @@ func main() {
 		cfg.Port = *port
 	}
 
+	// Parse config reload interval from environment (default: 60s, min: 1s)
+	configReloadInterval := 60 * time.Second
+	if intervalStr := os.Getenv("AG_SCHEDULER_CONFIG_RELOAD_INTERVAL"); intervalStr != "" {
+		if parsed, err := time.ParseDuration(intervalStr); err == nil {
+			if parsed < time.Second {
+				fmt.Fprintf(os.Stderr, "Warning: AG_SCHEDULER_CONFIG_RELOAD_INTERVAL=%s is too small, using minimum 1s\n", intervalStr)
+				configReloadInterval = time.Second
+			} else {
+				configReloadInterval = parsed
+			}
+		} else {
+			fmt.Fprintf(os.Stderr, "Warning: Invalid AG_SCHEDULER_CONFIG_RELOAD_INTERVAL=%s, using default 60s: %v\n", intervalStr, err)
+		}
+	}
+
 	// Create and start scheduler
-	s := scheduler.New(cfg, version)
+	s := scheduler.New(cfg, *configPath, configReloadInterval, version)
 
 	// Handle shutdown signals
 	sigCh := make(chan os.Signal, 1)

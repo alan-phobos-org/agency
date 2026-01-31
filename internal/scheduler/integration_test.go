@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -33,7 +34,7 @@ func TestIntegrationSchedulerStartStop(t *testing.T) {
 		},
 	}
 
-	s := New(cfg, "test-version")
+	s := New(cfg, "/tmp/test-config.yaml", 60*time.Second, "test-version")
 
 	// Start in background
 	errCh := make(chan error, 1)
@@ -113,7 +114,7 @@ func TestIntegrationSchedulerJobExecution(t *testing.T) {
 		},
 	}
 
-	s := New(cfg, "test")
+	s := New(cfg, "/tmp/test-config.yaml", 60*time.Second, "test")
 
 	// Initialize with NextRun in the past to trigger immediately
 	s.mu.Lock()
@@ -175,7 +176,7 @@ func TestIntegrationSchedulerConcurrentJobs(t *testing.T) {
 		},
 	}
 
-	s := New(cfg, "test")
+	s := New(cfg, "/tmp/test-config.yaml", 60*time.Second, "test")
 
 	// Initialize all jobs with past NextRun
 	s.mu.Lock()
@@ -225,7 +226,7 @@ func TestIntegrationSchedulerShutdownEndpoint(t *testing.T) {
 		},
 	}
 
-	s := New(cfg, "test")
+	s := New(cfg, "/tmp/test-config.yaml", 60*time.Second, "test")
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -303,7 +304,7 @@ func TestIntegrationSchedulerDirectorRouting(t *testing.T) {
 		},
 	}
 
-	s := New(cfg, "test")
+	s := New(cfg, "/tmp/test-config.yaml", 60*time.Second, "test")
 
 	// Initialize with NextRun in the past to trigger immediately
 	s.mu.Lock()
@@ -378,7 +379,7 @@ func TestIntegrationSchedulerDirectorFallback(t *testing.T) {
 		},
 	}
 
-	s := New(cfg, "test")
+	s := New(cfg, "/tmp/test-config.yaml", 60*time.Second, "test")
 
 	// Initialize with NextRun in the past
 	s.mu.Lock()
@@ -426,7 +427,7 @@ func TestIntegrationSchedulerStatusIncludesDirectorURL(t *testing.T) {
 		},
 	}
 
-	s := New(cfg, "test")
+	s := New(cfg, "/tmp/test-config.yaml", 60*time.Second, "test")
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -453,4 +454,204 @@ func TestIntegrationSchedulerStatusIncludesDirectorURL(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	s.Shutdown(ctx)
+}
+
+// TestIntegrationConfigHotReload tests end-to-end config reload with real file
+func TestIntegrationConfigHotReload(t *testing.T) {
+	// Create temp config file with fast reload interval
+	configContent := `port: 19998
+log_level: info
+agent_url: https://localhost:9000
+
+jobs:
+  - name: integration-test-1
+    schedule: "0 0 * * *"
+    prompt: "Initial config"
+    tier: fast
+    timeout: 30s
+`
+	tmpFile, err := os.CreateTemp("", "scheduler-integration-*.yaml")
+	require.NoError(t, err)
+	defer os.Remove(tmpFile.Name())
+
+	_, err = tmpFile.WriteString(configContent)
+	require.NoError(t, err)
+	tmpFile.Close()
+
+	// Load config and create scheduler with fast reload (1 second)
+	cfg, err := Load(tmpFile.Name())
+	require.NoError(t, err)
+
+	s := New(cfg, tmpFile.Name(), time.Second, "test")
+
+	// Start scheduler in goroutine
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- s.Start()
+	}()
+
+	// Wait for scheduler to start
+	time.Sleep(100 * time.Millisecond)
+
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		s.Shutdown(ctx)
+	}()
+
+	// Verify initial state via /status
+	resp, err := testutil.HTTPClient(5 * time.Second).Get("https://localhost:19998/status")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	var status1 map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&status1)
+
+	jobs1 := status1["jobs"].([]interface{})
+	assert.Len(t, jobs1, 1)
+	job1 := jobs1[0].(map[string]interface{})
+	assert.Equal(t, "integration-test-1", job1["name"])
+
+	// Modify config file (add a new job)
+	modifiedConfig := `port: 19998
+log_level: info
+agent_url: https://localhost:9000
+
+jobs:
+  - name: integration-test-1
+    schedule: "0 0 * * *"
+    prompt: "Modified prompt"
+    tier: fast
+    timeout: 30s
+
+  - name: integration-test-2
+    schedule: "0 1 * * *"
+    prompt: "New job added"
+    tier: standard
+    timeout: 60s
+`
+	err = os.WriteFile(tmpFile.Name(), []byte(modifiedConfig), 0644)
+	require.NoError(t, err)
+
+	// Wait for reload to happen (with 1s interval, should happen within 2s)
+	time.Sleep(2 * time.Second)
+
+	// Verify reloaded state
+	resp2, err := testutil.HTTPClient(5 * time.Second).Get("https://localhost:19998/status")
+	require.NoError(t, err)
+	defer resp2.Body.Close()
+
+	var status2 map[string]interface{}
+	json.NewDecoder(resp2.Body).Decode(&status2)
+
+	jobs2 := status2["jobs"].([]interface{})
+	assert.Len(t, jobs2, 2, "Should have 2 jobs after reload")
+
+	// Verify jobs
+	jobNames := make([]string, len(jobs2))
+	for i, j := range jobs2 {
+		jobMap := j.(map[string]interface{})
+		jobNames[i] = jobMap["name"].(string)
+	}
+	assert.Contains(t, jobNames, "integration-test-1")
+	assert.Contains(t, jobNames, "integration-test-2")
+}
+
+// TestIntegrationReloadDoesNotBreakScheduling tests that reload doesn't disrupt scheduler operation
+func TestIntegrationReloadDoesNotBreakScheduling(t *testing.T) {
+	// Create config with one job
+	configContent := `port: 19997
+log_level: info
+agent_url: https://localhost:9000
+
+jobs:
+  - name: test-job
+    schedule: "0 0 31 2 *"
+    prompt: "Test job"
+    tier: fast
+    timeout: 30s
+`
+	tmpFile, err := os.CreateTemp("", "scheduler-integration-*.yaml")
+	require.NoError(t, err)
+	defer os.Remove(tmpFile.Name())
+
+	_, err = tmpFile.WriteString(configContent)
+	require.NoError(t, err)
+	tmpFile.Close()
+
+	// Load and start scheduler
+	cfg, err := Load(tmpFile.Name())
+	require.NoError(t, err)
+
+	s := New(cfg, tmpFile.Name(), 500*time.Millisecond, "test")
+
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- s.Start()
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		s.Shutdown(ctx)
+	}()
+
+	// Verify initial state
+	resp1, err := testutil.HTTPClient(5 * time.Second).Get("https://localhost:19997/status")
+	require.NoError(t, err)
+	defer resp1.Body.Close()
+
+	var status1 map[string]interface{}
+	json.NewDecoder(resp1.Body).Decode(&status1)
+	jobs1 := status1["jobs"].([]interface{})
+	assert.Len(t, jobs1, 1)
+
+	// Modify config (change prompt and add a job)
+	modifiedConfig := `port: 19997
+log_level: info
+agent_url: https://localhost:9000
+
+jobs:
+  - name: test-job
+    schedule: "0 0 31 2 *"
+    prompt: "Modified prompt"
+    tier: fast
+    timeout: 30s
+
+  - name: test-job-2
+    schedule: "0 1 * * *"
+    prompt: "Second job"
+    tier: standard
+    timeout: 60s
+`
+	err = os.WriteFile(tmpFile.Name(), []byte(modifiedConfig), 0644)
+	require.NoError(t, err)
+
+	// Wait for config reload (with 500ms interval, should happen within 1s)
+	time.Sleep(1 * time.Second)
+
+	// Verify scheduler still responsive and has reloaded config
+	resp2, err := testutil.HTTPClient(5 * time.Second).Get("https://localhost:19997/status")
+	require.NoError(t, err)
+	defer resp2.Body.Close()
+
+	var status2 map[string]interface{}
+	json.NewDecoder(resp2.Body).Decode(&status2)
+
+	// Verify scheduler is still running
+	assert.Equal(t, "running", status2["state"])
+
+	// Verify jobs were reloaded
+	jobs2 := status2["jobs"].([]interface{})
+	assert.Len(t, jobs2, 2, "Should have 2 jobs after reload")
+
+	jobNames := make([]string, len(jobs2))
+	for i, j := range jobs2 {
+		jobMap := j.(map[string]interface{})
+		jobNames[i] = jobMap["name"].(string)
+	}
+	assert.Contains(t, jobNames, "test-job")
+	assert.Contains(t, jobNames, "test-job-2")
 }

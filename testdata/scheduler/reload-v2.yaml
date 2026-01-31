@@ -1,0 +1,21 @@
+# Test fixture: modified config for reload tests
+# Changes from v1:
+#   - test-job-1: prompt changed
+#   - test-job-2: removed
+#   - test-job-3: added
+port: 19999
+log_level: info
+agent_url: https://localhost:9000
+
+jobs:
+  - name: test-job-1
+    schedule: "0 0 * * *"
+    prompt: "Test job 1 MODIFIED"
+    tier: fast
+    timeout: 30s
+
+  - name: test-job-3
+    schedule: "0 2 * * *"
+    prompt: "Test job 3 (NEW)"
+    tier: heavy
+    timeout: 120s

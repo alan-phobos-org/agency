@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -329,7 +330,7 @@ func TestSchedulerStatus(t *testing.T) {
 		},
 	}
 
-	s := New(cfg, "test-version")
+	s := New(cfg, "/tmp/test-config.yaml", 60*time.Second, "test-version")
 
 	// Initialize job states manually for status test
 	s.mu.Lock()
@@ -401,7 +402,7 @@ func TestSchedulerJobSubmission(t *testing.T) {
 		},
 	}
 
-	s := New(cfg, "test")
+	s := New(cfg, "/tmp/test-config.yaml", 60*time.Second, "test")
 
 	// Initialize job state
 	cron, _ := ParseCron(cfg.Jobs[0].Schedule)
@@ -454,7 +455,7 @@ func TestSchedulerJobAgentBusy(t *testing.T) {
 		},
 	}
 
-	s := New(cfg, "test")
+	s := New(cfg, "/tmp/test-config.yaml", 60*time.Second, "test")
 
 	cron, _ := ParseCron(cfg.Jobs[0].Schedule)
 	js := &jobState{
@@ -490,7 +491,7 @@ func TestSchedulerJobAgentError(t *testing.T) {
 		},
 	}
 
-	s := New(cfg, "test")
+	s := New(cfg, "/tmp/test-config.yaml", 60*time.Second, "test")
 
 	cron, _ := ParseCron(cfg.Jobs[0].Schedule)
 	js := &jobState{
@@ -519,7 +520,7 @@ func TestSchedulerShutdown(t *testing.T) {
 		},
 	}
 
-	s := New(cfg, "test")
+	s := New(cfg, "/tmp/test-config.yaml", 60*time.Second, "test")
 
 	// Start in background
 	errCh := make(chan error, 1)
@@ -560,7 +561,7 @@ func TestSchedulerStartTwice(t *testing.T) {
 		},
 	}
 
-	s := New(cfg, "test")
+	s := New(cfg, "/tmp/test-config.yaml", 60*time.Second, "test")
 
 	// Start in background
 	errCh := make(chan error, 1)
@@ -623,7 +624,7 @@ func TestSchedulerJobNoDoubleRun(t *testing.T) {
 		},
 	}
 
-	s := New(cfg, "test")
+	s := New(cfg, "/tmp/test-config.yaml", 60*time.Second, "test")
 
 	// Initialize job state with NextRun in the past
 	cron, _ := ParseCron(cfg.Jobs[0].Schedule)
@@ -694,7 +695,7 @@ func TestSchedulerDirectorRouting(t *testing.T) {
 		},
 	}
 
-	s := New(cfg, "test")
+	s := New(cfg, "/tmp/test-config.yaml", 60*time.Second, "test")
 
 	cron, _ := ParseCron(cfg.Jobs[0].Schedule)
 	js := &jobState{
@@ -754,7 +755,7 @@ func TestSchedulerQueueFull(t *testing.T) {
 		},
 	}
 
-	s := New(cfg, "test")
+	s := New(cfg, "/tmp/test-config.yaml", 60*time.Second, "test")
 
 	cron, _ := ParseCron(cfg.Jobs[0].Schedule)
 	js := &jobState{
@@ -787,7 +788,7 @@ func TestSchedulerDirectorUnavailable(t *testing.T) {
 		},
 	}
 
-	s := New(cfg, "test")
+	s := New(cfg, "/tmp/test-config.yaml", 60*time.Second, "test")
 
 	cron, _ := ParseCron(cfg.Jobs[0].Schedule)
 	js := &jobState{
@@ -834,7 +835,7 @@ func TestSchedulerNoDirectorConfigured(t *testing.T) {
 		},
 	}
 
-	s := New(cfg, "test")
+	s := New(cfg, "/tmp/test-config.yaml", 60*time.Second, "test")
 
 	cron, _ := ParseCron(cfg.Jobs[0].Schedule)
 	js := &jobState{
@@ -889,7 +890,7 @@ func TestSchedulerDirectorFallbackToAgent(t *testing.T) {
 		},
 	}
 
-	s := New(cfg, "test")
+	s := New(cfg, "/tmp/test-config.yaml", 60*time.Second, "test")
 
 	cron, _ := ParseCron(cfg.Jobs[0].Schedule)
 	js := &jobState{
@@ -942,7 +943,7 @@ func TestSchedulerDirectorAgentBusy(t *testing.T) {
 		},
 	}
 
-	s := New(cfg, "test")
+	s := New(cfg, "/tmp/test-config.yaml", 60*time.Second, "test")
 
 	cron, _ := ParseCron(cfg.Jobs[0].Schedule)
 	js := &jobState{
@@ -993,7 +994,7 @@ func TestSchedulerStatusWithDirectorURL(t *testing.T) {
 		},
 	}
 
-	s := New(cfg, "test-version")
+	s := New(cfg, "/tmp/test-config.yaml", 60*time.Second, "test-version")
 
 	// Initialize job states manually for status test
 	s.mu.Lock()
@@ -1019,4 +1020,328 @@ func TestSchedulerStatusWithDirectorURL(t *testing.T) {
 	config := resp["config"].(map[string]interface{})
 	assert.Equal(t, "http://localhost:9000", config["agent_url"])
 	assert.Equal(t, "https://localhost:8443", config["director_url"])
+}
+
+// Helper function to create a temporary config file for testing
+func createTempConfig(t *testing.T, yamlContent string) string {
+	t.Helper()
+	tmpFile, err := os.CreateTemp("", "scheduler-config-*.yaml")
+	require.NoError(t, err)
+	_, err = tmpFile.WriteString(yamlContent)
+	require.NoError(t, err)
+	tmpFile.Close()
+	t.Cleanup(func() { os.Remove(tmpFile.Name()) })
+	return tmpFile.Name()
+}
+
+// Helper function to update file mtime (touch)
+func touchConfig(t *testing.T, path string) {
+	t.Helper()
+	now := time.Now()
+	err := os.Chtimes(path, now, now)
+	require.NoError(t, err)
+}
+
+// Test 1: Basic reload adds/removes jobs
+func TestConfigReload(t *testing.T) {
+	t.Parallel()
+
+	// Read v1 config
+	v1Content, err := os.ReadFile("../../testdata/scheduler/reload-v1.yaml")
+	require.NoError(t, err)
+
+	configPath := createTempConfig(t, string(v1Content))
+
+	cfg, err := Load(configPath)
+	require.NoError(t, err)
+	assert.Len(t, cfg.Jobs, 2)
+
+	s := New(cfg, configPath, time.Minute, "test")
+
+	// Initialize scheduler state manually (without starting HTTP server)
+	s.mu.Lock()
+	now := time.Now()
+	s.configModTime = now.Add(-time.Hour) // Set to past so reload will trigger
+	s.jobs = make([]*jobState, len(cfg.Jobs))
+	for i := range cfg.Jobs {
+		job := &cfg.Jobs[i]
+		cron, _ := ParseCron(job.Schedule)
+		s.jobs[i] = &jobState{
+			Job:     job,
+			Cron:    cron,
+			NextRun: cron.Next(now),
+		}
+	}
+	s.mu.Unlock()
+
+	// Verify initial state
+	s.mu.RLock()
+	assert.Len(t, s.jobs, 2)
+	assert.Equal(t, "test-job-1", s.jobs[0].Job.Name)
+	assert.Equal(t, "test-job-2", s.jobs[1].Job.Name)
+	s.mu.RUnlock()
+
+	// Load v2 config (job added, one removed, one modified)
+	v2Content, err := os.ReadFile("../../testdata/scheduler/reload-v2.yaml")
+	require.NoError(t, err)
+
+	err = os.WriteFile(configPath, v2Content, 0644)
+	require.NoError(t, err)
+
+	// Sleep briefly to ensure mtime changes
+	time.Sleep(10 * time.Millisecond)
+	touchConfig(t, configPath)
+
+	// Trigger reload
+	s.checkAndReloadConfig()
+
+	// Verify new state
+	s.mu.RLock()
+	assert.Len(t, s.jobs, 2)
+	assert.Equal(t, "test-job-1", s.jobs[0].Job.Name)
+	assert.Equal(t, "Test job 1 MODIFIED", s.jobs[0].Job.Prompt) // Modified
+	assert.Equal(t, "test-job-3", s.jobs[1].Job.Name)             // New job
+	s.mu.RUnlock()
+}
+
+// Test 2: Job state preserved across reload
+func TestConfigReloadPreservesState(t *testing.T) {
+	t.Parallel()
+
+	// Read v1 config
+	v1Content, err := os.ReadFile("../../testdata/scheduler/reload-v1.yaml")
+	require.NoError(t, err)
+
+	configPath := createTempConfig(t, string(v1Content))
+
+	cfg, err := Load(configPath)
+	require.NoError(t, err)
+
+	s := New(cfg, configPath, time.Minute, "test")
+
+	// Initialize with job state
+	s.mu.Lock()
+	now := time.Now()
+	s.configModTime = now.Add(-time.Hour)
+	cron, _ := ParseCron(cfg.Jobs[0].Schedule)
+	s.jobs = []*jobState{{
+		Job:         &cfg.Jobs[0],
+		Cron:        cron,
+		NextRun:     cron.Next(now),
+		LastRun:     now.Add(-time.Hour),
+		LastStatus:  "submitted",
+		LastTaskID:  "task-123",
+		LastQueueID: "queue-456",
+	}}
+	s.mu.Unlock()
+
+	// Modify v1 config (just change prompt, keep same job name)
+	modifiedV1 := `port: 19999
+log_level: info
+agent_url: https://localhost:9000
+
+jobs:
+  - name: test-job-1
+    schedule: "0 0 * * *"
+    prompt: "Modified prompt"
+    tier: fast
+    timeout: 30s
+`
+	err = os.WriteFile(configPath, []byte(modifiedV1), 0644)
+	require.NoError(t, err)
+
+	time.Sleep(10 * time.Millisecond)
+	touchConfig(t, configPath)
+
+	// Trigger reload
+	s.checkAndReloadConfig()
+
+	// Verify state preserved but definition updated
+	s.mu.RLock()
+	js := s.jobs[0]
+	js.mu.RLock()
+	assert.Equal(t, "Modified prompt", js.Job.Prompt) // Definition updated
+	assert.Equal(t, "submitted", js.LastStatus)       // State preserved
+	assert.Equal(t, "task-123", js.LastTaskID)        // State preserved
+	assert.Equal(t, "queue-456", js.LastQueueID)      // State preserved
+	assert.False(t, js.LastRun.IsZero())              // State preserved
+	js.mu.RUnlock()
+	s.mu.RUnlock()
+}
+
+// Test 3: Invalid config rejected, old kept
+func TestConfigReloadInvalidConfig(t *testing.T) {
+	t.Parallel()
+
+	// Read v1 config
+	v1Content, err := os.ReadFile("../../testdata/scheduler/reload-v1.yaml")
+	require.NoError(t, err)
+
+	configPath := createTempConfig(t, string(v1Content))
+
+	cfg, err := Load(configPath)
+	require.NoError(t, err)
+
+	s := New(cfg, configPath, time.Minute, "test")
+
+	// Initialize state
+	s.mu.Lock()
+	now := time.Now()
+	s.configModTime = now.Add(-time.Hour)
+	s.jobs = make([]*jobState, len(cfg.Jobs))
+	for i := range cfg.Jobs {
+		job := &cfg.Jobs[i]
+		cron, _ := ParseCron(job.Schedule)
+		s.jobs[i] = &jobState{
+			Job:     job,
+			Cron:    cron,
+			NextRun: cron.Next(now),
+		}
+	}
+	s.mu.Unlock()
+
+	// Load invalid config
+	invalidContent, err := os.ReadFile("../../testdata/scheduler/reload-invalid.yaml")
+	require.NoError(t, err)
+
+	err = os.WriteFile(configPath, invalidContent, 0644)
+	require.NoError(t, err)
+
+	time.Sleep(10 * time.Millisecond)
+	touchConfig(t, configPath)
+
+	// Trigger reload (should fail gracefully)
+	s.checkAndReloadConfig()
+
+	// Verify old config still active
+	s.mu.RLock()
+	assert.Len(t, s.jobs, 2) // Still has original 2 jobs
+	assert.Equal(t, "test-job-1", s.jobs[0].Job.Name)
+	assert.Equal(t, "test-job-2", s.jobs[1].Job.Name)
+	s.mu.RUnlock()
+}
+
+// Test 4: Renamed job treated as new (state lost)
+func TestConfigReloadJobRenamed(t *testing.T) {
+	t.Parallel()
+
+	// Read v1 config
+	v1Content, err := os.ReadFile("../../testdata/scheduler/reload-v1.yaml")
+	require.NoError(t, err)
+
+	configPath := createTempConfig(t, string(v1Content))
+
+	cfg, err := Load(configPath)
+	require.NoError(t, err)
+
+	s := New(cfg, configPath, time.Minute, "test")
+
+	// Initialize with job state
+	s.mu.Lock()
+	now := time.Now()
+	s.configModTime = now.Add(-time.Hour)
+	cron, _ := ParseCron(cfg.Jobs[0].Schedule)
+	s.jobs = []*jobState{{
+		Job:        &cfg.Jobs[0],
+		Cron:       cron,
+		NextRun:    cron.Next(now),
+		LastRun:    now.Add(-time.Hour),
+		LastStatus: "submitted",
+		LastTaskID: "task-123",
+	}}
+	s.mu.Unlock()
+
+	// Rename job (change name from test-job-1 to test-job-renamed)
+	renamedConfig := `port: 19999
+log_level: info
+agent_url: https://localhost:9000
+
+jobs:
+  - name: test-job-renamed
+    schedule: "0 0 * * *"
+    prompt: "Test job 1"
+    tier: fast
+    timeout: 30s
+`
+	err = os.WriteFile(configPath, []byte(renamedConfig), 0644)
+	require.NoError(t, err)
+
+	time.Sleep(10 * time.Millisecond)
+	touchConfig(t, configPath)
+
+	// Trigger reload
+	s.checkAndReloadConfig()
+
+	// Verify old job removed, new job has fresh state
+	s.mu.RLock()
+	assert.Len(t, s.jobs, 1)
+	js := s.jobs[0]
+	js.mu.RLock()
+	assert.Equal(t, "test-job-renamed", js.Job.Name)
+	assert.Equal(t, "", js.LastStatus)  // Fresh state (no LastStatus)
+	assert.Equal(t, "", js.LastTaskID)  // Fresh state (no LastTaskID)
+	assert.True(t, js.LastRun.IsZero()) // Fresh state (no LastRun)
+	js.mu.RUnlock()
+	s.mu.RUnlock()
+}
+
+// Test 5: Running jobs not disrupted by reload
+func TestConfigReloadDoesNotDisruptRunningJob(t *testing.T) {
+	t.Parallel()
+
+	// Read v1 config
+	v1Content, err := os.ReadFile("../../testdata/scheduler/reload-v1.yaml")
+	require.NoError(t, err)
+
+	configPath := createTempConfig(t, string(v1Content))
+
+	cfg, err := Load(configPath)
+	require.NoError(t, err)
+
+	s := New(cfg, configPath, time.Minute, "test")
+
+	// Initialize with running job
+	s.mu.Lock()
+	now := time.Now()
+	s.configModTime = now.Add(-time.Hour)
+	cron, _ := ParseCron(cfg.Jobs[0].Schedule)
+	nextRunBeforeReload := cron.Next(now)
+	s.jobs = []*jobState{{
+		Job:       &cfg.Jobs[0],
+		Cron:      cron,
+		NextRun:   nextRunBeforeReload,
+		isRunning: true, // Job is currently running
+	}}
+	s.mu.Unlock()
+
+	// Modify config (change schedule)
+	modifiedConfig := `port: 19999
+log_level: info
+agent_url: https://localhost:9000
+
+jobs:
+  - name: test-job-1
+    schedule: "*/30 * * * *"
+    prompt: "Test job 1"
+    tier: fast
+    timeout: 30s
+`
+	err = os.WriteFile(configPath, []byte(modifiedConfig), 0644)
+	require.NoError(t, err)
+
+	time.Sleep(10 * time.Millisecond)
+	touchConfig(t, configPath)
+
+	// Trigger reload while job is running
+	s.checkAndReloadConfig()
+
+	// Verify job still running, NextRun NOT recalculated
+	s.mu.RLock()
+	js := s.jobs[0]
+	js.mu.RLock()
+	assert.True(t, js.isRunning)
+	assert.Equal(t, nextRunBeforeReload, js.NextRun) // NextRun not changed
+	assert.Equal(t, "*/30 * * * *", js.Job.Schedule) // But schedule updated
+	js.mu.RUnlock()
+	s.mu.RUnlock()
 }

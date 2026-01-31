@@ -96,7 +96,7 @@ case "${1:-help}" in
     test-sys)
         echo "Running system tests..."
         build_all
-        AGENCY_BIN_DIR="$(pwd)/bin" run_tests system
+        AGENCY_BIN_DIR="$(pwd)/bin" CLAUDE_BIN="$(pwd)/testdata/mock-claude" run_tests system
         ;;
     test-release)
         echo "Running full release test suite..."
@@ -192,7 +192,7 @@ case "${1:-help}" in
 
         DEPLOY_STEP="system tests"
         echo "Step 5/6: Running system tests..."
-        AGENCY_BIN_DIR="$(pwd)/bin" run_tests system
+        AGENCY_BIN_DIR="$(pwd)/bin" CLAUDE_BIN="$(pwd)/testdata/mock-claude" run_tests system
 
         DEPLOY_STEP="dist packaging"
         echo "Step 6/6: Creating distribution..."
@@ -353,6 +353,31 @@ case "${1:-help}" in
         echo "Stopping agency on $HOST..."
         ssh $SSH_OPTS "$HOST" "$REMOTE_DIR/stop.sh"
         ;;
+    deploy-prod-scheduler-config)
+        # Usage: ./build.sh deploy-prod-scheduler-config [host] [ssh-port] [ssh-key]
+        # Deploys only the scheduler config to production (hot-reload, no restart)
+        # Reads DEPLOY_HOST, DEPLOY_PORT, DEPLOY_KEY from .env as defaults
+        shift
+        [ -f .env ] && source .env
+        HOST="${1:-$DEPLOY_HOST}"
+        SSH_PORT="${2:-${DEPLOY_PORT:-22}}"
+        SSH_KEY="${3:-$DEPLOY_KEY}"
+        if [ -z "$HOST" ]; then
+            echo "Usage: $0 deploy-prod-scheduler-config [host] [ssh-port] [ssh-key]"
+            echo "  Or set DEPLOY_HOST, DEPLOY_PORT, DEPLOY_KEY in .env"
+            exit 1
+        fi
+        SSH_OPTS="-C -p $SSH_PORT"
+        [ -n "$SSH_KEY" ] && SSH_OPTS="$SSH_OPTS -i $SSH_KEY"
+
+        # Load ports.conf to get REMOTE_DIR
+        source ./deployment/ports.conf
+        set_agency_env prod
+
+        echo "Deploying scheduler config to $HOST..."
+        cat "$PWD/dist/configs/scheduler.yaml" | ssh $SSH_OPTS "$HOST" "cat > $REMOTE_DIR/configs/scheduler.yaml"
+        echo "Config deployed. Scheduler will auto-reload within 60 seconds."
+        ;;
     test-smoke)
         echo "=== Smoke Test ==="
         START_TIME=$(date +%s)
@@ -366,6 +391,7 @@ case "${1:-help}" in
         export AG_DISCOVERY_START=19000
         export AG_DISCOVERY_END=19010
         export AG_SCHEDULER_CONFIG="$PWD/configs/scheduler-smoke.yaml"
+        export AG_SCHEDULER_CONFIG_RELOAD_INTERVAL="1s"
         export AG_WEB_PASSWORD="${AG_WEB_PASSWORD:-smoketest}"
         export AGENCY_PROMPTS_DIR="$PWD/tests/smoke/fixtures/prompts"
         export AGENCY_MODE="dev"

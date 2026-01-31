@@ -1,0 +1,12 @@
+# Test fixture: invalid config for reload tests
+# This config has invalid syntax (invalid cron expression)
+port: 19999
+log_level: info
+agent_url: https://localhost:9000
+
+jobs:
+  - name: bad-job
+    schedule: "invalid cron expression"
+    prompt: "This will fail validation"
+    tier: fast
+    timeout: 30s

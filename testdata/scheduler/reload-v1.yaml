@@ -1,0 +1,17 @@
+# Test fixture: baseline config for reload tests
+port: 19999
+log_level: info
+agent_url: https://localhost:9000
+
+jobs:
+  - name: test-job-1
+    schedule: "0 0 * * *"
+    prompt: "Test job 1"
+    tier: fast
+    timeout: 30s
+
+  - name: test-job-2
+    schedule: "0 1 * * *"
+    prompt: "Test job 2"
+    tier: standard
+    timeout: 60s
