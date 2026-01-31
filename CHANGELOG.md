@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-01-31
+
+### Added
+- Unified task state machine extracted into taskstate package for better consistency
+- Documentation for event-driven task completion tracking design
+- Documentation for director restart recovery and task cancellation handling
+- Test compatibility analysis and risk assessment documentation
+
+### Changed
+- Scheduler now supports hot reload of configuration and other improvements
+- Consolidated error constants and TLS helpers into shared packages
+- Modernized type usage across codebase
+
+### Fixed
+- Fixed smoke tests to run alongside dev/prod deployments without conflicts
+- Fixed test race conditions and reliability issues
+- Fixed pattern matching issues
+
+### Refactored
+- Extracted unified task state machine into dedicated taskstate package
+- Consolidated TLS helper functions into tlsutil package
+- Use IsTerminal() helper instead of manual state checks for cleaner code
+- Simplified design by removing fallback polling from task completion tracking
+
 ## [3.0.3] - 2026-01-28
 
 ### Fixed
@@ -158,7 +182,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit, integration, component, and system tests
 - Race condition detection in tests
 
-[Unreleased]: https://github.com/alan-phobos-org/agency/compare/v3.0.3...HEAD
+[Unreleased]: https://github.com/alan-phobos-org/agency/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/alan-phobos-org/agency/compare/v3.0.3...v3.1.0
 [3.0.3]: https://github.com/alan-phobos-org/agency/compare/v3.0.2...v3.0.3
 [3.0.2]: https://github.com/alan-phobos-org/agency/compare/v3.0.1...v3.0.2
 [3.0.1]: https://github.com/alan-phobos-org/agency/compare/v3.0.0...v3.0.1
