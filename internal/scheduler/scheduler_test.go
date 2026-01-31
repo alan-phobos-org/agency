@@ -1100,7 +1100,7 @@ func TestConfigReload(t *testing.T) {
 	assert.Len(t, s.jobs, 2)
 	assert.Equal(t, "test-job-1", s.jobs[0].Job.Name)
 	assert.Equal(t, "Test job 1 MODIFIED", s.jobs[0].Job.Prompt) // Modified
-	assert.Equal(t, "test-job-3", s.jobs[1].Job.Name)             // New job
+	assert.Equal(t, "test-job-3", s.jobs[1].Job.Name)            // New job
 	s.mu.RUnlock()
 }
 

@@ -855,6 +855,9 @@ test.describe.serial('Agency Smoke Tests', () => {
     await screenshot(page, '26-metrics-tab-active');
 
     // Switch back to I/O tab
+    // Ensure session is still expanded and tab is visible
+    await expect(sessionBody).toBeVisible();
+    await ioTab.scrollIntoViewIfNeeded();
     await ioTab.click();
     await expect(ioTab).toHaveClass(/session-tab--active/);
     await screenshot(page, '27-back-to-io-tab');

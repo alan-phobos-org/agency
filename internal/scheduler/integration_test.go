@@ -590,13 +590,14 @@ jobs:
 		errChan <- s.Start()
 	}()
 
-	time.Sleep(100 * time.Millisecond)
-
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		s.Shutdown(ctx)
 	}()
+
+	// Wait for scheduler to be ready
+	testutil.WaitForHealthy(t, "https://localhost:19997/status", 5*time.Second)
 
 	// Verify initial state
 	resp1, err := testutil.HTTPClient(5 * time.Second).Get("https://localhost:19997/status")
