@@ -157,7 +157,7 @@ jobs:
       ## Task
       Run the ralph command and report its full output:
       ```
-      /home/claude/.local/bin/ralph -f prompts/client-server-vector-no-poc.md --detach
+      /home/claude/.local/bin/ralph -f prompts/client-server-vector-no-poc.md --detach --max-turns 100 --max-iterations 20
       ```
 
       Report the complete output from the ralph command inside <summary> tags...
