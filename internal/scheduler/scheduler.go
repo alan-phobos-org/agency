@@ -52,6 +52,10 @@ type jobState struct {
 type JobStatus struct {
 	Name        string     `json:"name"`
 	Schedule    string     `json:"schedule"`
+	Tier        string     `json:"tier"`
+	Timeout     string     `json:"timeout"`
+	AgentKind   string     `json:"agent_kind"`
+	AgentURL    string     `json:"agent_url,omitempty"`
 	NextRun     time.Time  `json:"next_run"`
 	LastRun     *time.Time `json:"last_run,omitempty"`
 	LastStatus  string     `json:"last_status,omitempty"`
@@ -487,6 +491,7 @@ func (s *Scheduler) updateJobStateQueue(js *jobState, status, queueID string) {
 func (s *Scheduler) handleStatus(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	jobs := s.jobs
+	config := s.config
 	s.mu.RUnlock()
 
 	jobStatuses := make([]JobStatus, len(jobs))
@@ -495,10 +500,16 @@ func (s *Scheduler) handleStatus(w http.ResponseWriter, r *http.Request) {
 		status := JobStatus{
 			Name:        js.Job.Name,
 			Schedule:    js.Job.Schedule,
+			Tier:        config.GetTier(js.Job),
+			Timeout:     config.GetTimeout(js.Job).String(),
+			AgentKind:   config.GetAgentKind(js.Job),
 			NextRun:     js.NextRun,
 			LastStatus:  js.LastStatus,
 			LastTaskID:  js.LastTaskID,
 			LastQueueID: js.LastQueueID,
+		}
+		if agentURL := config.GetAgentURL(js.Job); agentURL != config.AgentURL {
+			status.AgentURL = agentURL
 		}
 		if !js.LastRun.IsZero() {
 			lastRun := js.LastRun
@@ -509,10 +520,10 @@ func (s *Scheduler) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	configInfo := map[string]any{
-		"agent_url": s.config.AgentURL,
+		"agent_url": config.AgentURL,
 	}
-	if s.config.DirectorURL != "" {
-		configInfo["director_url"] = s.config.DirectorURL
+	if config.DirectorURL != "" {
+		configInfo["director_url"] = config.DirectorURL
 	}
 
 	resp := map[string]any{
