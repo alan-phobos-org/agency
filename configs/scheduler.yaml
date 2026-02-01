@@ -133,11 +133,11 @@ jobs:
       Newsletter status for {{.Date}}
       </summary>
 
-  - name: sre-teeworlds-ralph
+  - name: sre-teeworlds-ralph-fork
     schedule: "0 3 * * *"  # 03:00 UTC daily
     agent_kind: claude
     tier: heavy
-    timeout: 75m
+    timeout: 5m
     prompt: |
       # SRE Teeworlds Ralph Automation
 
@@ -149,15 +149,20 @@ jobs:
          git clone https://github.com/alan-phobos-org/sre-teeworlds.git
          cd sre-teeworlds
          ```
+      2. Remove existing PROGRESS.md if it exists:
+         ```
+         git rm PROGRESS.md
+         ```
 
       ## Task
-      Run the ralph command with the specified parameters:
+      Run the ralph command and report its full output:
       ```
-      ralph -f prompts/client-server-vector-no-poc.md --max-iterations 30 --max-turns 80 --timeout-total 3600
+      /home/claude/.local/bin/ralph -f prompts/client-server-vector-no-poc.md --detach
       ```
 
-      When complete, provide a brief summary in <summary> tags:
+      Report the complete output from the ralph command inside <summary> tags...
+
       <summary>
-      Ralph run status for {{.Date}}
+      (command output here...)
       </summary>
   

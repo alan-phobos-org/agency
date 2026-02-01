@@ -554,6 +554,7 @@ func (s *Scheduler) handleTrigger(w http.ResponseWriter, r *http.Request) {
 	jobName := chi.URLParam(r, "job")
 
 	s.mu.RLock()
+	defer s.mu.RUnlock() // Hold lock to prevent config reload from invalidating job pointer
 	var target *jobState
 	for _, js := range s.jobs {
 		if js.Job.Name == jobName {
@@ -561,7 +562,6 @@ func (s *Scheduler) handleTrigger(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	s.mu.RUnlock()
 
 	if target == nil {
 		api.WriteJSON(w, http.StatusNotFound, map[string]string{

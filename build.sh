@@ -370,6 +370,11 @@ case "${1:-help}" in
         SSH_OPTS="-C -p $SSH_PORT"
         [ -n "$SSH_KEY" ] && SSH_OPTS="$SSH_OPTS -i $SSH_KEY"
 
+        # Copy latest config to dist
+        echo "Copying scheduler config to dist..."
+        mkdir -p dist/configs
+        cp configs/scheduler.yaml dist/configs/scheduler.yaml
+
         # Load ports.conf to get REMOTE_DIR
         source ./deployment/ports.conf
         set_agency_env prod
@@ -683,12 +688,13 @@ case "${1:-help}" in
         echo "  check           Run lint + unit tests (pre-commit check)"
         echo ""
         echo "Deployment:"
-        echo "  deploy-local                               Deploy locally (dev mode) with full test suite"
-        echo "  deploy-local-quick                         Deploy locally (dev mode) - skips integration/system tests"
-        echo "  stop-local                                 Stop local dev instance"
-        echo "  quick-test                                 Fast iteration: build + deploy-quick + smoke tests"
-        echo "  deploy-prod [host] [ssh-port] [ssh-key]    Deploy to remote (uses .env DEPLOY_* vars)"
-        echo "  stop-prod [host] [ssh-port] [ssh-key]      Stop remote agency (uses .env DEPLOY_* vars)"
+        echo "  deploy-local                                        Deploy locally (dev mode) with full test suite"
+        echo "  deploy-local-quick                                  Deploy locally (dev mode) - skips integration/system tests"
+        echo "  stop-local                                          Stop local dev instance"
+        echo "  quick-test                                          Fast iteration: build + deploy-quick + smoke tests"
+        echo "  deploy-prod [host] [ssh-port] [ssh-key]             Deploy to remote (uses .env DEPLOY_* vars)"
+        echo "  deploy-prod-scheduler-config [host] [port] [key]    Deploy only scheduler config to remote (hot-reload)"
+        echo "  stop-prod [host] [ssh-port] [ssh-key]               Stop remote agency (uses .env DEPLOY_* vars)"
         echo ""
         echo "Release workflow:"
         echo "  prepare-release Run all checks, tests, and show changes since last release"
