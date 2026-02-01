@@ -553,8 +553,8 @@ func (s *Scheduler) handleShutdown(w http.ResponseWriter, r *http.Request) {
 func (s *Scheduler) handleTrigger(w http.ResponseWriter, r *http.Request) {
 	jobName := chi.URLParam(r, "job")
 
+	// Find the job while holding read lock
 	s.mu.RLock()
-	defer s.mu.RUnlock() // Hold lock to prevent config reload from invalidating job pointer
 	var target *jobState
 	for _, js := range s.jobs {
 		if js.Job.Name == jobName {
@@ -562,6 +562,7 @@ func (s *Scheduler) handleTrigger(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
+	s.mu.RUnlock()
 
 	if target == nil {
 		api.WriteJSON(w, http.StatusNotFound, map[string]string{
@@ -584,7 +585,7 @@ func (s *Scheduler) handleTrigger(w http.ResponseWriter, r *http.Request) {
 	target.isRunning = true
 	target.mu.Unlock()
 
-	// Run job synchronously so caller can see result
+	// Run job synchronously (lock is now released, allowing hot reloads to proceed)
 	s.runJob(target)
 
 	// Return current state
