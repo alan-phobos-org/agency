@@ -271,7 +271,12 @@ func (s *Scheduler) applyConfig(newConfig *Config, modTime time.Time) {
 			oldState.Job = job   // Use new definition (prompt, timeout, tier, etc.)
 			oldState.Cron = cron // Use new schedule
 			if !wasRunning {
-				oldState.NextRun = cron.Next(now) // Recalculate if not running
+				nextRun := cron.Next(now) // Recalculate if not running
+				if nextRun.IsZero() {
+					// Defensive: if Next() can't find a match, skip far into the future
+					nextRun = now.Add(24 * time.Hour)
+				}
+				oldState.NextRun = nextRun
 			}
 			// Keep: LastRun, LastStatus, LastTaskID, LastQueueID, isRunning
 			oldState.mu.Unlock()

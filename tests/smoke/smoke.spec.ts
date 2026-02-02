@@ -475,7 +475,7 @@ test.describe.serial('Agency Smoke Tests', () => {
     await expect(smokeTestJob).toBeVisible({ timeout: 5000 });
   });
 
-  test.skip('5. Trigger Smoke Nightly Maintenance Job', async ({ page }) => {
+  test('5. Trigger Smoke Nightly Maintenance Job', async ({ page }) => {
     test.setTimeout(150000); // 2.5 minutes for simplified health check
 
     await login(page);
