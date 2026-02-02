@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.2] - 2026-02-02
+
+### Fixed
+- Added defensive check in scheduler config reload to handle edge case where cron.Next() returns zero time
+
 ## [3.1.1] - 2026-02-01
 
 ### Fixed
@@ -187,7 +192,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit, integration, component, and system tests
 - Race condition detection in tests
 
-[Unreleased]: https://github.com/alan-phobos-org/agency/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/alan-phobos-org/agency/compare/v3.1.2...HEAD
+[3.1.2]: https://github.com/alan-phobos-org/agency/compare/v3.1.1...v3.1.2
+[3.1.1]: https://github.com/alan-phobos-org/agency/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/alan-phobos-org/agency/compare/v3.0.3...v3.1.0
 [3.0.3]: https://github.com/alan-phobos-org/agency/compare/v3.0.2...v3.0.3
 [3.0.2]: https://github.com/alan-phobos-org/agency/compare/v3.0.1...v3.0.2
