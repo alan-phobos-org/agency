@@ -137,7 +137,7 @@ jobs:
     schedule: "0 3 * * *"  # 03:00 UTC daily
     agent_kind: claude
     tier: heavy
-    timeout: 5m
+    timeout: 50m
     prompt: |
       # SRE Teeworlds Ralph Automation
 
