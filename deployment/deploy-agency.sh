@@ -119,9 +119,10 @@ fi
 # Copy configs if they exist
 if [ -n "$SCHEDULER_CONFIG" ] && [ -f "$SCHEDULER_CONFIG" ]; then
     echo "Copying scheduler config (adjusting ports for $MODE mode)..."
-    # Transform director_url and agent_url ports to match deployment mode
-    sed -e "s|director_url: http://localhost:[0-9]*|director_url: http://localhost:$WEB_INTERNAL_PORT|" \
-        -e "s|agent_url: http://localhost:[0-9]*|agent_url: http://localhost:$AGENT_PORT|" \
+    # Transform port, director_url and agent_url ports to match deployment mode
+    sed -e "s|^port: [0-9]*|port: $SCHEDULER_PORT|" \
+        -e "s|director_url: http://localhost:[0-9]*|director_url: http://localhost:$WEB_INTERNAL_PORT|" \
+        -e "s|agent_url: https://localhost:[0-9]*|agent_url: https://localhost:$AGENT_PORT|" \
         "$SCHEDULER_CONFIG" | ssh $SSH_OPTS "$REMOTE_HOST" "cat > $REMOTE_DIR/configs/scheduler.yaml"
 fi
 

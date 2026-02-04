@@ -155,14 +155,18 @@ jobs:
          ```
 
       ## Task
-      Run the ralph command and report its full output:
+      Run the following command in the root of the cloned repo:
       ```
-      /home/claude/.local/bin/ralph -f prompts/client-server-vector-no-poc.md --detach --max-turns 100 --max-iterations 20
+      source ralph.sh
       ```
 
-      Report the complete output from the ralph command inside <summary> tags...
+      This command will fork a background task and return:
+      - Capture the immediate output of the command
+      - Wait 10 seconds
+      - `tail -n 50` the log file the immediate output references
 
+      Report a summary of both outputs within summary tags:
       <summary>
-      (command output here...)
+        (immediate output + tail output summary)
       </summary>
   
