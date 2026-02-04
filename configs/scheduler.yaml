@@ -169,4 +169,40 @@ jobs:
       <summary>
         (immediate output + tail output summary)
       </summary>
-  
+
+  - name: sre-libarchive-ralph-fork
+    schedule: "0 5 * * *"  # 05:00 UTC daily
+    agent_kind: claude
+    tier: heavy
+    timeout: 50m
+    prompt: |
+      # SRE libarchive Ralph Automation
+
+      Run the ralph automation task on the sre-libarchive repository.
+
+      ## Setup
+      1. Clone the sre-libarchive repository:
+         ```
+         git clone https://github.com/alan-phobos-org/sre-libarchive.git
+         cd sre-libarchive
+         ```
+      2. Remove existing PROGRESS.md if it exists:
+         ```
+         git rm PROGRESS.md
+         ```
+
+      ## Task
+      Run the following command in the root of the cloned repo:
+      ```
+      source ralph.sh
+      ```
+
+      This command will fork a background task and return:
+      - Capture the immediate output of the command
+      - Wait 10 seconds
+      - `tail -n 50` the log file the immediate output references
+
+      Report a summary of both outputs within summary tags:
+      <summary>
+        (immediate output + tail output summary)
+      </summary>
