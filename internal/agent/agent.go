@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -446,8 +445,7 @@ func setTaskCompletion(task *Task, completedAt time.Time) {
 // Returns 400 if validation fails, 409 if agent is busy.
 func (a *Agent) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	var req TaskRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		api.WriteError(w, http.StatusBadRequest, api.ErrorValidation, "Invalid JSON: "+err.Error())
+	if !api.DecodeJSON(w, r, &req) {
 		return
 	}
 
@@ -1141,17 +1139,15 @@ func (a *Agent) handleListHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse pagination params
-	page := 1
-	limit := 20
-	if p := r.URL.Query().Get("page"); p != "" {
-		if v, err := strconv.Atoi(p); err == nil && v > 0 {
-			page = v
-		}
+	page, err := api.ParseIntParam(r.URL.Query().Get("page"), 1, 10000, 1)
+	if err != nil {
+		api.WriteError(w, http.StatusBadRequest, api.ErrorValidation, "page "+err.Error())
+		return
 	}
-	if l := r.URL.Query().Get("limit"); l != "" {
-		if v, err := strconv.Atoi(l); err == nil && v > 0 {
-			limit = v
-		}
+	limit, err := api.ParseIntParam(r.URL.Query().Get("limit"), 1, 1000, 20)
+	if err != nil {
+		api.WriteError(w, http.StatusBadRequest, api.ErrorValidation, "limit "+err.Error())
+		return
 	}
 
 	result := a.history.List(history.ListOptions{
@@ -1226,10 +1222,13 @@ func (a *Agent) handleLogs(w http.ResponseWriter, r *http.Request) {
 			q.Until = t
 		}
 	}
-	if limit := r.URL.Query().Get("limit"); limit != "" {
-		if v, err := strconv.Atoi(limit); err == nil && v > 0 {
-			q.Limit = v
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		limit, err := api.ParseIntParam(limitStr, 1, 10000, 100)
+		if err != nil {
+			api.WriteError(w, http.StatusBadRequest, api.ErrorValidation, "limit "+err.Error())
+			return
 		}
+		q.Limit = limit
 	}
 
 	result := a.log.Query(q)

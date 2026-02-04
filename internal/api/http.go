@@ -20,6 +20,16 @@ func WriteError(w http.ResponseWriter, status int, code, message string) {
 	})
 }
 
+// DecodeJSON decodes JSON from the request body into v.
+// Returns true on success, false on error (and writes error response).
+func DecodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		WriteError(w, http.StatusBadRequest, ErrorValidation, "Invalid JSON: "+err.Error())
+		return false
+	}
+	return true
+}
+
 // CurrentTask represents info about a running task (used in status responses).
 type CurrentTask struct {
 	ID            string `json:"id"`

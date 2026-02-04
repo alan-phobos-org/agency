@@ -20,6 +20,7 @@ import (
 var (
 	writeJSON  = api.WriteJSON
 	writeError = api.WriteError
+	decodeJSON = api.DecodeJSON
 )
 
 //go:embed templates/*.html
@@ -156,8 +157,7 @@ type TaskSubmitResponse struct {
 // HandleTaskSubmit proxies task submission to the selected agent
 func (h *Handlers) HandleTaskSubmit(w http.ResponseWriter, r *http.Request) {
 	var req TaskSubmitRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, api.ErrorValidation, "Invalid JSON: "+err.Error())
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -469,8 +469,7 @@ type SessionTaskRequest struct {
 // HandleAddSessionTask adds a task to a session
 func (h *Handlers) HandleAddSessionTask(w http.ResponseWriter, r *http.Request) {
 	var req SessionTaskRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, api.ErrorValidation, "Invalid JSON: "+err.Error())
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -491,8 +490,7 @@ type SessionTaskUpdateRequest struct {
 // HandleUpdateSessionTask updates a task's state within a session
 func (h *Handlers) HandleUpdateSessionTask(w http.ResponseWriter, r *http.Request, sessionID, taskID string) {
 	var req SessionTaskUpdateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, api.ErrorValidation, "Invalid JSON: "+err.Error())
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 

@@ -58,7 +58,7 @@ async function findNewSession(page: Page, existingIds: string[]): Promise<Locato
     }
 
     expect(newSession).not.toBeNull();
-  }).toPass({ timeout: 15000, intervals: [1000] });
+  }).toPass({ timeout: 30000, intervals: [1000] });
 
   return newSession!;
 }

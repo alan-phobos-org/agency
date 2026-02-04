@@ -37,8 +37,7 @@ type QueueSubmitResponse struct {
 // HandleQueueSubmit adds a task to the queue
 func (h *QueueHandlers) HandleQueueSubmit(w http.ResponseWriter, r *http.Request) {
 	var req QueueSubmitRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, api.ErrorValidation, "Invalid JSON: "+err.Error())
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -226,8 +225,7 @@ func (h *QueueHandlers) HandleQueueCancel(w http.ResponseWriter, r *http.Request
 // This replaces direct agent submission with queue-based submission
 func (h *QueueHandlers) HandleTaskSubmitViaQueue(w http.ResponseWriter, r *http.Request) {
 	var req TaskSubmitRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, api.ErrorValidation, "Invalid JSON: "+err.Error())
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
