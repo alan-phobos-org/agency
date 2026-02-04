@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.4] - 2026-02-04
+
+### Added
+- New scheduled job: sre-libarchive-ralph-fork (daily at 05:00 UTC)
+
+### Changed
+- Improved HTTP request validation with reusable helper functions
+- Refactored parameter parsing for cleaner error handling
+
+### Fixed
+- Fixed scheduler config port replacement in deployment script (prod deployments now use correct ports)
+
 ## [3.1.3] - 2026-02-02
 
 ### Changed
