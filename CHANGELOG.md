@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.5] - 2026-02-07
+
+### Added
+- Bind address flag (`-bind`) for agents and scheduler, defaulting to `127.0.0.1` with security warning for non-loopback addresses
+- Scheduler job status now includes `last_error` for debugging failed submissions
+- Scheduler status endpoint exposes `port` and `config_path` in config info
+
+### Changed
+- HTTP servers now set read/write/idle timeouts and max header size across all components
+- TLS client rewritten with per-request loopback detection instead of blanket InsecureSkipVerify; supports `AGENCY_TLS_INSECURE` and `AGENCY_TLS_INSECURE_HOSTS` env vars
+- Removed `NewInsecureHTTPClient`; all callers use `NewHTTPClient` with per-request TLS policy
+- Staticcheck lint errors are no longer silently swallowed
+
+### Fixed
+- Prod/dev directory separation: prod deploys to `~/agency-prod/` to avoid git operations overwriting live configs
+- Scheduler config port transforms applied correctly in all deployment paths (per-job agent URLs handled independently for claude vs codex)
+- One-time migration in deploy script to stop legacy `~/agency/` services
+- Smoke tests read scheduler config path from status endpoint instead of hardcoding
+
 ## [3.1.4] - 2026-02-04
 
 ### Added
@@ -209,7 +228,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit, integration, component, and system tests
 - Race condition detection in tests
 
-[Unreleased]: https://github.com/alan-phobos-org/agency/compare/v3.1.3...HEAD
+[Unreleased]: https://github.com/alan-phobos-org/agency/compare/v3.1.5...HEAD
+[3.1.5]: https://github.com/alan-phobos-org/agency/compare/v3.1.4...v3.1.5
+[3.1.4]: https://github.com/alan-phobos-org/agency/compare/v3.1.3...v3.1.4
 [3.1.3]: https://github.com/alan-phobos-org/agency/compare/v3.1.2...v3.1.3
 [3.1.2]: https://github.com/alan-phobos-org/agency/compare/v3.1.1...v3.1.2
 [3.1.1]: https://github.com/alan-phobos-org/agency/compare/v3.1.0...v3.1.1
