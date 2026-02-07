@@ -106,7 +106,7 @@ ssh $SSH_OPTS "$REMOTE_HOST" "[ -f $REMOTE_DIR/stop.sh ] && $REMOTE_DIR/stop.sh 
 if [ "$MODE" = "prod" ]; then
     ssh $SSH_OPTS "$REMOTE_HOST" "[ -f ~/agency/stop.sh ] && ~/agency/stop.sh && echo 'Stopped legacy ~/agency/ services' || true"
     # Also kill any processes still running from the old location
-    ssh $SSH_OPTS "$REMOTE_HOST" "pkill -f '/home/claude/agency/bin/ag-' 2>/dev/null && echo 'Killed legacy agency processes' || true"
+    ssh $SSH_OPTS "$REMOTE_HOST" "pkill -f '[/]home/claude/agency/bin/ag-' 2>/dev/null && echo 'Killed legacy agency processes' || true"
 fi
 
 # Copy binaries
