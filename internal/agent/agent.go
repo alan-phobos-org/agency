@@ -6,11 +6,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -129,8 +131,7 @@ type Agent struct {
 	currentTask *Task
 	tasks       map[string]*Task
 
-	server   *http.Server
-	shutdown chan struct{}
+	server *http.Server
 }
 
 // New creates a new Agent
@@ -141,6 +142,9 @@ func New(cfg *config.Config, version string) *Agent {
 // NewWithRunner creates a new Agent with a specific CLI runner.
 func NewWithRunner(cfg *config.Config, version string, runner Runner) *Agent {
 	cfg.AgentKind = runner.Kind()
+	if cfg.Bind == "" {
+		cfg.Bind = config.DefaultBind
+	}
 
 	// Initialize structured logger
 	logLevel := logging.LevelInfo
@@ -181,7 +185,6 @@ func NewWithRunner(cfg *config.Config, version string, runner Runner) *Agent {
 		agentKind: runner.Kind(),
 		state:     StateIdle,
 		tasks:     make(map[string]*Task),
-		shutdown:  make(chan struct{}),
 	}
 }
 
@@ -230,7 +233,7 @@ func (a *Agent) Router() chi.Router {
 
 // Start starts the agent server
 func (a *Agent) Start() error {
-	addr := fmt.Sprintf(":%d", a.config.Port)
+	addr := net.JoinHostPort(a.config.Bind, strconv.Itoa(a.config.Port))
 
 	// Setup TLS certificates
 	certDir := filepath.Join(a.config.SessionDir, ".certs")
@@ -242,15 +245,20 @@ func (a *Agent) Start() error {
 	}
 
 	a.server = &http.Server{
-		Addr:      addr,
-		Handler:   a.Router(),
-		TLSConfig: getTLSConfig(),
+		Addr:              addr,
+		Handler:           a.Router(),
+		TLSConfig:         getTLSConfig(),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+		MaxHeaderBytes:    1 << 20, // 1 MiB
 	}
 
 	a.log.Info("agent starting", map[string]any{
 		"addr":    addr,
 		"version": a.version,
-		"model":   a.config.Claude.Model,
+		"model":   a.defaultModel(),
 		"tls":     "enabled",
 	})
 	return a.server.ListenAndServeTLS(certPath, keyPath)
@@ -258,8 +266,6 @@ func (a *Agent) Start() error {
 
 // Shutdown gracefully shuts down the agent
 func (a *Agent) Shutdown(ctx context.Context) error {
-	close(a.shutdown)
-
 	// Cancel any running task
 	a.mu.Lock()
 	if a.currentTask != nil {

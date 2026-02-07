@@ -25,6 +25,7 @@ func TestParse(t *testing.T) {
 			yaml: "port: 9000",
 			want: &Config{
 				Port:       9000,
+				Bind:       DefaultBind,
 				Name:       DefaultName,
 				LogLevel:   DefaultLogLevel,
 				SessionDir: expectedSessionDir,
@@ -52,6 +53,7 @@ claude:
 `,
 			want: &Config{
 				Port:       9001,
+				Bind:       DefaultBind,
 				Name:       DefaultName,
 				LogLevel:   "debug",
 				SessionDir: expectedSessionDir,
@@ -130,6 +132,7 @@ func TestDefault(t *testing.T) {
 
 	cfg := Default()
 	require.Equal(t, DefaultPort, cfg.Port)
+	require.Equal(t, DefaultBind, cfg.Bind)
 	require.Equal(t, DefaultName, cfg.Name)
 	require.Equal(t, DefaultLogLevel, cfg.LogLevel)
 	require.Equal(t, DefaultSessionPath(), cfg.SessionDir)

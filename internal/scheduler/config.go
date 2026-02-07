@@ -12,6 +12,7 @@ import (
 // Config represents the scheduler configuration
 type Config struct {
 	Port        int    `yaml:"port"`
+	Bind        string `yaml:"bind"` // Address to bind to (default: 127.0.0.1)
 	LogLevel    string `yaml:"log_level"`
 	DirectorURL string `yaml:"director_url"` // Primary target for session tracking (optional)
 	AgentURL    string `yaml:"agent_url"`    // Fallback if director unavailable
@@ -33,6 +34,7 @@ type Job struct {
 // Defaults
 const (
 	DefaultPort      = 9100
+	DefaultBind      = "127.0.0.1"
 	DefaultLogLevel  = "info"
 	DefaultAgentURL  = "https://localhost:9000"
 	DefaultTier      = api.TierStandard
@@ -44,6 +46,7 @@ const (
 func Parse(data []byte) (*Config, error) {
 	cfg := &Config{
 		Port:      DefaultPort,
+		Bind:      DefaultBind,
 		LogLevel:  DefaultLogLevel,
 		AgentURL:  DefaultAgentURL,
 		AgentKind: DefaultAgentKind,
@@ -73,6 +76,9 @@ func Load(path string) (*Config, error) {
 func (c *Config) Validate() error {
 	if c.Port < 1 || c.Port > 65535 {
 		return fmt.Errorf("port must be between 1 and 65535, got %d", c.Port)
+	}
+	if c.Bind == "" {
+		return fmt.Errorf("bind must not be empty")
 	}
 	if c.AgentKind != "" && c.AgentKind != api.AgentKindClaude && c.AgentKind != api.AgentKindCodex {
 		return fmt.Errorf("agent_kind must be claude or codex, got %q", c.AgentKind)

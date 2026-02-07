@@ -18,6 +18,7 @@ var version = "dev"
 func main() {
 	configPath := flag.String("config", "", "Path to config file")
 	port := flag.Int("port", 0, "Port to listen on (overrides config)")
+	bind := flag.String("bind", "", "Address to bind to (overrides config)")
 	showVersion := flag.Bool("version", false, "Show version")
 	flag.Parse()
 
@@ -43,6 +44,13 @@ func main() {
 	// Override port if specified
 	if *port > 0 {
 		cfg.Port = *port
+	}
+	// Override bind if specified
+	if *bind != "" {
+		cfg.Bind = *bind
+	}
+	if cfg.Bind != "127.0.0.1" && cfg.Bind != "localhost" && cfg.Bind != "::1" {
+		fmt.Fprintf(os.Stderr, "Warning: agent bind=%q exposes unauthenticated endpoints. Prefer 127.0.0.1.\n", cfg.Bind)
 	}
 
 	// Create and start agent

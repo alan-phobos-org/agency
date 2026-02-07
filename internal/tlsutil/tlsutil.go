@@ -106,40 +106,86 @@ func DefaultTLSConfig() *tls.Config {
 	}
 }
 
-// isLocalhostURL returns true if the URL points to localhost or 127.0.0.1.
-func isLocalhostURL(url string) bool {
-	return strings.HasPrefix(url, "https://localhost") ||
-		strings.HasPrefix(url, "https://127.0.0.1")
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
-// NewHTTPClient creates an HTTP client that skips TLS verification for localhost
-// HTTPS URLs (which typically use self-signed certificates).
-func NewHTTPClient(timeout time.Duration, urls ...string) *http.Client {
-	client := &http.Client{Timeout: timeout}
+type loopbackTLSBypassTransport struct {
+	secure        http.RoundTripper
+	insecure      http.RoundTripper
+	insecureAll   bool
+	insecureHosts map[string]struct{} // hostnames or IPs (as in URL.Hostname())
+}
 
-	for _, url := range urls {
-		if isLocalhostURL(url) {
-			client.Transport = &http.Transport{
-				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: true,
-				},
+func (t *loopbackTLSBypassTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if t.insecureAll {
+		return t.insecure.RoundTrip(req)
+	}
+	if req == nil || req.URL == nil {
+		return t.secure.RoundTrip(req)
+	}
+
+	if req.URL.Scheme == "https" {
+		host := req.URL.Hostname()
+		if _, ok := t.insecureHosts[host]; ok || isLoopbackHost(host) {
+			return t.insecure.RoundTrip(req)
+		}
+	}
+	return t.secure.RoundTrip(req)
+}
+
+func cloneDefaultTransport() *http.Transport {
+	if dt, ok := http.DefaultTransport.(*http.Transport); ok {
+		return dt.Clone()
+	}
+	// Extremely defensive fallback.
+	return &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+	}
+}
+
+// NewHTTPClient creates an HTTP client that:
+// - Uses normal TLS verification by default
+// - Allows self-signed TLS for loopback HTTPS targets (localhost/127.0.0.1/::1)
+//
+// To force-disable TLS verification for all HTTPS (not recommended), set
+// AGENCY_TLS_INSECURE=1.
+// To whitelist additional hosts for self-signed TLS (not recommended), set
+// AGENCY_TLS_INSECURE_HOSTS to a comma-separated list of hostnames/IPs.
+func NewHTTPClient(timeout time.Duration, _ ...string) *http.Client {
+	secure := cloneDefaultTransport()
+	secure.TLSClientConfig = DefaultTLSConfig()
+
+	insecure := cloneDefaultTransport()
+	insecureTLS := DefaultTLSConfig()
+	insecureTLS.InsecureSkipVerify = true
+	insecure.TLSClientConfig = insecureTLS
+
+	insecureHosts := map[string]struct{}{}
+	if raw := os.Getenv("AGENCY_TLS_INSECURE_HOSTS"); raw != "" {
+		for _, host := range strings.Split(raw, ",") {
+			host = strings.TrimSpace(host)
+			if host == "" {
+				continue
 			}
-			break
+			insecureHosts[host] = struct{}{}
 		}
 	}
 
-	return client
-}
-
-// NewInsecureHTTPClient creates an HTTP client that always skips TLS verification.
-// Use this only for internal service communication where self-signed certificates are expected.
-func NewInsecureHTTPClient(timeout time.Duration) *http.Client {
-	return &http.Client{
+	insecureAll := os.Getenv("AGENCY_TLS_INSECURE") == "1"
+	client := &http.Client{
 		Timeout: timeout,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-			},
+		Transport: &loopbackTLSBypassTransport{
+			secure:        secure,
+			insecure:      insecure,
+			insecureAll:   insecureAll,
+			insecureHosts: insecureHosts,
 		},
 	}
+
+	return client
 }

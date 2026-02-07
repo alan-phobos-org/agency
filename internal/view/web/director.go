@@ -266,8 +266,13 @@ func (d *Director) Start() error {
 	addr := fmt.Sprintf("%s:%d", d.config.Bind, d.config.Port)
 
 	d.server = &http.Server{
-		Addr:    addr,
-		Handler: d.Router(),
+		Addr:              addr,
+		Handler:           d.Router(),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+		MaxHeaderBytes:    1 << 20, // 1 MiB
 	}
 
 	// Set shutdown callback for API-triggered shutdown
@@ -298,8 +303,13 @@ func (d *Director) Start() error {
 	if d.config.InternalPort > 0 {
 		internalAddr := fmt.Sprintf("127.0.0.1:%d", d.config.InternalPort)
 		d.internalServer = &http.Server{
-			Addr:    internalAddr,
-			Handler: d.InternalRouter(),
+			Addr:              internalAddr,
+			Handler:           d.InternalRouter(),
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      30 * time.Second,
+			IdleTimeout:       2 * time.Minute,
+			MaxHeaderBytes:    1 << 20, // 1 MiB
 		}
 		go func() {
 			fmt.Fprintf(os.Stderr, "Internal API starting on http://%s (localhost only, no auth)\n", internalAddr)

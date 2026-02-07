@@ -26,6 +26,11 @@ async function screenshot(page: Page, name: string): Promise<void> {
   console.log(`Screenshot saved: ${filepath}`);
 }
 
+function resolveFromRepoRoot(p: string): string {
+  const repoRoot = path.resolve(__dirname, '../..');
+  return path.isAbsolute(p) ? p : path.resolve(repoRoot, p);
+}
+
 /**
  * Helper function to perform login and wait for dashboard
  * Reduces code duplication and improves test speed
@@ -562,9 +567,11 @@ test.describe.serial('Agency Smoke Tests', () => {
     const beforeData = await statusBefore.json();
     const jobCountBefore = beforeData.jobs.length;
 
-    // Modify scheduler config (add a test job)
-    // Use __dirname to get path relative to this test file (tests/smoke/)
-    const configPath = path.join(__dirname, '../../configs/scheduler-smoke.yaml');
+    // Modify the live scheduler config file (the one the scheduler is watching).
+    // This is exposed via /status as config.config_path.
+    const rawConfigPath = beforeData?.config?.config_path;
+    expect(typeof rawConfigPath).toBe('string');
+    const configPath = resolveFromRepoRoot(rawConfigPath);
     const configContent = fs.readFileSync(configPath, 'utf-8');
 
     // Append a new job to the config
@@ -781,9 +788,8 @@ test.describe.serial('Agency Smoke Tests', () => {
 
     await login(page);
 
-    // Use __dirname to get path relative to this test file (tests/smoke/)
-    const configPath = path.join(__dirname, '../../configs/scheduler-smoke.yaml');
-    const originalConfig = fs.readFileSync(configPath, 'utf-8');
+    let configPath = '';
+    let originalConfig = '';
 
     try {
       // Get initial state of smoke-test job
@@ -792,6 +798,11 @@ test.describe.serial('Agency Smoke Tests', () => {
       });
       expect(statusBefore.ok()).toBeTruthy();
       const beforeData = await statusBefore.json();
+      configPath = beforeData?.config?.config_path;
+      expect(typeof configPath).toBe('string');
+      configPath = resolveFromRepoRoot(configPath);
+      originalConfig = fs.readFileSync(configPath, 'utf-8');
+
       const smokeTestJobBefore = beforeData.jobs.find(j => j.name === 'smoke-test');
       expect(smokeTestJobBefore).toBeDefined();
       expect(smokeTestJobBefore.timeout).toBe('1m0s'); // Go normalizes 60s to 1m0s
@@ -891,20 +902,24 @@ test.describe.serial('Agency Smoke Tests', () => {
 
     } finally {
       // Restore original config
-      fs.writeFileSync(configPath, originalConfig);
-      console.log('Restored original config');
+      if (configPath && originalConfig) {
+        fs.writeFileSync(configPath, originalConfig);
+        console.log('Restored original config');
+      }
 
       // Wait for scheduler to reload back to original state
-      await expect(async () => {
-        const statusRestored = await page.request.get('https://localhost:19010/status', {
-          ignoreHTTPSErrors: true,
-        });
-        const restoredData = await statusRestored.json();
-        const smokeTestJobRestored = restoredData.jobs.find(j => j.name === 'smoke-test');
-        expect(smokeTestJobRestored).toBeDefined();
-        expect(smokeTestJobRestored.timeout).toBe('1m0s'); // Go normalizes 60s to 1m0s
-      }).toPass({ timeout: 10000, intervals: [1000] });
-      console.log('Config restored and reloaded');
+      if (configPath && originalConfig) {
+        await expect(async () => {
+          const statusRestored = await page.request.get('https://localhost:19010/status', {
+            ignoreHTTPSErrors: true,
+          });
+          const restoredData = await statusRestored.json();
+          const smokeTestJobRestored = restoredData.jobs.find(j => j.name === 'smoke-test');
+          expect(smokeTestJobRestored).toBeDefined();
+          expect(smokeTestJobRestored.timeout).toBe('1m0s'); // Go normalizes 60s to 1m0s
+        }).toPass({ timeout: 10000, intervals: [1000] });
+        console.log('Config restored and reloaded');
+      }
     }
   });
 

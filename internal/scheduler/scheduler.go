@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -67,6 +69,9 @@ type JobStatus struct {
 
 // New creates a new scheduler
 func New(config *Config, configPath string, configReloadInterval time.Duration, version string) *Scheduler {
+	if config.Bind == "" {
+		config.Bind = DefaultBind
+	}
 	return &Scheduler{
 		config:               config,
 		configPath:           configPath,
@@ -124,9 +129,14 @@ func (s *Scheduler) Start() error {
 	}
 
 	s.server = &http.Server{
-		Addr:      fmt.Sprintf(":%d", s.config.Port),
-		Handler:   router,
-		TLSConfig: getTLSConfig(),
+		Addr:              net.JoinHostPort(s.config.Bind, strconv.Itoa(s.config.Port)),
+		Handler:           router,
+		TLSConfig:         getTLSConfig(),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      2 * time.Minute,
+		IdleTimeout:       2 * time.Minute,
+		MaxHeaderBytes:    1 << 20, // 1 MiB
 	}
 	s.running = true
 	s.mu.Unlock()
@@ -137,7 +147,7 @@ func (s *Scheduler) Start() error {
 	// Start config watcher
 	go s.watchConfig()
 
-	log.Printf("scheduler action=starting port=%d jobs=%d config_reload_interval=%s", s.config.Port, len(s.jobs), s.configReloadInterval)
+	log.Printf("scheduler action=starting addr=%s jobs=%d config_reload_interval=%s", s.server.Addr, len(s.jobs), s.configReloadInterval)
 	s.mu.RLock()
 	for _, js := range s.jobs {
 		log.Printf("  job=%s schedule=%q next_run=%s", js.Job.Name, js.Job.Schedule, js.NextRun.Format(time.RFC3339))

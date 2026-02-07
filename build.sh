@@ -122,7 +122,11 @@ case "${1:-help}" in
     lint)
         echo "Running linters..."
         gofmt -l -w .
-        staticcheck ./... 2>/dev/null || echo "staticcheck not installed, skipping"
+        if command -v staticcheck >/dev/null 2>&1; then
+            staticcheck ./...
+        else
+            echo "staticcheck not installed, skipping"
+        fi
         ;;
     check)
         $0 lint && $0 test

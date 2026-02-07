@@ -2,7 +2,6 @@ package web
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"phobos.org.uk/agency/internal/api"
+	"phobos.org.uk/agency/internal/tlsutil"
 )
 
 // ComponentStatus represents the status of a discovered component
@@ -79,15 +79,8 @@ func NewDiscovery(cfg DiscoveryConfig) *Discovery {
 		maxFailures:     cfg.MaxFailures,
 		selfPort:        cfg.SelfPort,
 		components:      make(map[string]*ComponentStatus),
-		client: &http.Client{
-			Timeout: 500 * time.Millisecond,
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: true, // Accept self-signed certificates for localhost
-				},
-			},
-		},
-		doneCh: make(chan struct{}),
+		client:          tlsutil.NewHTTPClient(500 * time.Millisecond),
+		doneCh:          make(chan struct{}),
 	}
 }
 

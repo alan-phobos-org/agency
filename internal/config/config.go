@@ -13,6 +13,7 @@ import (
 // Config represents the agent configuration
 type Config struct {
 	Port             int          `yaml:"port"`
+	Bind             string       `yaml:"bind"` // Address to bind to (default: 127.0.0.1)
 	Name             string       `yaml:"name"` // Agent name (used for history directory)
 	LogLevel         string       `yaml:"log_level"`
 	SessionDir       string       `yaml:"session_dir"`        // Base directory for session workspaces
@@ -85,6 +86,7 @@ func DefaultCodexTiers() TierConfig {
 // Defaults
 const (
 	DefaultPort         = 9000
+	DefaultBind         = "127.0.0.1"
 	DefaultName         = "agent"
 	DefaultModel        = "sonnet"
 	DefaultTimeout      = 30 * time.Minute
@@ -101,6 +103,7 @@ const (
 func Parse(data []byte) (*Config, error) {
 	cfg := &Config{
 		Port:       DefaultPort,
+		Bind:       DefaultBind,
 		Name:       DefaultName,
 		LogLevel:   DefaultLogLevel,
 		SessionDir: DefaultSessionDir,
@@ -151,6 +154,9 @@ func (c *Config) Validate() error {
 	if c.Port < 1 || c.Port > 65535 {
 		return fmt.Errorf("port must be between 1 and 65535, got %d", c.Port)
 	}
+	if c.Bind == "" {
+		return fmt.Errorf("bind must not be empty")
+	}
 
 	switch c.AgentKind {
 	case api.AgentKindClaude, api.AgentKindCodex:
@@ -186,6 +192,7 @@ func (c *Config) Validate() error {
 func Default() *Config {
 	return &Config{
 		Port:       DefaultPort,
+		Bind:       DefaultBind,
 		Name:       DefaultName,
 		LogLevel:   DefaultLogLevel,
 		SessionDir: DefaultSessionPath(),

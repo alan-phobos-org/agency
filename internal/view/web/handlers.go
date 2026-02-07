@@ -69,7 +69,7 @@ func (h *Handlers) SetQueue(q *WorkQueue) {
 
 // createHTTPClient creates an HTTP client that accepts self-signed certificates for localhost
 func createHTTPClient(timeout time.Duration) *http.Client {
-	return tlsutil.NewInsecureHTTPClient(timeout)
+	return tlsutil.NewHTTPClient(timeout)
 }
 
 func (h *Handlers) requireDiscoveredAgent(w http.ResponseWriter, agentURL string) (*ComponentStatus, bool) {
