@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.6] - 2026-02-07
+
+### Fixed
+- Fixed pkill pattern in deploy script legacy cleanup to avoid matching itself
+
 ## [3.1.5] - 2026-02-07
 
 ### Added
@@ -228,7 +233,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit, integration, component, and system tests
 - Race condition detection in tests
 
-[Unreleased]: https://github.com/alan-phobos-org/agency/compare/v3.1.5...HEAD
+[Unreleased]: https://github.com/alan-phobos-org/agency/compare/v3.1.6...HEAD
+[3.1.6]: https://github.com/alan-phobos-org/agency/compare/v3.1.5...v3.1.6
 [3.1.5]: https://github.com/alan-phobos-org/agency/compare/v3.1.4...v3.1.5
 [3.1.4]: https://github.com/alan-phobos-org/agency/compare/v3.1.3...v3.1.4
 [3.1.3]: https://github.com/alan-phobos-org/agency/compare/v3.1.2...v3.1.3
