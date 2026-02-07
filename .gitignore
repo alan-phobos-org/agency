@@ -36,6 +36,7 @@ Thumbs.db
 # Deployment runtime files
 deployment/*.pids
 deployment/*.log
+deployment/*.yaml
 
 # Smoke tests
 tests/smoke/node_modules/

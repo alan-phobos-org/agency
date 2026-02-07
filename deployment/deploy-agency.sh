@@ -101,6 +101,14 @@ ssh $SSH_OPTS "$REMOTE_HOST" "mkdir -p $REMOTE_DIR/bin $REMOTE_DIR/deployment $R
 echo "Stopping existing services..."
 ssh $SSH_OPTS "$REMOTE_HOST" "[ -f $REMOTE_DIR/stop.sh ] && $REMOTE_DIR/stop.sh || true"
 
+# One-time migration: stop services from legacy ~/agency/ location if present
+# (prod used to deploy into the git clone directory)
+if [ "$MODE" = "prod" ]; then
+    ssh $SSH_OPTS "$REMOTE_HOST" "[ -f ~/agency/stop.sh ] && ~/agency/stop.sh && echo 'Stopped legacy ~/agency/ services' || true"
+    # Also kill any processes still running from the old location
+    ssh $SSH_OPTS "$REMOTE_HOST" "pkill -f '/home/claude/agency/bin/ag-' 2>/dev/null && echo 'Killed legacy agency processes' || true"
+fi
+
 # Copy binaries
 echo "Copying binaries..."
 scp $SCP_OPTS \
@@ -120,9 +128,11 @@ fi
 if [ -n "$SCHEDULER_CONFIG" ] && [ -f "$SCHEDULER_CONFIG" ]; then
     echo "Copying scheduler config (adjusting ports for $MODE mode)..."
     # Transform port, director_url and agent_url ports to match deployment mode
+    # Use explicit dev→prod port mappings to handle per-job agent_urls correctly
     sed -e "s|^port: [0-9]*|port: $SCHEDULER_PORT|" \
         -e "s|director_url: http://localhost:[0-9]*|director_url: http://localhost:$WEB_INTERNAL_PORT|" \
-        -e "s|agent_url: https://localhost:[0-9]*|agent_url: https://localhost:$AGENT_PORT|" \
+        -e "s|agent_url: https://localhost:$DEV_AGENT_PORT|agent_url: https://localhost:$AGENT_PORT|g" \
+        -e "s|agent_url: https://localhost:$DEV_AGENT_CODEX_PORT|agent_url: https://localhost:$AGENT_CODEX_PORT|g" \
         "$SCHEDULER_CONFIG" | ssh $SSH_OPTS "$REMOTE_HOST" "cat > $REMOTE_DIR/configs/scheduler.yaml"
 fi
 

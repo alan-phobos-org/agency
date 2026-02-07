@@ -370,17 +370,16 @@ case "${1:-help}" in
         SSH_OPTS="-C -p $SSH_PORT"
         [ -n "$SSH_KEY" ] && SSH_OPTS="$SSH_OPTS -i $SSH_KEY"
 
-        # Copy latest config to dist
-        echo "Copying scheduler config to dist..."
-        mkdir -p dist/configs
-        cp configs/scheduler.yaml dist/configs/scheduler.yaml
-
-        # Load ports.conf to get REMOTE_DIR
+        # Load ports.conf to get REMOTE_DIR and port variables
         source ./deployment/ports.conf
         set_agency_env prod
 
-        echo "Deploying scheduler config to $HOST..."
-        cat "$PWD/dist/configs/scheduler.yaml" | ssh $SSH_OPTS "$HOST" "cat > $REMOTE_DIR/configs/scheduler.yaml"
+        echo "Deploying scheduler config to $HOST (with prod port transforms)..."
+        sed -e "s|^port: [0-9]*|port: $AG_SCHEDULER_PORT|" \
+            -e "s|director_url: http://localhost:[0-9]*|director_url: http://localhost:$AG_WEB_INTERNAL_PORT|" \
+            -e "s|agent_url: https://localhost:$DEV_AGENT_PORT|agent_url: https://localhost:$AG_AGENT_PORT|g" \
+            -e "s|agent_url: https://localhost:$DEV_AGENT_CODEX_PORT|agent_url: https://localhost:$AG_AGENT_CODEX_PORT|g" \
+            configs/scheduler.yaml | ssh $SSH_OPTS "$HOST" "cat > $REMOTE_DIR/configs/scheduler.yaml"
         echo "Config deployed. Scheduler will auto-reload within 60 seconds."
         ;;
     test-smoke)

@@ -43,6 +43,7 @@ type jobState struct {
 	NextRun     time.Time
 	LastRun     time.Time
 	LastStatus  string // "queued", "submitted", "skipped_queue_full", "skipped_busy", "skipped_error"
+	LastError   string // Last error message (for debugging failed submissions)
 	LastTaskID  string // Agent task ID (for direct submission)
 	LastQueueID string // Queue ID (for queue submission)
 	isRunning   bool   // prevents double-invocation if job execution takes >1s
@@ -61,6 +62,7 @@ type JobStatus struct {
 	LastStatus  string     `json:"last_status,omitempty"`
 	LastTaskID  string     `json:"last_task_id,omitempty"`
 	LastQueueID string     `json:"last_queue_id,omitempty"`
+	LastError   string     `json:"last_error,omitempty"`
 }
 
 // New creates a new scheduler
@@ -340,7 +342,7 @@ func (s *Scheduler) runJob(js *jobState) {
 		// Check if it's a queue full error
 		if strings.Contains(err.Error(), "queue full") || strings.Contains(err.Error(), "503") {
 			log.Printf("job=%s action=skipped reason=queue_full error=%q", js.Job.Name, err)
-			s.updateJobStateQueue(js, "skipped_queue_full", "")
+			s.updateJobStateQueueError(js, "skipped_queue_full", "", err.Error())
 			return
 		}
 		log.Printf("job=%s warning=director_unavailable error=%q", js.Job.Name, err)
@@ -350,7 +352,7 @@ func (s *Scheduler) runJob(js *jobState) {
 	taskID, status, err := s.submitViaAgent(js)
 	if err != nil {
 		log.Printf("job=%s action=skipped reason=%s error=%q", js.Job.Name, status, err)
-		s.updateJobState(js, status, "")
+		s.updateJobStateError(js, status, "", err.Error())
 		return
 	}
 
@@ -462,11 +464,30 @@ func (s *Scheduler) updateJobState(js *jobState, status, taskID string) {
 	now := time.Now()
 	js.LastRun = now
 	js.LastStatus = status
+	js.LastError = "" // Clear error on success
 	js.LastTaskID = taskID
 	js.LastQueueID = "" // Clear queue ID for direct submissions
 	nextRun := js.Cron.Next(now)
 	if nextRun.IsZero() {
 		// Defensive: if Next() can't find a match, skip far into the future
+		nextRun = now.Add(24 * time.Hour)
+	}
+	js.NextRun = nextRun
+	js.isRunning = false
+}
+
+func (s *Scheduler) updateJobStateError(js *jobState, status, taskID, errMsg string) {
+	js.mu.Lock()
+	defer js.mu.Unlock()
+
+	now := time.Now()
+	js.LastRun = now
+	js.LastStatus = status
+	js.LastError = errMsg
+	js.LastTaskID = taskID
+	js.LastQueueID = ""
+	nextRun := js.Cron.Next(now)
+	if nextRun.IsZero() {
 		nextRun = now.Add(24 * time.Hour)
 	}
 	js.NextRun = nextRun
@@ -481,11 +502,30 @@ func (s *Scheduler) updateJobStateQueue(js *jobState, status, queueID string) {
 	now := time.Now()
 	js.LastRun = now
 	js.LastStatus = status
+	js.LastError = ""  // Clear error on success
 	js.LastTaskID = "" // Clear task ID for queue submissions
 	js.LastQueueID = queueID
 	nextRun := js.Cron.Next(now)
 	if nextRun.IsZero() {
 		// Defensive: if Next() can't find a match, skip far into the future
+		nextRun = now.Add(24 * time.Hour)
+	}
+	js.NextRun = nextRun
+	js.isRunning = false
+}
+
+func (s *Scheduler) updateJobStateQueueError(js *jobState, status, queueID, errMsg string) {
+	js.mu.Lock()
+	defer js.mu.Unlock()
+
+	now := time.Now()
+	js.LastRun = now
+	js.LastStatus = status
+	js.LastError = errMsg
+	js.LastTaskID = ""
+	js.LastQueueID = queueID
+	nextRun := js.Cron.Next(now)
+	if nextRun.IsZero() {
 		nextRun = now.Add(24 * time.Hour)
 	}
 	js.NextRun = nextRun
@@ -510,6 +550,7 @@ func (s *Scheduler) handleStatus(w http.ResponseWriter, r *http.Request) {
 			AgentKind:   config.GetAgentKind(js.Job),
 			NextRun:     js.NextRun,
 			LastStatus:  js.LastStatus,
+			LastError:   js.LastError,
 			LastTaskID:  js.LastTaskID,
 			LastQueueID: js.LastQueueID,
 		}
@@ -525,7 +566,9 @@ func (s *Scheduler) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	configInfo := map[string]any{
-		"agent_url": config.AgentURL,
+		"agent_url":   config.AgentURL,
+		"port":        config.Port,
+		"config_path": s.configPath,
 	}
 	if config.DirectorURL != "" {
 		configInfo["director_url"] = config.DirectorURL

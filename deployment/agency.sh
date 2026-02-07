@@ -118,8 +118,15 @@ AGENT_CODEX_PID=$!
 # Start scheduler (optional)
 SCHEDULER_PID=""
 if [ -n "$SCHEDULER_CONFIG" ] && [ -f "$SCHEDULER_CONFIG" ]; then
+    # Transform scheduler config ports to match the current mode
+    EFFECTIVE_CONFIG="$PID_DIR/scheduler-${MODE}.yaml"
+    sed -e "s|^port: [0-9]*|port: $SCHEDULER_PORT|" \
+        -e "s|director_url: http://localhost:[0-9]*|director_url: http://localhost:$WEB_INTERNAL_PORT|" \
+        -e "s|agent_url: https://localhost:$DEV_AGENT_PORT|agent_url: https://localhost:$AGENT_PORT|g" \
+        -e "s|agent_url: https://localhost:$DEV_AGENT_CODEX_PORT|agent_url: https://localhost:$AGENT_CODEX_PORT|g" \
+        "$SCHEDULER_CONFIG" > "$EFFECTIVE_CONFIG"
     echo "Starting scheduler on port $SCHEDULER_PORT..."
-    "$PROJECT_ROOT/bin/ag-scheduler" -config "$SCHEDULER_CONFIG" -port "$SCHEDULER_PORT" > "$PID_DIR/scheduler-${MODE}.log" 2>&1 &
+    "$PROJECT_ROOT/bin/ag-scheduler" -config "$EFFECTIVE_CONFIG" -port "$SCHEDULER_PORT" > "$PID_DIR/scheduler-${MODE}.log" 2>&1 &
     SCHEDULER_PID=$!
 fi
 

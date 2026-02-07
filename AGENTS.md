@@ -76,6 +76,17 @@ From `deployment/ports.conf`:
 - **Dev**: Web=8443, Agent=9000, AgentCodex=9001, Scheduler=9010, Discovery=9000-9010, GitHub Monitor=9020
 - **Prod**: Web=9443, Agent=9100, AgentCodex=9101, Scheduler=9110, Discovery=9100-9110, GitHub Monitor=9120
 
+### Deployment Directories
+
+Dev and prod run from completely separate directories to prevent interference:
+- **Dev** (local): runs from the git checkout, config at `configs/scheduler.yaml` (dev ports)
+- **Prod** (remote): deploys to `~/agency-prod/` — isolated from any git clone. The deploy script transforms `configs/scheduler.yaml` port values (dev→prod) at deploy time via sed.
+
+The scheduler config uses dev ports in the repo. Port transforms are applied by:
+- `deploy-agency.sh` (full deploy)
+- `build.sh deploy-prod-scheduler-config` (config-only hot-reload)
+- `deployment/agency.sh` (local start — writes transformed config to `deployment/scheduler-{mode}.yaml`)
+
 ## Workflows
 
 | Trigger | Action |
@@ -181,6 +192,19 @@ For detailed endpoint specs, see [docs/REFERENCE.md](docs/REFERENCE.md).
 ---
 
 ## Recent Fixes
+
+### Prod/Dev Directory Separation (2026-02-07)
+
+**Issue**: Scheduler jobs (including Ralph automations) stopped working after the nightly maintenance job ran `git pull` on `~/agency/` — the same directory the prod services were running from. This overwrote `configs/scheduler.yaml` with dev ports, causing all subsequent job triggers to fail with `connection refused` on ports 8080/9000 (dev) instead of 9080/9100 (prod).
+
+**Root Cause**: `PROD_REMOTE_DIR` was set to `~/agency` which was also the git clone directory. Any git operation (pull, clean, checkout) could overwrite deployed configs or delete binaries.
+
+**Fix**:
+1. Changed `PROD_REMOTE_DIR` from `~/agency` to `~/agency-prod` in `ports.conf`
+2. Fixed `deploy-prod-scheduler-config` to apply port transforms (was copying raw dev config)
+3. Fixed sed transforms to handle per-job `agent_url` correctly (codex port was being replaced with claude port)
+4. Made `agency.sh` generate a mode-specific transformed config (`deployment/scheduler-{mode}.yaml`) so the scheduler never reads the raw dev config
+5. Added one-time migration in `deploy-agency.sh` to stop legacy `~/agency/` services on first deploy
 
 ### Codex Agent Output Display (2026-01-19)
 
