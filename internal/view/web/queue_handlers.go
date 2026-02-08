@@ -94,22 +94,18 @@ type QueuedTaskSummary struct {
 	AgentURL      string    `json:"agent_url,omitempty"` // If dispatched
 }
 
-// HandleQueueStatus returns the current queue status
-func (h *QueueHandlers) HandleQueueStatus(w http.ResponseWriter, r *http.Request) {
-	tasks := h.queue.GetAll()
+// summarizeQueuedTasks converts queued tasks into summary representations for API responses.
+func summarizeQueuedTasks(tasks []*QueuedTask) []QueuedTaskSummary {
 	summaries := make([]QueuedTaskSummary, 0, len(tasks))
-
 	pendingPos := 0
 	for _, task := range tasks {
 		if task.State.IsPending() {
 			pendingPos++
 		}
-
 		preview := task.Prompt
 		if len(preview) > 100 {
 			preview = preview[:100] + "..."
 		}
-
 		summary := QueuedTaskSummary{
 			QueueID:       task.QueueID,
 			State:         string(task.State),
@@ -125,6 +121,12 @@ func (h *QueueHandlers) HandleQueueStatus(w http.ResponseWriter, r *http.Request
 		}
 		summaries = append(summaries, summary)
 	}
+	return summaries
+}
+
+// HandleQueueStatus returns the current queue status
+func (h *QueueHandlers) HandleQueueStatus(w http.ResponseWriter, r *http.Request) {
+	summaries := summarizeQueuedTasks(h.queue.GetAll())
 
 	writeJSON(w, http.StatusOK, QueueStatusResponse{
 		Depth:            h.queue.Depth(),

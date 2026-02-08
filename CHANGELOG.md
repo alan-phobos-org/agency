@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Extracted duplicated queue task summary building into `summarizeQueuedTasks` helper
+- Removed dead code: `WorkQueue.TotalCount()` and `SessionStore.Clear()`
+
+### Fixed
+- Fixed release workflow Go version mismatch (1.21 -> 1.24 to match go.mod)
+- Updated README version to match current release (3.1.6)
+
 ## [3.1.6] - 2026-02-07
 
 ### Fixed

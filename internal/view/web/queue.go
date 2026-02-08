@@ -238,13 +238,6 @@ func (q *WorkQueue) Depth() int {
 	return count
 }
 
-// TotalCount returns total tasks (pending + dispatched)
-func (q *WorkQueue) TotalCount() int {
-	q.mu.RLock()
-	defer q.mu.RUnlock()
-	return len(q.tasks)
-}
-
 // SetState updates a task's state
 func (q *WorkQueue) SetState(task *QueuedTask, state taskstate.State) {
 	q.mu.Lock()

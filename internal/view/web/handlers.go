@@ -551,38 +551,12 @@ func (h *Handlers) HandleDashboardData(w http.ResponseWriter, r *http.Request) {
 
 	// Add queue info if available
 	if h.queue != nil {
-		tasks := h.queue.GetAll()
-		summaries := make([]QueuedTaskSummary, 0, len(tasks))
-		pendingPos := 0
-		for _, task := range tasks {
-			if task.State.IsPending() {
-				pendingPos++
-			}
-			preview := task.Prompt
-			if len(preview) > 100 {
-				preview = preview[:100] + "..."
-			}
-			summary := QueuedTaskSummary{
-				QueueID:       task.QueueID,
-				State:         string(task.State),
-				CreatedAt:     task.CreatedAt,
-				PromptPreview: preview,
-				Source:        task.Source,
-				SourceJob:     task.SourceJob,
-				TaskID:        task.TaskID,
-				AgentURL:      task.AgentURL,
-			}
-			if task.State.IsPending() {
-				summary.Position = pendingPos
-			}
-			summaries = append(summaries, summary)
-		}
 		data.Queue = &QueueInfo{
 			Depth:            h.queue.Depth(),
 			MaxSize:          h.queue.Config().MaxSize,
 			OldestAgeSeconds: h.queue.OldestAge(),
 			DispatchedCount:  h.queue.DispatchedCount(),
-			Tasks:            summaries,
+			Tasks:            summarizeQueuedTasks(h.queue.GetAll()),
 		}
 	}
 
