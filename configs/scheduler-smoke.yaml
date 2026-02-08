@@ -59,11 +59,8 @@ jobs:
       Work through each repository sequentially.
 
       ## Target Repositories
-      - agency
-      - opengrok-navigator
+      - Agency
       - lldb-objc
-      - cue
-      - h2ai
 
       ## Tasks for Each Repository
 
